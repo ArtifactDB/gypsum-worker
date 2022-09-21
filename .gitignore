@@ -1,0 +1,5 @@
+dist/
+worker/
+node_modules/
+*.swp
+*.h5

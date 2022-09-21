@@ -1,0 +1,14 @@
+name = "gypsum"
+type = "webpack"
+
+account_id = ""
+workers_dev = true
+route = ""
+zone_id = ""
+compatibility_date = "2022-03-04"
+
+[[r2_buckets]]
+binding = 'GYPSUM_BUCKET' # <~ valid JavaScript variable name
+bucket_name = 'gypsum-test'
+preview_bucket_name = 'gypsum-test'
+

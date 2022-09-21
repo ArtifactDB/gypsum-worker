@@ -1,0 +1,13 @@
+{
+  "private": true,
+  "name": "gypsum",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A small ArtifactDB API on Cloudflare Workers",
+  "main": "index.js",
+  "author": "LTLA <infinite.monkeys.with.keyboards@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "itty-router": "^2.5.2"
+  }
+}
