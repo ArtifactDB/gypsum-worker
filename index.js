@@ -29,18 +29,54 @@ function handleOptions(request) {
 
 /*** Miscellaneous functions ***/
 
-async function forwarder(id) {
-    let res = await GYPSUM_BUCKET.get(id);
-    if (res === null) {
-        return new Response(
-            JSON.stringify({ "error": "key '" + id + "' does not exist"}), 
-            { 
-                status: 404, 
-                headers: { 
-                    "Content-Type": "application/json"
-                }
+function unpackId(id) {
+    let i1 = id.indexOf(":");
+    if (i1 < 0) {
+        throw new Error("could not identify project from 'id'");
+    } else if (i1 == 0) {
+        throw new Error("'id' should not have an empty project");
+    }
+
+    let i2 = id.lastIndexOf("@");
+    if (i2 < 0) {
+        throw new Error("could not identify version from 'id'");
+    } else if (i2 == id.length - 1) {
+        throw new Error("'id' should not have an empty version");
+    }
+
+    if (i2 < i1) {
+        throw new Error("could not identify version from 'id'");
+    } else if (i1 +1 == i2){
+        throw new Error("'id' should not have an empty path");
+    }
+
+    return {
+        project: id.slice(0, i1),
+        path: id.slice(i1+1, i2),
+        version: id.slice(i2+1)
+    };
+}
+
+function errorResponse(reason, code) {
+    return new Response(
+        JSON.stringify({ 
+            "status": "error", 
+            "reason": reason
+        }),
+        { 
+            status: code, 
+            headers: {
+                "Content-Type": "application/json"
             }
-        );
+        }
+    );
+}
+
+async function forwarder(project, path, version) {
+    let r2path = project + "/" + version + "/" + path;
+    let res = await GYPSUM_BUCKET.get(r2path);
+    if (res === null) {
+        return errorResponse("key '" + id + "' does not exist", 404);
     }
 
     let { readable, writable } = new TransformStream();
@@ -52,15 +88,29 @@ async function forwarder(id) {
 
 router.get("/files/:id/metadata", async ({params}) => {
     let id = decodeURIComponent(params.id);
-    if (!id.endsWith(".json")) {
-        id += ".json";
+
+    let unpacked;
+    try {
+        unpacked = unpackId(id);
+    } catch (e) {
+        return errorResponse(e.message, 400);
     }
-    return forwarder(id);
+
+    if (!unpacked.path.endsWith(".json")) {
+        unpacked.path += ".json";
+    }
+    return forwarder(unpacked.project, unpacked.path, unpacked.version);
 })
 
 router.get("/files/:id", async({params}) => {
     let id = decodeURIComponent(params.id);
-    return forwarder(id);
+    let unpacked;
+    try {
+        unpacked = unpackId(id);
+    } catch (e) {
+        return errorResponse(e.message, 400);
+    }
+    return forwarder(unpacked.project, unpacked.path, unpacked.version);
 })
 
 /*** Setting up the listener ***/
