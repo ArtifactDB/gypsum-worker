@@ -1,4 +1,4 @@
-name = "gypsum"
+name = "gypsum-test"
 type = "webpack"
 
 account_id = ""
