@@ -8,6 +8,7 @@
   "author": "LTLA <infinite.monkeys.with.keyboards@gmail.com>",
   "license": "MIT",
   "dependencies": {
+    "aws-sdk": "^2.1221.0",
     "itty-router": "^2.5.2"
   }
 }

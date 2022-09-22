@@ -1,4 +1,13 @@
 import { Router } from 'itty-router'
+import S3 from 'aws-sdk/clients/s3.js';
+
+const s3 = new S3({
+  endpoint: `https://${ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  accessKeyId: `${ACCESS_KEY_ID}`,
+  secretAccessKey: `${SECRET_ACCESS_KEY}`,
+  signatureVersion: 'v4',
+});
+
 const router = Router()
 
 /*** CORS-related shenanigans ***/
@@ -105,7 +114,7 @@ router.get("/files/:id/metadata", async ({params}) => {
     return forwarder(unpacked.project, unpacked.path, unpacked.version, "application/json");
 })
 
-router.get("/files/:id", async({params}) => {
+router.get("/files/:id", async({params, query}) => {
     let id = decodeURIComponent(params.id);
     let unpacked;
     try {
@@ -113,7 +122,15 @@ router.get("/files/:id", async({params}) => {
     } catch (e) {
         return errorResponse(e.message, 400);
     }
-    return forwarder(unpacked.project, unpacked.path, unpacked.version, "application/octet-stream");
+
+    let expiry = query.expires_in;
+    if (typeof expiry !== "number") {
+        expiry = 120;
+    }
+
+    let key = unpacked.project + "/" + unpacked.version + "/" + unpacked.path;
+    let target = await s3.getSignedUrlPromise('getObject', { Bucket: 'gypsum-test', Key: key, Expires: expiry })
+    return Response.redirect(target, 302);
 })
 
 /*** Setting up the listener ***/
