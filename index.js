@@ -72,7 +72,7 @@ function errorResponse(reason, code) {
     );
 }
 
-async function forwarder(project, path, version) {
+async function forwarder(project, path, version, content_type) {
     let r2path = project + "/" + version + "/" + path;
     let res = await GYPSUM_BUCKET.get(r2path);
     if (res === null) {
@@ -81,7 +81,10 @@ async function forwarder(project, path, version) {
 
     let { readable, writable } = new TransformStream();
     res.body.pipeTo(writable);
-    return new Response(readable, res);
+
+    let output = new Response(readable, res);
+    output.headers.set("Content-Type", content_type);
+    return output;
 }
 
 /*** Setting up the routes ***/
@@ -99,7 +102,7 @@ router.get("/files/:id/metadata", async ({params}) => {
     if (!unpacked.path.endsWith(".json")) {
         unpacked.path += ".json";
     }
-    return forwarder(unpacked.project, unpacked.path, unpacked.version);
+    return forwarder(unpacked.project, unpacked.path, unpacked.version, "application/json");
 })
 
 router.get("/files/:id", async({params}) => {
@@ -110,7 +113,7 @@ router.get("/files/:id", async({params}) => {
     } catch (e) {
         return errorResponse(e.message, 400);
     }
-    return forwarder(unpacked.project, unpacked.path, unpacked.version);
+    return forwarder(unpacked.project, unpacked.path, unpacked.version, "application/octet-stream");
 })
 
 /*** Setting up the listener ***/
