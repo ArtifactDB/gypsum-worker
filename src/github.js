@@ -55,3 +55,8 @@ export async function identifyUser(token) {
 
     return res.json();
 }
+
+export function createIssueUrl(id) {
+    return "https://github.com/" + ci_repo + "/issues/" + id;
+}
+

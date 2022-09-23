@@ -91,5 +91,8 @@ export async function queryJobIdHandler(request, master) {
         state = "FAILURE"; // any comments indicates failure, otherwise it would just be closed.
     }
 
-    return utils.jsonResponse({ status: state }, 200);
+    return utils.jsonResponse({ 
+        status: state,
+        job_url: gh.createIssueUrl(jid)
+    }, 200);
 }
