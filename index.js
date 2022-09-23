@@ -13,6 +13,7 @@ const router = Router()
 
 const github_api = "https://api.github.com";
 const github_repo = "ArtifactDB/gypsum-actions";
+const github_agent = "gypsum-test-worker";
 
 /*** CORS-related shenanigans ***/
 
@@ -142,18 +143,29 @@ router.post("/projects/:id/version/:version/upload", async request => {
     let version = request.params.version;
 
     let body = await request.json();
-    let files = body.files;
+    let files = body.filenames;
 
-    let collected = [];
+    let precollected = [];
+    let prenames = []
     for (const f of files) {
         if (typeof f == "string") {
-            collected.push(s3.getSignedUrlPromise('putObject', { Bucket: bucket_name, Key: id + "/" + version + "/" + f, Expires: 3600 }));
+            let params = { Bucket: bucket_name, Key: id + "/" + version + "/" + f, Expires: 3600 };
+            if (f.endsWith(".json")) {
+                params.ContentType = "application/json";
+            }
+            precollected.push(s3.getSignedUrlPromise('putObject', params));
+            prenames.push(f);
         } else {
             return errorResponse("non-string file uploads are not yet supported", 400);
         }
     }
 
-    let presigned = Promises.all(collected);
+    let presigned_vec = await Promise.all(precollected);
+    let presigned = {};
+    for (var i = 0; i < presigned_vec.length; i++) {
+        presigned[prenames[i]] = presigned_vec[i];
+    }
+
     return new Response(
         JSON.stringify({ 
             presigned_urls: presigned,
@@ -173,14 +185,16 @@ router.put("/projects/:id/version/:version/complete", async request => {
     let version = request.params.version;
 
     // Permissions are handled by the indexer.
-    let perms = request.json();
+    let perms = await request.json();
 
-    let URL = github_api + "/" + github_repo + "/issues";
+    let URL = github_api + "/repos/" + github_repo + "/issues";
+
     let res = await fetch(URL, {
         method: "POST",
         headers: {
             'Content-Type': 'application/json',
-            "Authorization": "Bearer " + GITHUB_PAT
+            "Authorization": "Bearer " + GITHUB_PAT,
+            "User-Agent": github_agent
         },
         body: JSON.stringify({
             title: "upload complete",
@@ -192,32 +206,34 @@ router.put("/projects/:id/version/:version/complete", async request => {
             })
         })
     });
+    if (!res.ok) {
+        return new errorReponse("failed to trigger GitHub Actions for indexing", { status: 500 });
+    }
 
     let payload = await res.json();
     return new Reponse({ job_id: payload.id }, { status: 204 });
 })
 
-router.put("/jobs/:jobid", async ({params}) => {
+router.get("/jobs/:jobid", async ({params}) => {
     let jid = params.jobid;
-    let URL = github_api + "/" + github_repo + "/issues/" + jid;
+    let URL = github_api + "/repos/" + github_repo + "/issues/" + jid;
 
     let res = await fetch(URL, {
         headers: {
-            "Authorization": "Bearer " + GITHUB_PAT
+            "Authorization": "Bearer " + GITHUB_PAT,
+            "User-Agent": github_agent
         }
     });
     if (!res.ok) {
-        return errorResponse("something something", 404);
+        return errorResponse("failed to query GitHub for indexing status", 404);
     }
 
     let info = await res.json();
-    let state == "PENDING";
+    let state = "PENDING";
     if (info.state == "closed") {
-        if (info.comments > 0) {
-            state = "FAILURE"; // any comments indicates failure, otherwise it would just be closed.
-        } else {
-            state = "SUCCESS";
-        }
+        state = "SUCCESS";
+    } else if (info.comments > 0) {
+        state = "FAILURE"; // any comments indicates failure, otherwise it would just be closed.
     }
 
     return new Response(
