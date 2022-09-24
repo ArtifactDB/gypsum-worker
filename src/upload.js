@@ -2,11 +2,11 @@ import * as auth from "./auth.js";
 import * as utils from "./utils.js";
 import * as gh from "./github.js";
 
-export async function initializeUploadHandler(request, bucket, s3obj) {
+export async function initializeUploadHandler(request, bucket, s3obj, master) {
     let id = request.params.id;
     let version = request.params.version;
 
-    let id_err = await auth.isAllowedUploader(request);
+    let id_err = await auth.isAllowedUploader(request, master);
     if (id_err !== null) {
         return id_err;
     }
@@ -43,7 +43,7 @@ export async function completeUploadHandler(request, master) {
     let id = request.params.id;
     let version = request.params.version;
 
-    let id_err = await auth.isAllowedUploader(request);
+    let id_err = await auth.isAllowedUploader(request, master);
     console.log(id_err);
     if (id_err !== null) {
         return id_err;

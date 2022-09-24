@@ -39,21 +39,49 @@ export async function getIssue(id, master) {
     return res;
 }
 
-export async function identifyUser(token) {
+export async function identifyUser(token, secret) {
     let URL = api + "/user";
 
-    let res = await fetch(URL, {
-        headers: {
-            "Authorization": "Bearer " + token,
-            "User-Agent": agent
-        }
-    });
-
-    if (!res.ok) {
-        throw new Error("failed to query GitHub for user identity");
+    // Hashing the token with HMAC to avoid problems if the cache leaks. The
+    // identity now depends on two unknowns - the user-supplied token, and the
+    // server-side secret, which should be good enough.
+    let key;
+    {
+        let enc = new TextEncoder();
+        let ckey = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [ "sign" ]);
+        let secured = await crypto.subtle.sign({ name: "HMAC" }, ckey, enc.encode(token));
+        key = URL + "/" + btoa(secured); // A pretend URL for caching purposes: this should not get called.
     }
 
-    return res;
+    const tokenCache = await caches.open("token:cache");
+    let check = await tokenCache.match(key);
+
+    if (!check) {
+        let res = await fetch(URL, { 
+            headers: {
+                "Authorization": "Bearer " + token,
+                "User-Agent": agent
+            }
+        });
+        if (!res.ok) {
+            throw new Error("failed to query GitHub for user identity");
+        }
+
+        let data = await res.text();
+        let expiry = new Date(Date.now() + 60 * 60 * 1000);
+        check = new Response(data, { 
+            headers: {
+                "Content-Type": "application/json",
+                "Expires": expiry.toISOString()
+            }
+        });
+
+        await tokenCache.put(key, check);
+        return JSON.parse(data).login;
+    } else {
+        let info = await check.json();
+        return info.login;
+    }
 }
 
 export function createIssueUrl(id) {

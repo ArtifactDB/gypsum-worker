@@ -91,11 +91,15 @@ router.get("/files/:id", async({params, query}) => {
     return Response.redirect(target, 302);
 })
 
-router.post("/projects/:id/version/:version/upload", request => upload.initializeUploadHandler(request, bucket_name, s3));
+router.post("/projects/:id/version/:version/upload", request => upload.initializeUploadHandler(request, bucket_name, s3, GITHUB_PAT));
 
 router.put("/projects/:id/version/:version/complete", request => upload.completeUploadHandler(request, GITHUB_PAT));
 
 router.get("/jobs/:jobid", request => upload.queryJobIdHandler(request, GITHUB_PAT));
+
+/*** Non-standard endpoints, for testing only ***/
+
+router.get("/user", request => auth.isAllowedUploaderHandler(request, GITHUB_PAT));
 
 /*** Setting up the listener ***/
 
