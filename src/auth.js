@@ -63,6 +63,15 @@ export function determinePrivileges(perm, user) {
     return "none";
 }
 
+export const uploaders = new Set([
+    "ArtifactDB-bot", 
+    "LTLA", 
+    "lelongs", 
+    "jkanche", 
+    "PeteHaitch", 
+    "vjcitn"
+]);
+
 export async function getPermissionsHandler(request, master) {
     let project = request.params.id;
 
