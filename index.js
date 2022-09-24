@@ -97,9 +97,11 @@ router.put("/projects/:id/version/:version/complete", request => upload.complete
 
 router.get("/jobs/:jobid", request => upload.queryJobIdHandler(request, GITHUB_PAT));
 
+router.get("/projects/:id/permissions", request => auth.getPermissionsHandler(request, bucket_name, s3));
+
 /*** Non-standard endpoints, for testing only ***/
 
-router.get("/user", request => auth.isAllowedUploaderHandler(request, GITHUB_PAT));
+router.get("/user", request => auth.findUserHandler(request, GITHUB_PAT));
 
 /*** Setting up the listener ***/
 
