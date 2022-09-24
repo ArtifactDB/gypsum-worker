@@ -97,7 +97,9 @@ router.put("/projects/:id/version/:version/complete", request => upload.complete
 
 router.get("/jobs/:jobid", request => upload.queryJobIdHandler(request, GITHUB_PAT));
 
-router.get("/projects/:id/permissions", request => auth.getPermissionsHandler(request, bucket_name, s3));
+router.get("/projects/:id/permissions", request => auth.getPermissionsHandler(request, GITHUB_PAT));
+
+router.post("/projects/:id/permissions", (request, event) => auth.setPermissionsHandler(request, GITHUB_PAT, event));
 
 /*** Non-standard endpoints, for testing only ***/
 
@@ -114,7 +116,7 @@ addEventListener('fetch', event => {
         event.respondWith(handleOptions(request));
     } else {
         let resp = router
-            .handle(request)
+            .handle(request, event)
             .catch(error => utils.jsonResponse(error.message || 'Server Error', error.status || 500));
         event.respondWith(resp);
     }

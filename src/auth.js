@@ -34,8 +34,12 @@ export async function findUserHandler(request, master) {
     }
 }
 
+function getPermissionsPath(project) {
+    return project + "/..permissions.json";
+}
+
 export async function getPermissions(project) {
-    let path = project + "/..permissions.json";
+    let path = getPermissionsPath(project);
     let res = await GYPSUM_BUCKET.get(path);
     if (res == null) {
         return null;
@@ -63,7 +67,6 @@ export async function getPermissionsHandler(request, master) {
     let project = request.params.id;
 
     let perms = await getPermissions(project);
-    console.log(["Perms is ", perms]);
     if (perms == null) {
         return utils.errorResponse("requested project does not exist", 404);
     }
@@ -74,10 +77,64 @@ export async function getPermissionsHandler(request, master) {
     } catch(e) {
         ;
     }
-    console.log(user);
     if (determinePrivileges(perms, user) == "none") {
         return utils.errorResponse("user does not have access to the requested project", 403);
     }
 
     return utils.jsonResponse(perms, 200);
+}
+
+export function checkPermissions(perm) {
+    let allowed = ["public", "viewers", "none"];
+    if (typeof perm.read_access != "string" || allowed.indexOf(perm.read_access) == -1) {
+        throw new Error("'read_access' for permissions must be one of public, viewers or none");
+    }
+
+    for (const v of perm.viewers) {
+        if (typeof v != "string" || v.length == 0) {
+            throw new Error("'viewers' should be an array of non-empty strings");
+        }
+    }
+
+    for (const v of perm.owners) {
+        if (typeof v != "string" || v.length == 0) {
+            throw new Error("'owners' should be an array of non-empty strings");
+        }
+    }
+}
+
+export async function setPermissionsHandler(request, master, event) {
+    let project = request.params.id;
+
+    let perms = await getPermissions(project);
+    if (perms == null) {
+        return utils.errorResponse("requested project does not exist", 404);
+    }
+
+    let user = null;
+    try {
+        user = await findUser(request, master);
+    } catch(e) {
+        ;
+    }
+    if (determinePrivileges(perms, user) == "owner") {
+        return utils.errorResponse("user does not own the requested project", 403);
+    }
+
+    // Updating everything on top of the existing permissions.
+    let new_perms = await request.json();
+    for (const x of Object.keys(perms)) {
+        if (x in new_perms) {
+            perms[x] = new_perms[x];
+        }
+    }
+
+    try {
+        checkPermissions(perms);
+    } catch (e) {
+        return utils.errorResponse(e.message, 400);
+    }
+
+    event.waitUntil(GYPSUM_BUCKET.put(getPermissionsPath(project), JSON.stringify(perms)));
+    return new Response(null, { status: 202 });
 }
