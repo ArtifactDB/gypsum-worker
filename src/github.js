@@ -44,7 +44,7 @@ export async function identifyUser(token) {
 
     let res = await fetch(URL, {
         headers: {
-            "Authorization": "Bearer " + master,
+            "Authorization": "Bearer " + token,
             "User-Agent": agent
         }
     });
@@ -53,7 +53,7 @@ export async function identifyUser(token) {
         throw new Error("failed to query GitHub for user identity");
     }
 
-    return res.json();
+    return res;
 }
 
 export function createIssueUrl(id) {

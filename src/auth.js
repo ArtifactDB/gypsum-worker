@@ -10,16 +10,18 @@ export async function identifyUser(request) {
     let token = auth.slice(7);
 
     const tokenCache = await caches.open("token:cache");
-    let check = await tokenCache.match(token);
+    let key = new Request(request, { cf: { token } })
+    let check = await tokenCache.match(key);
+
     if (check) {
         let info = await check.json();
-        return info.login;
+        return (await info.json()).login;
     } else {
         let info = await gh.identifyUser(token);
+        let payload = await info.text();
         let expiry = new Date(Date.now() + 60 * 60 * 1000);
-        info.headers["Expires"] = expiry.toISOString();
-        tokenCache.put(info.url, info.clone()); // need to store a clone.
-        return (await info.json()).login;
+        await tokenCache.put(key, new utils.jsonResponse(payload, info.status, { Expires: expiry.toISOString() }))
+        return JSON.parse(payload).login;
     }
 }
 
