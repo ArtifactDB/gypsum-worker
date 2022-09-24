@@ -69,7 +69,6 @@ export async function completeUploadHandler(request, master) {
         return utils.errorResponse(e.message, 500);
     }
 
-    console.log(payload.number);
     return utils.jsonResponse({ job_id: payload.number }, 202);
 }
 
