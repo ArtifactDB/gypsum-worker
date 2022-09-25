@@ -17,7 +17,7 @@ export async function findUser(request, master, nonblockers) {
         let enc = new TextEncoder();
         let ckey = await crypto.subtle.importKey("raw", enc.encode(master), { name: "HMAC", hash: "SHA-256" }, false, [ "sign" ]);
         let secured = await crypto.subtle.sign({ name: "HMAC" }, ckey, enc.encode(token));
-        key = URL + "/" + btoa(secured); // A pretend URL for caching purposes: this should not get called.
+        key = "https://github.com/ArtifactDB/gypsum-actions/user/" + btoa(secured); // A pretend URL for caching purposes: this should not get called.
     }
 
     const userCache = await caches.open("user:cache");
