@@ -104,6 +104,8 @@ export async function completeUploadHandler(request, master) {
         return utils.errorResponse(e.message, 400);
     }
 
+    let overwrite = request.query.overwrite_permissions === "true";
+
     let payload;
     try {
         let info = await gh.postNewIssue(
@@ -116,7 +118,8 @@ export async function completeUploadHandler(request, master) {
                     read_access: body.read_access, 
                     owners: body.owners,
                     viewers: body.viewers
-                }
+                },
+                overwrite_permissions: overwrite
             }),
             master
         );

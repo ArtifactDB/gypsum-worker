@@ -3,3 +3,4 @@ worker/
 node_modules/
 *.swp
 *.h5
+secrets.sh
