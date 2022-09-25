@@ -1,7 +1,7 @@
 import * as auth from "./auth.js";
 import * as utils from "./utils.js";
 
-export async function getVersionMetadata(project, version) {
+export async function getVersionMetadata(project, version, afterwards) {
     const versionCache = await caches.open("version:cache");
 
     // Key needs to be a URL.
@@ -24,11 +24,12 @@ export async function getVersionMetadata(project, version) {
             "Expires": utils.hoursFromNow(2)
         } 
     });
-    await versionCache.put(key, info);
+
+    afterwards.push(versionCache.put(key, info));
     return JSON.parse(data);
 }
 
-export async function getLatestVersion(project) {
+export async function getLatestVersion(project, afterwards) {
     const latestCache = await caches.open("latest:cache");
 
     // Key needs to be a URL.
@@ -52,7 +53,7 @@ export async function getLatestVersion(project) {
         }
     });
 
-    await latestCache.put(key, info);
+    afterwards.push(latestCache.put(key, info));
     return JSON.parse(data);
 }
 
@@ -72,7 +73,7 @@ function checkPermissions(perm, user, project) {
     return null;
 }
     
-export async function getFileMetadataHandler(request, master) {
+export async function getFileMetadataHandler(request, master, event) {
     let id = decodeURIComponent(request.params.id);
 
     let unpacked;
@@ -88,10 +89,11 @@ export async function getFileMetadataHandler(request, master) {
 
     // Loading up on the promises.
     let all_promises = [];
+    let cache_waits = [];
     all_promises.push(auth.findUser(request, master).catch(error => null));
-    all_promises.push(auth.getPermissions(unpacked.project));
-    all_promises.push(getVersionMetadata(unpacked.project, unpacked.version));
-    all_promises.push(getLatestVersion(unpacked.project));
+    all_promises.push(auth.getPermissions(unpacked.project, cache_waits));
+    all_promises.push(getVersionMetadata(unpacked.project, unpacked.version, cache_waits));
+    all_promises.push(getLatestVersion(unpacked.project, cache_waits));
 
     let r2path = unpacked.project + "/" + unpacked.version + "/" + unpacked.path;
     all_promises.push(GYPSUM_BUCKET.get(r2path));
@@ -122,10 +124,11 @@ export async function getFileMetadataHandler(request, master) {
         latest: (lat_meta.version == unpacked.version)
     };
 
+    event.waitUntil(Promise.all(cache_waits));
     return utils.jsonResponse(meta, 200);
 }
 
-export async function getFileHandler(request, bucket_name, s3obj, master) {
+export async function getFileHandler(request, bucket_name, s3obj, master, event) {
     let id = decodeURIComponent(request.params.id);
     let unpacked;
     try {
@@ -136,8 +139,9 @@ export async function getFileHandler(request, bucket_name, s3obj, master) {
 
     // Loading up on the promises.
     let all_promises = [];
-    all_promises.push(auth.findUser(request, master).catch(error => null));
-    all_promises.push(auth.getPermissions(unpacked.project));
+    let cache_waits = [];
+    all_promises.push(auth.findUser(request, master, cache_waits).catch(error => null));
+    all_promises.push(auth.getPermissions(unpacked.project, cache_waits));
 
     let expiry = request.query.expires_in;
     if (typeof expiry !== "number") {
@@ -158,6 +162,7 @@ export async function getFileHandler(request, bucket_name, s3obj, master) {
     }
 
     let target = resolved[2];
+    event.waitUntil(Promise.all(cache_waits));
     return Response.redirect(target, 302);
 }
 

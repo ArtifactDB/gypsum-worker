@@ -1,3 +1,5 @@
+import * as utils from "./utils.js";
+
 const api = "https://api.github.com";
 const ci_repo = "ArtifactDB/gypsum-actions";
 const agent = "gypsum-test-worker";
@@ -39,7 +41,7 @@ export async function getIssue(id, master) {
     return res;
 }
 
-export async function identifyUser(token, secret) {
+export async function identifyUser(token, secret, afterwards) {
     let URL = api + "/user";
 
     // Hashing the token with HMAC to avoid problems if the cache leaks. The
@@ -68,15 +70,14 @@ export async function identifyUser(token, secret) {
         }
 
         let data = await res.text();
-        let expiry = new Date(Date.now() + 60 * 60 * 1000);
         check = new Response(data, { 
             headers: {
                 "Content-Type": "application/json",
-                "Expires": expiry.toISOString()
+                "Expires": utils.hoursFromNow(1)
             }
         });
 
-        await tokenCache.put(key, check);
+        afterwards.push(tokenCache.put(key, check));
         return JSON.parse(data).login;
     } else {
         let info = await check.json();

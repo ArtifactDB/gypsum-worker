@@ -6,24 +6,23 @@ import * as expiry from "./expiry.js";
 
 /**************** Initialize uploads ***************/
 
-export async function initializeUploadHandler(request, bucket, s3obj, master) {
+export async function initializeUploadHandler(request, bucket, s3obj, master, event) {
     let project = request.params.project;
     let version = request.params.version;
+    let cache_waits = [];
 
     let user;
     try {
-        user = await auth.findUser(request, master);
+        user = await auth.findUser(request, master, cache_waits);
     } catch (e) {
         return utils.errorResponse(e.message, 401);
     }
-    console.log(user);
 
     if (!auth.uploaders.has(user)) {
         return utils.errorResponse("user is not registered as an uploader", 403);
     } else {
-        let perms = await auth.getPermissions(project);
-        console.log(perms);
-        if (perms !== null && determinePrivileges(perms, user) != "owner") {
+        let perms = await auth.getPermissions(project, cache_waits);
+        if (perms !== null && auth.determinePrivileges(perms, user) != "owner") {
             return utils.errorResponse("user is not registered as an owner of the project", 403);
         }
     }
@@ -65,19 +64,21 @@ export async function initializeUploadHandler(request, bucket, s3obj, master) {
         presigned[prenames[i]] = presigned_vec[i];
     }
 
+    event.waitUntil(Promise.all(cache_waits));
     let completer = "/projects/" + project + "/version/" + version + "/complete";
     return utils.jsonResponse({ presigned_urls: presigned, completion_url: completer }, 200);
 }
 
 /**************** Complete uploads ***************/
 
-export async function completeUploadHandler(request, master) {
+export async function completeUploadHandler(request, master, event) {
     let project = request.params.project;
     let version = request.params.version;
+    let cache_waits = [];
 
     let user;
     try {
-        user = await auth.findUser(request, master);
+        user = await auth.findUser(request, master, cache_waits);
     } catch (e) {
         return utils.errorResponse(e.message, 401);
     }
@@ -128,6 +129,7 @@ export async function completeUploadHandler(request, master) {
         return utils.errorResponse(e.message, 500);
     }
 
+    event.waitUntil(Promise.all(cache_waits));
     return utils.jsonResponse({ job_id: payload.number }, 202);
 }
 

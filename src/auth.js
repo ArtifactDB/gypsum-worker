@@ -1,7 +1,7 @@
 import * as utils from "./utils.js";
 import * as gh from "./github.js";
 
-export async function findUser(request, master) {
+export async function findUser(request, master, afterwards) {
     let auth = request.headers.get("Authorization");
     if (auth == null || !auth.startsWith("Bearer ")) {
         return null;
@@ -10,7 +10,7 @@ export async function findUser(request, master) {
     let token = auth.slice(7);
     let user;
     try {
-        user = await gh.identifyUser(token, master);
+        user = await gh.identifyUser(token, master, afterwards);
     } catch (e) {
         throw new Error("failed to determine user from the GitHub token: " + e.message);
     }
@@ -18,15 +18,17 @@ export async function findUser(request, master) {
     return user;
 }
 
-export async function findUserHandler(request, master) {
+export async function findUserHandler(request, master, event) {
     let user;
-    
+    let cache_waits = [];
+
     try {
-        user = await findUser(request, master);
+        user = await findUser(request, master, cache_waits);
     } catch (e) {
         throw utils.errorResponse(e.message, 401);        
     }
 
+    event.waitUntil(Promise.all(cache_waits));
     if (user !== null) {
         return new Response(user, { status: 200, "Content-Type": "text" });
     } else {
@@ -38,13 +40,33 @@ function getPermissionsPath(project) {
     return project + "/..permissions.json";
 }
 
-export async function getPermissions(project) {
+export async function getPermissions(project, afterwards) {
+    const permCache = await caches.open("permission:cache");
+
+    // Key needs to be a URL.
+    const key = "https://github.com/ArtifactDB/gypsum-worker/permissions/" + project;
+
+    let check = await permCache.match(key);
+    if (check) {
+        return await check.json();
+    }
+
     let path = getPermissionsPath(project);
     let res = await GYPSUM_BUCKET.get(path);
     if (res == null) {
         return null;
     }
-    return await res.json();
+
+    let data = await res.text();
+    let info = new Response(data, {
+        headers: {
+            "Content-Type": "application/json",
+            "Expires": utils.minutesFromNow(1)
+        }
+    });
+
+    afterwards.push(permCache.put(key, info));
+    return JSON.parse(data);
 }
 
 export function determinePrivileges(perm, user) {
@@ -72,17 +94,18 @@ export const uploaders = new Set([
     "vjcitn"
 ]);
 
-export async function getPermissionsHandler(request, master) {
+export async function getPermissionsHandler(request, master, event) {
     let project = request.params.project;
 
-    let perms = await getPermissions(project);
+    let cache_waits = [];
+    let perms = await getPermissions(project, cache_waits);
     if (perms == null) {
         return utils.errorResponse("requested project does not exist", 404);
     }
 
     let user = null;
     try {
-        user = await findUser(request, master);
+        user = await findUser(request, master, cache_waits);
     } catch(e) {
         ;
     }
@@ -90,6 +113,7 @@ export async function getPermissionsHandler(request, master) {
         return utils.errorResponse("user does not have access to the requested project", 403);
     }
 
+    event.waitUntil(Promise.all(cache_waits));
     return utils.jsonResponse(perms, 200);
 }
 
@@ -115,14 +139,15 @@ export function checkPermissions(perm) {
 export async function setPermissionsHandler(request, master, event) {
     let project = request.params.project;
 
-    let perms = await getPermissions(project);
+    let cache_waits = [];
+    let perms = await getPermissions(project, cache_waits);
     if (perms == null) {
         return utils.errorResponse("requested project does not exist", 404);
     }
 
     let user = null;
     try {
-        user = await findUser(request, master);
+        user = await findUser(request, master, cache_waits);
     } catch(e) {
         ;
     }
@@ -144,6 +169,7 @@ export async function setPermissionsHandler(request, master, event) {
         return utils.errorResponse(e.message, 400);
     }
 
-    event.waitUntil(GYPSUM_BUCKET.put(getPermissionsPath(project), JSON.stringify(perms)));
+    cache_waits.push(GYPSUM_BUCKET.put(getPermissionsPath(project), JSON.stringify(perms)));
+    event.waitUntil(Promise.all(cache_waits));
     return new Response(null, { status: 202 });
 }

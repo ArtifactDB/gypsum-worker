@@ -45,23 +45,23 @@ function handleOptions(request) {
 
 /*** Setting up the routes ***/
 
-router.get("/files/:id/metadata", request => files.getFileMetadataHandler(request, GITHUB_PAT));
+router.get("/files/:id/metadata", (request, event) => files.getFileMetadataHandler(request, GITHUB_PAT, event));
 
-router.get("/files/:id", request => files.getFileHandler(request, bucket_name, s3, GITHUB_PAT));
+router.get("/files/:id", (request, event) => files.getFileHandler(request, bucket_name, s3, GITHUB_PAT, event));
 
-router.post("/projects/:project/version/:version/upload", request => upload.initializeUploadHandler(request, bucket_name, s3, GITHUB_PAT));
+router.post("/projects/:project/version/:version/upload", (request, event) => upload.initializeUploadHandler(request, bucket_name, s3, GITHUB_PAT, event));
 
-router.put("/projects/:project/version/:version/complete", request => upload.completeUploadHandler(request, GITHUB_PAT));
+router.put("/projects/:project/version/:version/complete", (request, event) => upload.completeUploadHandler(request, GITHUB_PAT, event));
 
 router.get("/jobs/:jobid", request => upload.queryJobIdHandler(request, GITHUB_PAT));
 
-router.get("/projects/:project/permissions", request => auth.getPermissionsHandler(request, GITHUB_PAT));
+router.get("/projects/:project/permissions", (request, event) => auth.getPermissionsHandler(request, GITHUB_PAT, event));
 
 router.post("/projects/:project/permissions", (request, event) => auth.setPermissionsHandler(request, GITHUB_PAT, event));
 
 /*** Non-standard endpoints, for testing only ***/
 
-router.get("/user", request => auth.findUserHandler(request, GITHUB_PAT));
+router.get("/user", (request, event) => auth.findUserHandler(request, GITHUB_PAT, event));
 
 /*** Setting up the listener ***/
 
