@@ -8,12 +8,40 @@ export async function findUser(request, master, afterwards) {
     }
 
     let token = auth.slice(7);
+
+    // Hashing the token with HMAC to avoid problems if the cache leaks. The
+    // identity now depends on two unknowns - the user-supplied token, and the
+    // server-side secret, which should be good enough.
+    let key;
+    {
+        let enc = new TextEncoder();
+        let ckey = await crypto.subtle.importKey("raw", enc.encode(master), { name: "HMAC", hash: "SHA-256" }, false, [ "sign" ]);
+        let secured = await crypto.subtle.sign({ name: "HMAC" }, ckey, enc.encode(token));
+        key = URL + "/" + btoa(secured); // A pretend URL for caching purposes: this should not get called.
+    }
+
+    const userCache = await caches.open("user:cache");
+    let check = await userCache.match(key);
+    if (check) {
+        let info = await check.json();
+        return info.login;
+    }
+
     let user;
     try {
-        user = await gh.identifyUser(token, master, afterwards);
+        let res = await gh.identifyUser(token, master, afterwards);
+        user = (await res.json()).login;
     } catch (e) {
         throw new Error("failed to determine user from the GitHub token: " + e.message);
     }
+
+    check = new Response(JSON.stringify({ login: user }), { 
+        headers: {
+            "Content-Type": "application/json",
+            "Expires": utils.hoursFromNow(1)
+        }
+    });
+    afterwards.push(userCache.put(key, check));
 
     return user;
 }
