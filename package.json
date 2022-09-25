@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "description": "A small ArtifactDB API on Cloudflare Workers",
-  "main": "index.js",
+  "main": "src/index.js",
   "author": "LTLA <infinite.monkeys.with.keyboards@gmail.com>",
   "license": "MIT",
   "dependencies": {

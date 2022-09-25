@@ -1,7 +1,7 @@
 import * as auth from "./auth.js";
 import * as utils from "./utils.js";
 
-export async function getVersionMetadata(project, version, nonblockers) {
+export async function getVersionMetadata(project, version, bound_bucket, nonblockers) {
     const versionCache = await caches.open("version:cache");
 
     // Key needs to be a URL.
@@ -12,7 +12,7 @@ export async function getVersionMetadata(project, version, nonblockers) {
         return await check.json();
     }
 
-    let stuff = await GYPSUM_BUCKET.get(project + "/" + version + "/..revision.json");
+    let stuff = await bound_bucket.get(project + "/" + version + "/..revision.json");
     if (stuff == null) {
         throw new utils.HttpError("failed to retrieve metadata for project '" + project + "', version '" + version + "'", 404);
     }
@@ -22,7 +22,7 @@ export async function getVersionMetadata(project, version, nonblockers) {
     return JSON.parse(data);
 }
 
-export async function getLatestVersion(project, nonblockers) {
+export async function getLatestVersion(project, bound_bucket, nonblockers) {
     const latestCache = await caches.open("latest:cache");
 
     // Key needs to be a URL.
@@ -33,7 +33,7 @@ export async function getLatestVersion(project, nonblockers) {
         return await check.json();
     }
 
-    let stuff = await GYPSUM_BUCKET.get(project + "/..latest.json");
+    let stuff = await bound_bucket.get(project + "/..latest.json");
     if (stuff == null) {
         throw new utils.HttpError("failed to retrieve latest information for project '" + project + "'", 404);
     }
@@ -59,8 +59,9 @@ function checkPermissions(perm, user, project) {
     return null;
 }
     
-export async function getFileMetadataHandler(request, master, nonblockers) {
+export async function getFileMetadataHandler(request, bound_bucket, globals, nonblockers) {
     let id = decodeURIComponent(request.params.id);
+    let master = globals.gh_master_token;
 
     let unpacked = utils.unpackId(id);
     if (!unpacked.path.endsWith(".json")) {
@@ -70,12 +71,12 @@ export async function getFileMetadataHandler(request, master, nonblockers) {
     // Loading up on the promises.
     let all_promises = [];
     all_promises.push(auth.findUser(request, master, nonblockers).catch(error => null));
-    all_promises.push(auth.getPermissions(unpacked.project, nonblockers));
-    all_promises.push(getVersionMetadata(unpacked.project, unpacked.version, nonblockers));
-    all_promises.push(getLatestVersion(unpacked.project, nonblockers));
+    all_promises.push(auth.getPermissions(unpacked.project, bound_bucket, nonblockers));
+    all_promises.push(getVersionMetadata(unpacked.project, unpacked.version, bound_bucket, nonblockers));
+    all_promises.push(getLatestVersion(unpacked.project, bound_bucket, nonblockers));
 
     let r2path = unpacked.project + "/" + unpacked.version + "/" + unpacked.path;
-    all_promises.push(GYPSUM_BUCKET.get(r2path));
+    all_promises.push(bound_bucket.get(r2path));
 
     // Resolving them all at once.
     let resolved = await Promise.all(all_promises);
@@ -106,14 +107,18 @@ export async function getFileMetadataHandler(request, master, nonblockers) {
     return utils.jsonResponse(meta, 200);
 }
 
-export async function getFileHandler(request, bucket_name, s3obj, master, nonblockers) {
+export async function getFileHandler(request, bound_bucket, globals, nonblockers) {
     let id = decodeURIComponent(request.params.id);
     let unpacked = utils.unpackId(id);
+
+    let master = globals.gh_master_token;
+    let bucket_name = globals.bucket_name;
+    let s3obj = globals.s3_binding;
 
     // Loading up on the promises.
     let all_promises = [];
     all_promises.push(auth.findUser(request, master, nonblockers).catch(error => null));
-    all_promises.push(auth.getPermissions(unpacked.project, nonblockers));
+    all_promises.push(auth.getPermissions(unpacked.project, bound_bucket, nonblockers));
 
     let expiry = request.query.expires_in;
     if (typeof expiry !== "number") {

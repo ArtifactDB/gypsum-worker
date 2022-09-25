@@ -8,7 +8,7 @@ zone_id = ""
 compatibility_date = "2022-03-04"
 
 [[r2_buckets]]
-binding = 'GYPSUM_BUCKET' # <~ valid JavaScript variable name
+binding = 'GYPSUM_BUCKET'
 bucket_name = 'gypsum-test'
 preview_bucket_name = 'gypsum-test'
 

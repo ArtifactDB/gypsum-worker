@@ -6,25 +6,28 @@ import * as expiry from "./expiry.js";
 
 /**************** Initialize uploads ***************/
 
-export async function initializeUploadHandler(request, bucket, s3obj, master, nonblockers) {
+export async function initializeUploadHandler(request, bound_bucket, globals, nonblockers) {
     let project = request.params.project;
     let version = request.params.version;
-    let cache_waits = [];
 
-    let user = await auth.findUser(request, master, cache_waits);
+    let bucket = globals.r2_bucket_name;
+    let master = globals.gh_master_token;
+    let s3obj = globals.s3_binding;
+
+    let user = await auth.findUser(request, master, nonblockers);
     if (user == null) {
         throw new utils.HttpError("no user identity supplied", 401);
     } else if (!auth.uploaders.has(user)) {
         throw new utils.HttpError("user is not registered as an uploader", 403);
     } else {
-        let perms = await auth.getPermissions(project, cache_waits);
+        let perms = await auth.getPermissions(project, bound_bucket, nonblockers);
         if (perms !== null && auth.determinePrivileges(perms, user) != "owner") {
             throw new utils.HttpError("user is not registered as an owner of the project", 403);
         }
     }
 
     let exp = expiry.expiresInMilliseconds(request);
-    await lock.lockProject(project, version, user, { expiry: exp });
+    await lock.lockProject(project, version, bound_bucket, user, { expiry: exp });
 
     let body = await request.json();
     let files = body.filenames;
@@ -56,13 +59,13 @@ export async function initializeUploadHandler(request, bucket, s3obj, master, no
 
 /**************** Complete uploads ***************/
 
-export async function completeUploadHandler(request, master, nonblockers) {
+export async function completeUploadHandler(request, bound_bucket, globals, nonblockers) {
     let project = request.params.project;
     let version = request.params.version;
-    let cache_waits = [];
 
+    let master = globals.gh_master_token;
     let user = await auth.findUser(request, master, nonblockers);
-    await lock.checkLock(project, version, user);
+    await lock.checkLock(project, version, bound_bucket, user);
 
     let body = await request.json();
     if (!("read_access" in body)) {
@@ -97,8 +100,10 @@ export async function completeUploadHandler(request, master, nonblockers) {
     return utils.jsonResponse({ job_id: payload.number }, 202);
 }
 
-export async function queryJobIdHandler(request, master) {
+export async function queryJobIdHandler(request, bound_bucket, globals, nonblockers) {
     let jid = request.params.jobid;
+    let master = globals.gh_master_token;
+
     let info = await gh.getIssue(jid, master);
     let payload = await info.json();
 

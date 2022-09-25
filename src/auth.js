@@ -33,7 +33,8 @@ export async function findUser(request, master, nonblockers) {
     return user;
 }
 
-export async function findUserHandler(request, master, nonblockers) {
+export async function findUserHandler(request, bound_bucket, globals, nonblockers) {
+    let master = globals.gh_master_token;
     let user = await findUser(request, master, nonblockers);
     if (user === null) {
         throw new utils.HttpError("no user identity supplied", 401);
@@ -45,7 +46,7 @@ function getPermissionsPath(project) {
     return project + "/..permissions.json";
 }
 
-export async function getPermissions(project, nonblockers) {
+export async function getPermissions(project, bound_bucket, nonblockers) {
     const permCache = await caches.open("permission:cache");
 
     // Key needs to be a URL.
@@ -57,7 +58,7 @@ export async function getPermissions(project, nonblockers) {
     }
 
     let path = getPermissionsPath(project);
-    let res = await GYPSUM_BUCKET.get(path);
+    let res = await bound_bucket.get(path);
     if (res == null) {
         return null;
     }
@@ -92,10 +93,11 @@ export const uploaders = new Set([
     "vjcitn"
 ]);
 
-export async function getPermissionsHandler(request, master, nonblockers) {
+export async function getPermissionsHandler(request, bound_bucket, globals, nonblockers) {
     let project = request.params.project;
+    let master = globals.gh_master_token;
 
-    let perms = await getPermissions(project, nonblockers);
+    let perms = await getPermissions(project, bound_bucket, nonblockers);
     if (perms == null) {
         throw new utils.HttpError("requested project does not exist", 404);
     }
@@ -131,15 +133,21 @@ export function checkPermissions(perm) {
     }
 }
 
-export async function setPermissionsHandler(request, master, nonblockers) {
+export async function setPermissionsHandler(request, bound_bucket, globals, nonblockers) {
     let project = request.params.project;
+    let master = globals.gh_master_token;
 
-    let perms = await getPermissions(project, nonblockers);
-    if (perms == null) {
+    // Making sure the user identifies themselves first.
+    let user = await findUser(request, master, nonblockers);
+
+    // Don't use the cache: get the file from storage again.
+    let path = getPermissionsPath(project);
+    let res = await bound_bucket.get(path);
+    if (res == null) {
         throw new utils.HttpError("requested project does not exist", 404);
     }
 
-    let user = await findUser(request, master, nonblockers);
+    let perms = await res.json();
     if (determinePrivileges(perms, user) == "owner") {
         throw new utils.HttpError("user does not own the requested project", 403);
     }
@@ -153,6 +161,6 @@ export async function setPermissionsHandler(request, master, nonblockers) {
     }
     checkPermissions(perms);
 
-    nonblockers.push(GYPSUM_BUCKET.put(getPermissionsPath(project), JSON.stringify(perms)));
+    nonblockers.push(bound_bucket.put(path, JSON.stringify(perms)));
     return new Response(null, { status: 202 });
 }
