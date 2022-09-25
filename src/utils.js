@@ -35,9 +35,9 @@ export function errorResponse(reason, code, headers={}) {
 }
 
 export function minutesFromNow(n) {
-    return (new Date(Date.now() + n * 60000)).toISOString();
+    return (new Date(Date.now() + n * 60000)).toUTCString();
 }
 
 export function hoursFromNow(n) {
-    return (new Date(Date.now() + n * 3600000)).toISOString();
+    return (new Date(Date.now() + n * 3600000)).toUTCString();
 }
