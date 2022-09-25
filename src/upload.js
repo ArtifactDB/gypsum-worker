@@ -7,7 +7,7 @@ import * as expiry from "./expiry.js";
 /**************** Initialize uploads ***************/
 
 export async function initializeUploadHandler(request, bucket, s3obj, master) {
-    let project = request.params.id;
+    let project = request.params.project;
     let version = request.params.version;
 
     let user;
@@ -72,7 +72,7 @@ export async function initializeUploadHandler(request, bucket, s3obj, master) {
 /**************** Complete uploads ***************/
 
 export async function completeUploadHandler(request, master) {
-    let project = request.params.id;
+    let project = request.params.project;
     let version = request.params.version;
 
     let user;

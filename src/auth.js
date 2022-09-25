@@ -73,7 +73,7 @@ export const uploaders = new Set([
 ]);
 
 export async function getPermissionsHandler(request, master) {
-    let project = request.params.id;
+    let project = request.params.project;
 
     let perms = await getPermissions(project);
     if (perms == null) {
@@ -113,7 +113,7 @@ export function checkPermissions(perm) {
 }
 
 export async function setPermissionsHandler(request, master, event) {
-    let project = request.params.id;
+    let project = request.params.project;
 
     let perms = await getPermissions(project);
     if (perms == null) {
