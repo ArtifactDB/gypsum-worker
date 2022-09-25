@@ -1,22 +1,29 @@
+export class HttpError extends Error {
+    constructor(message, code) {
+        super(message);
+        this.statusCode = code;
+    }
+}
+
 export function unpackId(id) {
     let i1 = id.indexOf(":");
     if (i1 < 0) {
-        throw new Error("could not identify project from 'id'");
+        throw new HttpError("could not identify project from 'id'", 400);
     } else if (i1 == 0) {
-        throw new Error("'id' should not have an empty project");
+        throw new HttpError("'id' should not have an empty project", 400);
     }
 
     let i2 = id.lastIndexOf("@");
     if (i2 < 0) {
-        throw new Error("could not identify version from 'id'");
+        throw new HttpError("could not identify version from 'id'", 400);
     } else if (i2 == id.length - 1) {
-        throw new Error("'id' should not have an empty version");
+        throw new HttpError("'id' should not have an empty version", 400);
     }
 
     if (i2 < i1) {
-        throw new Error("could not identify version from 'id'");
+        throw new HttpError("could not identify version from 'id'", 400);
     } else if (i1 +1 == i2){
-        throw new Error("'id' should not have an empty path");
+        throw new HttpError("'id' should not have an empty path", 400);
     }
 
     return {
@@ -41,3 +48,16 @@ export function minutesFromNow(n) {
 export function hoursFromNow(n) {
     return (new Date(Date.now() + n * 3600000)).toUTCString();
 }
+
+export function quickCacheJsonText(cache, key, value, expires) {
+    let headers = {
+        "Content-Type": "application/json",
+        "Expires": expires
+    };
+    return cache.put(key, new Response(value, { headers: headers }));
+}
+
+export function quickCacheJson(cache, key, value, expires) {
+    return quickCacheJsonText(cache, key, JSON.stringify(value), expires);
+}
+

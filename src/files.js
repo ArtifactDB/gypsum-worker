@@ -1,7 +1,7 @@
 import * as auth from "./auth.js";
 import * as utils from "./utils.js";
 
-export async function getVersionMetadata(project, version, afterwards) {
+export async function getVersionMetadata(project, version, nonblockers) {
     const versionCache = await caches.open("version:cache");
 
     // Key needs to be a URL.
@@ -14,22 +14,15 @@ export async function getVersionMetadata(project, version, afterwards) {
 
     let stuff = await GYPSUM_BUCKET.get(project + "/" + version + "/..revision.json");
     if (stuff == null) {
-        throw new Error("failed to retrieve metadata for project '" + project + "' (version '" + version + "')");
+        throw new utils.HttpError("failed to retrieve metadata for project '" + project + "', version '" + version + "'", 404);
     }
 
     let data = await stuff.text();
-    let info = new Response(data, { 
-        headers: { 
-            "Content-Type": "application/json",
-            "Expires": utils.hoursFromNow(2)
-        } 
-    });
-
-    afterwards.push(versionCache.put(key, info));
+    nonblockers.push(utils.quickCacheJsonText(versionCache, key, data, utils.hoursFromNow(2)));
     return JSON.parse(data);
 }
 
-export async function getLatestVersion(project, afterwards) {
+export async function getLatestVersion(project, nonblockers) {
     const latestCache = await caches.open("latest:cache");
 
     // Key needs to be a URL.
@@ -42,58 +35,44 @@ export async function getLatestVersion(project, afterwards) {
 
     let stuff = await GYPSUM_BUCKET.get(project + "/..latest.json");
     if (stuff == null) {
-        throw new Error("failed to retrieve latest information for project '" + project + "'");
+        throw new utils.HttpError("failed to retrieve latest information for project '" + project + "'", 404);
     }
 
     let data = await stuff.text();
-    let info = new Response(data, { 
-        headers: { 
-            "Content-Type": "application/json", 
-            "Expires": utils.minutesFromNow(1)
-        }
-    });
-
-    afterwards.push(latestCache.put(key, info));
+    nonblockers.push(utils.quickCacheJsonText(latestCache, key, data, utils.minutesFromNow(5)));
     return JSON.parse(data);
 }
 
 function checkPermissions(perm, user, project) {
     if (perm == null) {
-        return utils.errorResponse("failed to load permissions for project '" + project + "'", 500);
+        throw new utils.HttpError("failed to load permissions for project '" + project + "'", 500);
     }
     
     if (auth.determinePrivileges(perm, user) == "none") {
         if (user !== null) {
-            return utils.errorResponse("user does not have access to project '" + project + "'", 403);
+            throw new utils.HttpError("user does not have access to project '" + project + "'", 403);
         } else {
-            return utils.errorResponse("user credentials not supplied to access project '" + project + "'", 401);
+            throw new utils.HttpError("user credentials not supplied to access project '" + project + "'", 401);
         }
     }
 
     return null;
 }
     
-export async function getFileMetadataHandler(request, master, event) {
+export async function getFileMetadataHandler(request, master, nonblockers) {
     let id = decodeURIComponent(request.params.id);
 
-    let unpacked;
-    try {
-        unpacked = utils.unpackId(id);
-    } catch (e) {
-        return utils.errorResponse(e.message, 400);
-    }
-
+    let unpacked = utils.unpackId(id);
     if (!unpacked.path.endsWith(".json")) {
         unpacked.path += ".json";
     }
 
     // Loading up on the promises.
     let all_promises = [];
-    let cache_waits = [];
-    all_promises.push(auth.findUser(request, master).catch(error => null));
-    all_promises.push(auth.getPermissions(unpacked.project, cache_waits));
-    all_promises.push(getVersionMetadata(unpacked.project, unpacked.version, cache_waits));
-    all_promises.push(getLatestVersion(unpacked.project, cache_waits));
+    all_promises.push(auth.findUser(request, master, nonblockers).catch(error => null));
+    all_promises.push(auth.getPermissions(unpacked.project, nonblockers));
+    all_promises.push(getVersionMetadata(unpacked.project, unpacked.version, nonblockers));
+    all_promises.push(getLatestVersion(unpacked.project, nonblockers));
 
     let r2path = unpacked.project + "/" + unpacked.version + "/" + unpacked.path;
     all_promises.push(GYPSUM_BUCKET.get(r2path));
@@ -111,7 +90,7 @@ export async function getFileMetadataHandler(request, master, event) {
         return err;
     }
     if (raw_meta === null) {
-        return utils.errorResponse("key '" + id + "' does not exist", 404);
+        throw new utils.HttpError("key '" + id + "' does not exist", 404);
     }
 
     let meta = await raw_meta.json();
@@ -124,24 +103,17 @@ export async function getFileMetadataHandler(request, master, event) {
         latest: (lat_meta.version == unpacked.version)
     };
 
-    event.waitUntil(Promise.all(cache_waits));
     return utils.jsonResponse(meta, 200);
 }
 
-export async function getFileHandler(request, bucket_name, s3obj, master, event) {
+export async function getFileHandler(request, bucket_name, s3obj, master, nonblockers) {
     let id = decodeURIComponent(request.params.id);
-    let unpacked;
-    try {
-        unpacked = utils.unpackId(id);
-    } catch (e) {
-        return utils.errorResponse(e.message, 400);
-    }
+    let unpacked = utils.unpackId(id);
 
     // Loading up on the promises.
     let all_promises = [];
-    let cache_waits = [];
-    all_promises.push(auth.findUser(request, master, cache_waits).catch(error => null));
-    all_promises.push(auth.getPermissions(unpacked.project, cache_waits));
+    all_promises.push(auth.findUser(request, master, nonblockers).catch(error => null));
+    all_promises.push(auth.getPermissions(unpacked.project, nonblockers));
 
     let expiry = request.query.expires_in;
     if (typeof expiry !== "number") {
@@ -162,7 +134,6 @@ export async function getFileHandler(request, bucket_name, s3obj, master, event)
     }
 
     let target = resolved[2];
-    event.waitUntil(Promise.all(cache_waits));
     return Response.redirect(target, 302);
 }
 

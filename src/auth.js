@@ -1,7 +1,7 @@
 import * as utils from "./utils.js";
 import * as gh from "./github.js";
 
-export async function findUser(request, master, afterwards) {
+export async function findUser(request, master, nonblockers) {
     let auth = request.headers.get("Authorization");
     if (auth == null || !auth.startsWith("Bearer ")) {
         return null;
@@ -27,48 +27,25 @@ export async function findUser(request, master, afterwards) {
         return info.login;
     }
 
-    let user;
-    try {
-        let res = await gh.identifyUser(token, master, afterwards);
-        user = (await res.json()).login;
-    } catch (e) {
-        throw new Error("failed to determine user from the GitHub token: " + e.message);
-    }
-
-    check = new Response(JSON.stringify({ login: user }), { 
-        headers: {
-            "Content-Type": "application/json",
-            "Expires": utils.hoursFromNow(1)
-        }
-    });
-    afterwards.push(userCache.put(key, check));
-
+    let res = await gh.identifyUser(token);
+    let user = (await res.json()).login;
+    nonblockers.push(utils.quickCacheJson(userCache, key, { login: user }, utils.hoursFromNow(2)));
     return user;
 }
 
-export async function findUserHandler(request, master, event) {
-    let user;
-    let cache_waits = [];
-
-    try {
-        user = await findUser(request, master, cache_waits);
-    } catch (e) {
-        throw utils.errorResponse(e.message, 401);        
+export async function findUserHandler(request, master, nonblockers) {
+    let user = await findUser(request, master, nonblockers);
+    if (user === null) {
+        throw new utils.HttpError("no user identity supplied", 401);
     }
-
-    event.waitUntil(Promise.all(cache_waits));
-    if (user !== null) {
-        return new Response(user, { status: 200, "Content-Type": "text" });
-    } else {
-        return utils.errorResponse("no user identity supplied", 401);
-    }
+    return new Response(user, { status: 200, "Content-Type": "text" });
 }
 
 function getPermissionsPath(project) {
     return project + "/..permissions.json";
 }
 
-export async function getPermissions(project, afterwards) {
+export async function getPermissions(project, nonblockers) {
     const permCache = await caches.open("permission:cache");
 
     // Key needs to be a URL.
@@ -86,14 +63,7 @@ export async function getPermissions(project, afterwards) {
     }
 
     let data = await res.text();
-    let info = new Response(data, {
-        headers: {
-            "Content-Type": "application/json",
-            "Expires": utils.minutesFromNow(1)
-        }
-    });
-
-    afterwards.push(permCache.put(key, info));
+    nonblockers.push(utils.quickCacheJsonText(permCache, key, data, utils.minutesFromNow(5)));
     return JSON.parse(data);
 }
 
@@ -122,65 +92,56 @@ export const uploaders = new Set([
     "vjcitn"
 ]);
 
-export async function getPermissionsHandler(request, master, event) {
+export async function getPermissionsHandler(request, master, nonblockers) {
     let project = request.params.project;
 
-    let cache_waits = [];
-    let perms = await getPermissions(project, cache_waits);
+    let perms = await getPermissions(project, nonblockers);
     if (perms == null) {
-        return utils.errorResponse("requested project does not exist", 404);
+        throw new utils.HttpError("requested project does not exist", 404);
     }
 
     let user = null;
-    try {
-        user = await findUser(request, master, cache_waits);
-    } catch(e) {
-        ;
-    }
+    try { // just ignore invalid tokens.
+        user = await findUser(request, master, nonblockers);
+    } catch {}
+
     if (determinePrivileges(perms, user) == "none") {
-        return utils.errorResponse("user does not have access to the requested project", 403);
+        throw new utils.HttpError("user does not have access to the requested project", 403);
     }
 
-    event.waitUntil(Promise.all(cache_waits));
     return utils.jsonResponse(perms, 200);
 }
 
 export function checkPermissions(perm) {
     let allowed = ["public", "viewers", "none"];
     if (typeof perm.read_access != "string" || allowed.indexOf(perm.read_access) == -1) {
-        throw new Error("'read_access' for permissions must be one of public, viewers or none");
+        throw new utils.HttpError("'read_access' for permissions must be one of public, viewers or none", 400);
     }
 
     for (const v of perm.viewers) {
         if (typeof v != "string" || v.length == 0) {
-            throw new Error("'viewers' should be an array of non-empty strings");
+            throw new utils.HttpError("'viewers' should be an array of non-empty strings", 400);
         }
     }
 
     for (const v of perm.owners) {
         if (typeof v != "string" || v.length == 0) {
-            throw new Error("'owners' should be an array of non-empty strings");
+            throw new utils.HttpError("'owners' should be an array of non-empty strings", 400);
         }
     }
 }
 
-export async function setPermissionsHandler(request, master, event) {
+export async function setPermissionsHandler(request, master, nonblockers) {
     let project = request.params.project;
 
-    let cache_waits = [];
-    let perms = await getPermissions(project, cache_waits);
+    let perms = await getPermissions(project, nonblockers);
     if (perms == null) {
-        return utils.errorResponse("requested project does not exist", 404);
+        throw new utils.HttpError("requested project does not exist", 404);
     }
 
-    let user = null;
-    try {
-        user = await findUser(request, master, cache_waits);
-    } catch(e) {
-        ;
-    }
+    let user = await findUser(request, master, nonblockers);
     if (determinePrivileges(perms, user) == "owner") {
-        return utils.errorResponse("user does not own the requested project", 403);
+        throw new utils.HttpError("user does not own the requested project", 403);
     }
 
     // Updating everything on top of the existing permissions.
@@ -190,14 +151,8 @@ export async function setPermissionsHandler(request, master, event) {
             perms[x] = new_perms[x];
         }
     }
+    checkPermissions(perms);
 
-    try {
-        checkPermissions(perms);
-    } catch (e) {
-        return utils.errorResponse(e.message, 400);
-    }
-
-    cache_waits.push(GYPSUM_BUCKET.put(getPermissionsPath(project), JSON.stringify(perms)));
-    event.waitUntil(Promise.all(cache_waits));
+    nonblockers.push(GYPSUM_BUCKET.put(getPermissionsPath(project), JSON.stringify(perms)));
     return new Response(null, { status: 202 });
 }

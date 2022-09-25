@@ -1,3 +1,5 @@
+import * as utils from "./utils.js";
+
 export function expiresInMilliseconds(request) {
     let expiry = request.headers.get("expires_in");
     if (!expiry) {
@@ -32,5 +34,5 @@ export function expiresInMilliseconds(request) {
         }
     }
 
-    throw new Error("incorrect format for the expiry date (should be 'in <NUMBER> <UNITS>')"); 
+    throw new utils.HttpError("incorrect format for the expiry date (should be 'in <NUMBER> <UNITS>')", 400); 
 }

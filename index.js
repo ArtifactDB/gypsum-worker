@@ -45,23 +45,23 @@ function handleOptions(request) {
 
 /*** Setting up the routes ***/
 
-router.get("/files/:id/metadata", (request, event) => files.getFileMetadataHandler(request, GITHUB_PAT, event));
+router.get("/files/:id/metadata", (request, nonblockers) => files.getFileMetadataHandler(request, GITHUB_PAT, nonblockers));
 
-router.get("/files/:id", (request, event) => files.getFileHandler(request, bucket_name, s3, GITHUB_PAT, event));
+router.get("/files/:id", (request, nonblockers) => files.getFileHandler(request, bucket_name, s3, GITHUB_PAT, nonblockers));
 
-router.post("/projects/:project/version/:version/upload", (request, event) => upload.initializeUploadHandler(request, bucket_name, s3, GITHUB_PAT, event));
+router.post("/projects/:project/version/:version/upload", (request, nonblockers) => upload.initializeUploadHandler(request, bucket_name, s3, GITHUB_PAT, nonblockers));
 
-router.put("/projects/:project/version/:version/complete", (request, event) => upload.completeUploadHandler(request, GITHUB_PAT, event));
+router.put("/projects/:project/version/:version/complete", (request, nonblockers) => upload.completeUploadHandler(request, GITHUB_PAT, nonblockers));
 
 router.get("/jobs/:jobid", request => upload.queryJobIdHandler(request, GITHUB_PAT));
 
-router.get("/projects/:project/permissions", (request, event) => auth.getPermissionsHandler(request, GITHUB_PAT, event));
+router.get("/projects/:project/permissions", (request, nonblockers) => auth.getPermissionsHandler(request, GITHUB_PAT, nonblockers));
 
-router.post("/projects/:project/permissions", (request, event) => auth.setPermissionsHandler(request, GITHUB_PAT, event));
+router.post("/projects/:project/permissions", (request, nonblockers) => auth.setPermissionsHandler(request, GITHUB_PAT, nonblockers));
 
 /*** Non-standard endpoints, for testing only ***/
 
-router.get("/user", (request, event) => auth.findUserHandler(request, GITHUB_PAT, event));
+router.get("/user", (request, nonblockers) => auth.findUserHandler(request, GITHUB_PAT, nonblockers));
 
 /*** Setting up the listener ***/
 
@@ -73,9 +73,18 @@ addEventListener('fetch', event => {
         // Handle CORS preflight requests
         event.respondWith(handleOptions(request));
     } else {
+        let nonblockers = [];
         let resp = router
-            .handle(request, event)
-            .catch(error => utils.jsonResponse(error.message || 'Server Error', error.status || 500));
+            .handle(request, nonblockers)
+            .catch(error => {
+                if (error instanceof utils.HttpError) {
+                    return utils.errorResponse(error.message, error.statusCode);
+                } else {
+                    return utils.errorResponse(error.message, 500);
+                }
+            });
+
+        event.waitUntil(Promise.all(nonblockers));
         event.respondWith(resp);
     }
 })

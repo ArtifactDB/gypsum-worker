@@ -6,39 +6,25 @@ import * as expiry from "./expiry.js";
 
 /**************** Initialize uploads ***************/
 
-export async function initializeUploadHandler(request, bucket, s3obj, master, event) {
+export async function initializeUploadHandler(request, bucket, s3obj, master, nonblockers) {
     let project = request.params.project;
     let version = request.params.version;
     let cache_waits = [];
 
-    let user;
-    try {
-        user = await auth.findUser(request, master, cache_waits);
-    } catch (e) {
-        return utils.errorResponse(e.message, 401);
-    }
-
-    if (!auth.uploaders.has(user)) {
-        return utils.errorResponse("user is not registered as an uploader", 403);
+    let user = await auth.findUser(request, master, cache_waits);
+    if (user == null) {
+        throw new utils.HttpError("no user identity supplied", 401);
+    } else if (!auth.uploaders.has(user)) {
+        throw new utils.HttpError("user is not registered as an uploader", 403);
     } else {
         let perms = await auth.getPermissions(project, cache_waits);
         if (perms !== null && auth.determinePrivileges(perms, user) != "owner") {
-            return utils.errorResponse("user is not registered as an owner of the project", 403);
+            throw new utils.HttpError("user is not registered as an owner of the project", 403);
         }
     }
 
-    let exp;
-    try {
-        exp = expiry.expiresInMilliseconds(request);
-    } catch (e) {
-        return utils.errorResponse(e.message, 400);
-    }
-
-    try {
-        await lock.lockProject(project, version, user, { expiry: exp });
-    } catch (e) {
-        return utils.errorResponse(e.message, 403);
-    }
+    let exp = expiry.expiresInMilliseconds(request);
+    await lock.lockProject(project, version, user, { expiry: exp });
 
     let body = await request.json();
     let files = body.filenames;
@@ -54,7 +40,7 @@ export async function initializeUploadHandler(request, bucket, s3obj, master, ev
             precollected.push(s3obj.getSignedUrlPromise('putObject', params));
             prenames.push(f);
         } else {
-            return utils.errorResponse("non-string file uploads are not yet supported", 400);
+            throw new utils.HttpError("non-string file uploads are not yet supported", 400);
         }
     }
 
@@ -64,30 +50,19 @@ export async function initializeUploadHandler(request, bucket, s3obj, master, ev
         presigned[prenames[i]] = presigned_vec[i];
     }
 
-    event.waitUntil(Promise.all(cache_waits));
     let completer = "/projects/" + project + "/version/" + version + "/complete";
     return utils.jsonResponse({ presigned_urls: presigned, completion_url: completer }, 200);
 }
 
 /**************** Complete uploads ***************/
 
-export async function completeUploadHandler(request, master, event) {
+export async function completeUploadHandler(request, master, nonblockers) {
     let project = request.params.project;
     let version = request.params.version;
     let cache_waits = [];
 
-    let user;
-    try {
-        user = await auth.findUser(request, master, cache_waits);
-    } catch (e) {
-        return utils.errorResponse(e.message, 401);
-    }
-
-    try {
-        await lock.checkLock(project, version, user);
-    } catch (e) {
-        return utils.errorResponse(e.message, 403);
-    }
+    let user = await auth.findUser(request, master, nonblockers);
+    await lock.checkLock(project, version, user);
 
     let body = await request.json();
     if (!("read_access" in body)) {
@@ -99,50 +74,33 @@ export async function completeUploadHandler(request, master, event) {
     if (!("viewers" in body)) {
         body.viewers = [];
     }
-    try {
-        auth.checkPermissions(body);
-    } catch (e) {
-        return utils.errorResponse(e.message, 400);
-    }
+    auth.checkPermissions(body);
 
     let overwrite = request.query.overwrite_permissions === "true";
+    let info = await gh.postNewIssue(
+        "upload complete",
+        JSON.stringify({ 
+            project: project,
+            version: version,
+            timestamp: Date.now(),
+            permissions: { 
+                read_access: body.read_access, 
+                owners: body.owners,
+                viewers: body.viewers
+            },
+            overwrite_permissions: overwrite
+        }),
+        master
+    );
+    let payload = await info.json();
 
-    let payload;
-    try {
-        let info = await gh.postNewIssue(
-            "upload complete",
-            JSON.stringify({ 
-                project: project,
-                version: version,
-                timestamp: Date.now(),
-                permissions: { 
-                    read_access: body.read_access, 
-                    owners: body.owners,
-                    viewers: body.viewers
-                },
-                overwrite_permissions: overwrite
-            }),
-            master
-        );
-        payload = await info.json();
-    } catch (e) {
-        return utils.errorResponse(e.message, 500);
-    }
-
-    event.waitUntil(Promise.all(cache_waits));
     return utils.jsonResponse({ job_id: payload.number }, 202);
 }
 
 export async function queryJobIdHandler(request, master) {
     let jid = request.params.jobid;
-
-    let payload;
-    try {
-        let info = await gh.getIssue(jid, master);
-        payload = await info.json();
-    } catch (e) {
-        return utils.errorResponse(e.message, 404);
-    }
+    let info = await gh.getIssue(jid, master);
+    let payload = await info.json();
 
     let state = "PENDING";
     if (payload.state == "closed") {

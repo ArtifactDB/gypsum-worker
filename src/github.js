@@ -18,7 +18,7 @@ export async function postNewIssue(title, body, master) {
     });
 
     if (!res.ok) {
-        throw new Error("failed to post a GitHub issue");
+        throw new utils.HttpError("failed to post a GitHub issue on the CI repository", 500);
     }
 
     return res;
@@ -35,7 +35,7 @@ export async function getIssue(id, master) {
     });
 
     if (!res.ok) {
-        throw new Error("failed to query GitHub issues");
+        throw new utils.HttpError("failed to query GitHub issues on the CI repository", 500);
     }
 
     return res;
@@ -50,8 +50,9 @@ export async function identifyUser(token, secret) {
             "User-Agent": agent
         }
     });
+
     if (!res.ok) {
-        throw new Error("failed to query GitHub for user identity");
+        throw new utils.HttpError("failed to query GitHub for user identity", 401);
     }
 
     return res;
