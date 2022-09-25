@@ -2,6 +2,7 @@ import { Router } from 'itty-router'
 import S3 from 'aws-sdk/clients/s3.js';
 
 import * as gh from "./src/github.js";
+import * as files from "./src/files.js";
 import * as auth from "./src/auth.js";
 import * as upload from "./src/upload.js";
 import * as utils from "./src/utils.js";
@@ -44,52 +45,9 @@ function handleOptions(request) {
 
 /*** Setting up the routes ***/
 
-router.get("/files/:id/metadata", async ({params}) => {
-    let id = decodeURIComponent(params.id);
+router.get("/files/:id/metadata", request => files.getFileMetadataHandler(request, GITHUB_PAT));
 
-    let unpacked;
-    try {
-        unpacked = unpackId(id);
-    } catch (e) {
-        return errorResponse(e.message, 400);
-    }
-
-    if (!unpacked.path.endsWith(".json")) {
-        unpacked.path += ".json";
-    }
-
-    let r2path = project + "/" + version + "/" + path;
-    let res = await GYPSUM_BUCKET.get(r2path);
-    if (res === null) {
-        return errorResponse("key '" + id + "' does not exist", 404);
-    }
-
-    let { readable, writable } = new TransformStream();
-    res.body.pipeTo(writable);
-
-    let output = new Response(readable, res);
-    output.headers.set("Content-Type", "application/json");
-    return output;
-})
-
-router.get("/files/:id", async({params, query}) => {
-    let id = decodeURIComponent(params.id);
-    let unpacked;
-    try {
-        unpacked = unpackId(id);
-    } catch (e) {
-        return errorResponse(e.message, 400);
-    }
-
-    let expiry = query.expires_in;
-    if (typeof expiry !== "number") {
-        expiry = 120;
-    }
-
-    let key = unpacked.project + "/" + unpacked.version + "/" + unpacked.path;
-    let target = await s3.getSignedUrlPromise('getObject', { Bucket: bucket_name, Key: key, Expires: expiry })
-    return Response.redirect(target, 302);
-})
+router.get("/files/:id", request => files.getFileHandler(request, bucket_name, s3, GITHUB_PAT));
 
 router.post("/projects/:id/version/:version/upload", request => upload.initializeUploadHandler(request, bucket_name, s3, GITHUB_PAT));
 

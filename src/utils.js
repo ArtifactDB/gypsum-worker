@@ -33,3 +33,11 @@ export function jsonResponse(x, code, headers={}) {
 export function errorResponse(reason, code, headers={}) {
     return jsonResponse({ "status": "error", "reason": reason }, code, headers);
 }
+
+export function minutesFromNow(n) {
+    return (new Date(Date.now() + n * 60000)).toISOString();
+}
+
+export function hoursFromNow(n) {
+    return (new Date(Date.now() + n * 3600000)).toISOString();
+}
