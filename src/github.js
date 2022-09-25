@@ -16,7 +16,7 @@ export async function postNewIssue(title, body, master) {
     });
 
     if (!res.ok) {
-        throw new Error("failed to trigger GitHub Actions for indexing");
+        throw new Error("failed to post a GitHub issue");
     }
 
     return res;
@@ -33,7 +33,7 @@ export async function getIssue(id, master) {
     });
 
     if (!res.ok) {
-        throw new Error("failed to query GitHub for indexing status");
+        throw new Error("failed to query GitHub issues");
     }
 
     return res;

@@ -7,6 +7,9 @@ This currently supports only the most basic of endpoints:
 
 - `/files/{id}` to retrieve presigned URLs to the file artifact `id`.
 - `/files/{id}/metadata` to retrieve the metadata of `id` as a JSON.
+- `/projects/{id}/version/{version}/upload` to initialize an upload.
+- `/projects/{id}/version/{version}/complete` to complete an upload.
+- `/jobs/{jobid}` to check the status of a job.
 
 ## Deployment
 
