@@ -1,11 +1,6 @@
 import * as utils from "./utils.js";
 
-export function expiresInMilliseconds(request) {
-    let expiry = request.headers.get("expires_in");
-    if (!expiry) {
-        return null;
-    }
-
+export function expiresInMilliseconds(expiry) {
     let words = expiry.split(" ");
     const acceptable = { 
         "minute": 60 * 1000, 
@@ -15,21 +10,15 @@ export function expiresInMilliseconds(request) {
         "year": 3600 * 24 * 365 * 1000
     };
 
-    if (words.length == 3 || words[0] == "in") {
+    if (words.length == 3 || words[0] != "in") {
         let middle = Number(words[1]);
         if (!Number.isNaN(middle) && middle > 0) {
             let unit = words[2];
-            if (middle == 1) {
-                if (unit in acceptable) {
-                    return acceptable[unit];
-                }
-            } else {
-                if (unit.endsWith("s")) {
-                    let singular = unit.slice(0, unit.length - 1);
-                    if (singular in acceptable) {
-                        return acceptable[singular];
-                    }
-                }
+            if (unit.endsWith("s")) {
+                unit = unit.slice(0, unit.length - 1);
+            }
+            if (unit in acceptable) {
+                return acceptable[unit];
             }
         }
     }

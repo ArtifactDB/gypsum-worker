@@ -14,7 +14,7 @@ export async function postNewIssue(title, body, master) {
             "Authorization": "Bearer " + master,
             "User-Agent": agent
         },
-        "body": JSON.stringify({ title: "upload complete", "body": body })
+        "body": JSON.stringify({ title: title, "body": body })
     });
 
     if (!res.ok) {

@@ -26,9 +26,7 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
         }
     }
 
-    let exp = expiry.expiresInMilliseconds(request);
-    await lock.lockProject(project, version, bound_bucket, user, { expiry: exp });
-
+    await lock.lockProject(project, version, bound_bucket, user);
     let body = await request.json();
     let files = body.filenames;
 
@@ -107,11 +105,29 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
         linked[k] = "/link/" + encodeURIComponent(project + ":" + k + "@" + version) + "/" + encodeURIComponent(v);
     }
 
+    // Saving expiry information. We used to store this in the lock file, but
+    // that gets deleted on completion, and we want to make sure that indexing
+    // is idempotent; so we make sure it survives until expiration.
+    if ("expires_in" in body) {
+        let exp = expiry.expiresInMilliseconds(body.expires_in);
+        nonblockers.push(utils.quickUploadJson(bound_bucket, project + "/" + version + "/..expiry.json", { "expires_in": exp }));
+    }
+
     let presigned_vec = await Promise.all(precollected);
     let presigned = {};
     for (var i = 0; i < presigned_vec.length; i++) {
         presigned[prenames[i]] = presigned_vec[i];
     }
+
+    nonblockers.push(gh.postNewIssue("purge project",
+        JSON.stringify({ 
+            project: project,
+            version: version,
+            mode: "incomplete",
+            delete_after: Date.now() + 2 * 3600 * 1000 
+        }),
+        master
+    ));
 
     let completer = "/projects/" + project + "/version/" + version + "/complete";
     return utils.jsonResponse({ presigned_urls: presigned, links: linked, completion_url: completer }, 200);
