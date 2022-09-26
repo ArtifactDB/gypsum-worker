@@ -54,6 +54,8 @@ router.get("/files/:id", (request, bucket, nonblockers) => files.getFileHandler(
 
 router.post("/projects/:project/version/:version/upload", (request, bucket, nonblockers) => upload.initializeUploadHandler(request, bucket, globals, nonblockers));
 
+router.put("/link/:from/:to", (request, bucket, nonblockers) => upload.createLinkHandler(request, bucket, globals, nonblockers));
+
 router.put("/projects/:project/version/:version/complete", (request, bucket, nonblockers) => upload.completeUploadHandler(request, bucket, globals, nonblockers));
 
 router.get("/jobs/:jobid", (request, bucket, nonblockers) => upload.queryJobIdHandler(request, bucket, globals, nonblockers));

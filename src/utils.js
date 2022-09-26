@@ -61,3 +61,14 @@ export function quickCacheJson(cache, key, value, expires) {
     return quickCacheJsonText(cache, key, JSON.stringify(value), expires);
 }
 
+export function quickUploadJson(bound_bucket, path, value, custom = null) {
+    let meta = {
+        httpMetadata: { contentType: "application/json" }
+    };
+
+    if (custom !== null) {
+        meta.customMetadata = custom;
+    }
+
+    return bound_bucket.put(path, JSON.stringify(value), meta);
+}
