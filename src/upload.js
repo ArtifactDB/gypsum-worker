@@ -34,17 +34,77 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
 
     let precollected = [];
     let prenames = []
+    function add_presigned_url(f) {
+        let params = { Bucket: bucket, Key: project + "/" + version + "/" + f, Expires: 3600 };
+        if (f.endsWith(".json")) {
+            params.ContentType = "application/json";
+        }
+        precollected.push(s3obj.getSignedUrlPromise('putObject', params));
+        prenames.push(f);
+    }
+
+    let md5able = [];
+    let linked = {};
     for (const f of files) {
         if (typeof f == "string") {
-            let params = { Bucket: bucket, Key: project + "/" + version + "/" + f, Expires: 3600 };
-            if (f.endsWith(".json")) {
-                params.ContentType = "application/json";
+            add_presigned_url(f);
+        } else if (typeof f == "object") {
+            if (f.check === "md5") {
+                md5able.push(f);
+            } else if (f.check == "link") {
+                let upack = utils.unpackId(f.value.artifactdb_id);
+                if (upack.version == "latest") {
+                    throw new utils.HttpError("cannot link to a 'latest' alias in 'filenames'", 400);
+                }
+                linked[f.filename] = f.value.artifactdb_id;
+            } else {
+                throw new utils.HttpError("invalid entry in the request 'filenames'", 400);
             }
-            precollected.push(s3obj.getSignedUrlPromise('putObject', params));
-            prenames.push(f);
         } else {
-            throw new utils.HttpError("non-string file uploads are not yet supported", 400);
+            throw new utils.HttpError("invalid entry in the request 'filenames'", 400);
         }
+    }
+
+    // Resolving the MD5sums against the current latest version. Note that we
+    // fetch the 'latest' from the bucket rather than relying on the cache, 
+    // as we would otherwise do in the /files endpoint.
+    if (md5able.length) {
+        let lres = await bound_bucket.get(project + "/..latest.json");
+        if (lres == null) {
+            for (const f of md5able) {
+                add_presigned_url(f.filename);
+            }
+        } else {
+            let lmeta = await lres.json();
+            let last = lmeta.version;
+
+            async function check_md5(filename, field, md5sum) {
+                let res = await bound_bucket.get(project + "/" + last + "/" + filename + ".json");
+                if (res !== null) {
+                    let meta = await res.json();
+                    if (meta[field] == md5sum) {
+                        linked[filename] = project + ":" + filename + "@" + last;
+                        return;
+                    }
+                } 
+                add_presigned_url(filename);
+            }
+
+            let promises = [];
+            for (const f of md5able) {
+                promises.push(check_md5(f.filename, f.value.field, f.value.md5sum));
+            }
+            await Promise.all(promises);
+        }
+    }
+
+    // If there are any links, save them for later use.
+    if (Object.keys(linked).length) {
+        nonblockers.push(utils.quickUploadJson(bound_bucket, project + "/" + version + "/..links.json", linked));
+    }
+
+    for (const [k, v] of Object.entries(linked)) {
+        linked[k] = "/link/" + encodeURIComponent(project + ":" + k + "@" + version) + "/" + encodeURIComponent(v);
     }
 
     let presigned_vec = await Promise.all(precollected);
@@ -54,7 +114,27 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
     }
 
     let completer = "/projects/" + project + "/version/" + version + "/complete";
-    return utils.jsonResponse({ presigned_urls: presigned, completion_url: completer }, 200);
+    return utils.jsonResponse({ presigned_urls: presigned, links: linked, completion_url: completer }, 200);
+}
+
+/**************** Create links ***************/
+
+export async function createLinkHandler(request, bound_bucket, globals, nonblockers) {
+    let from = decodeURIComponent(request.params.from);
+    let unpacked = utils.unpackId(from);
+    let to = decodeURIComponent(request.params.to);
+
+    let master = globals.gh_master_token;
+    let user = await auth.findUser(request, master, nonblockers);
+    await lock.checkLock(unpacked.project, unpacked.version, bound_bucket, user);
+
+    let path = unpacked.project + "/" + unpacked.version + "/" + unpacked.path;
+    let details = { "artifactdb_id": to };
+
+    // Store the details both inside the file and as the metadata.
+    nonblockers.push(utils.quickUploadJson(bound_bucket, path, details, details));
+
+    return new Response(null, { status: 202 });
 }
 
 /**************** Complete uploads ***************/
