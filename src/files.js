@@ -64,7 +64,9 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
     let master = globals.gh_master_token;
 
     let unpacked = utils.unpackId(id);
-    if (!unpacked.path.endsWith(".json")) {
+    let original = unpacked.path;
+    let pure_meta = unpacked.path.endsWith(".json")
+    if (!pure_meta) {
         unpacked.path += ".json";
     }
 
@@ -78,6 +80,13 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
     let r2path = unpacked.project + "/" + unpacked.version + "/" + unpacked.path;
     all_promises.push(bound_bucket.get(r2path));
 
+    if (!pure_meta) {
+        let ogpath = unpacked.project + "/" + unpacked.version + "/" + original;
+        all_promises.push(bound_bucket.head(ogpath));
+    } else {
+        all_promises.push(null); // placeholder to avoid loss of an index.
+    }
+
     // Resolving them all at once.
     let resolved = await Promise.all(all_promises);
     let user = resolved[0];
@@ -85,6 +94,7 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
     let ver_meta = resolved[2];
     let lat_meta = resolved[3];
     let raw_meta = resolved[4];
+    let file_meta = resolved[5];
 
     let err = checkPermissions(perm, user, unpacked.project);
     if (err !== null) {
@@ -104,6 +114,15 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
         latest: (lat_meta.version == unpacked.version)
     };
 
+    if (!pure_meta) {
+        if (file_meta == null) {
+            throw new utils.HttpError("failed to retrieve header for '" + id + "'", 500);
+        }
+        if ("artifactdb_id" in file_meta.customMetadata) {
+            meta["_extra"].link = { "artifactdb_id": file_meta.customMetadata.artifactdb_id };
+        }
+    }
+
     return utils.jsonResponse(meta, 200);
 }
 
@@ -115,30 +134,57 @@ export async function getFileHandler(request, bound_bucket, globals, nonblockers
     let bucket_name = globals.r2_bucket_name;
     let s3obj = globals.s3_binding;
 
-    // Loading up on the promises.
-    let all_promises = [];
-    all_promises.push(auth.findUser(request, master, nonblockers).catch(error => null));
-    all_promises.push(auth.getPermissions(unpacked.project, bound_bucket, nonblockers));
+    let previous = new Set();
+    let allowed = new Set();
 
+    while (1) {
+        let res = bound_bucket.head(unpacked.project + "/" + unpacked.version + "/" + unpacked.path);
+        let header;
+
+        // Checking a more local cache to avoid paying the cost of hitting Cloudflare's cache.
+        if (!allowed.has(unpacked.project)) {
+            let all_promises = [];
+            all_promises.push(auth.findUser(request, master, nonblockers).catch(error => null));
+            all_promises.push(auth.getPermissions(unpacked.project, bound_bucket, nonblockers));
+            all_promises.push(res);
+
+            let resolved = await Promise.all(all_promises);
+
+            let user = resolved[0];
+            let perm = resolved[1];
+            checkPermissions(perm, user, unpacked.project);
+            allowed.add(unpacked.project);
+
+            header = resolved[2];
+        } else {
+            header = await res;
+        }
+
+        if (header == null) {
+            throw new utils.HttpError("failed to retrieve header for '" + id + "'", 500);
+        }
+
+        // Following the next link until we get to a non-linked resource.
+        if ("artifactdb_id" in header.customMetadata) {
+            let next = header.customMetadata.artifactdb_id;
+            if (previous.has(next)) {
+                throw new utils.HttpError("detected circular links from '" + id + "' to '" + next + "'", 500);
+            }
+            id = next;
+            unpacked = utils.unpackId(id);
+            previous.add(id);
+        } else {
+            break;
+        }
+    }
+
+    // Finally, creating the presigned URL.
     let expiry = request.query.expires_in;
     if (typeof expiry !== "number") {
         expiry = 120;
     }
 
     let key = unpacked.project + "/" + unpacked.version + "/" + unpacked.path;
-    all_promises.push(s3obj.getSignedUrlPromise('getObject', { Bucket: bucket_name, Key: key, Expires: expiry }));
-
-    // Resolving them all at once.
-    let resolved = await Promise.all(all_promises);
-    let user = resolved[0];
-    let perm = resolved[1];
-
-    let err = checkPermissions(perm, user, unpacked.project);
-    if (err !== null) {
-        return err;
-    }
-
-    let target = resolved[2];
+    let target = await s3obj.getSignedUrlPromise('getObject', { Bucket: bucket_name, Key: key, Expires: expiry });
     return Response.redirect(target, 302);
 }
-
