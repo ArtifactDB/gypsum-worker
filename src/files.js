@@ -112,7 +112,7 @@ export async function getFileHandler(request, bound_bucket, globals, nonblockers
     let unpacked = utils.unpackId(id);
 
     let master = globals.gh_master_token;
-    let bucket_name = globals.bucket_name;
+    let bucket_name = globals.r2_bucket_name;
     let s3obj = globals.s3_binding;
 
     // Loading up on the promises.
