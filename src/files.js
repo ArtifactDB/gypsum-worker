@@ -43,22 +43,6 @@ export async function getLatestVersion(project, bound_bucket, nonblockers) {
     return JSON.parse(data);
 }
 
-export function checkPermissions(perm, user, project) {
-    if (perm == null) {
-        throw new utils.HttpError("failed to load permissions for project '" + project + "'", 500);
-    }
-    
-    if (auth.determinePrivileges(perm, user) == "none") {
-        if (user !== null) {
-            throw new utils.HttpError("user does not have access to project '" + project + "'", 403);
-        } else {
-            throw new utils.HttpError("user credentials not supplied to access project '" + project + "'", 401);
-        }
-    }
-
-    return null;
-}
-
 export function createExtraMetadata(id, unpacked, file_meta, version_meta, permissions) {
     return {
         "$schema": file_meta["$schema"],
@@ -104,10 +88,7 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
     let user = resolved.user;
     let perm = resolved.permissions;
 
-    let err = checkPermissions(perm, user, unpacked.project);
-    if (err !== null) {
-        return err;
-    }
+    auth.checkReadPermissions(perm, user, unpacked.project);
 
     let file_res = resolved.file_metadata;
     if (file_res === null) {
@@ -154,7 +135,7 @@ export async function getFileHandler(request, bound_bucket, globals, nonblockers
                 header: res
             });
 
-            checkPermissions(resolved.permissions, resolved.user, unpacked.project);
+            auth.checkReadPermissions(resolved.permissions, resolved.user, unpacked.project);
             allowed.add(unpacked.project);
             header = resolved.header;
             console.log(header);

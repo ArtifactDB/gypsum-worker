@@ -174,7 +174,7 @@ export async function completeUploadHandler(request, bound_bucket, globals, nonb
     if (!("viewers" in body)) {
         body.viewers = [];
     }
-    auth.checkPermissions(body);
+    auth.validateNewPermissions(body);
 
     let overwrite = request.query.overwrite_permissions === "true";
     let info = await gh.postNewIssue(

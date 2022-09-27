@@ -114,7 +114,25 @@ export async function getPermissionsHandler(request, bound_bucket, globals, nonb
     return utils.jsonResponse(perms, 200);
 }
 
-export function checkPermissions(perm) {
+
+export function checkReadPermissions(perm, user, project) {
+    if (perm == null) {
+        throw new utils.HttpError("failed to load permissions for project '" + project + "'", 500);
+    }
+
+    let level = determinePrivileges(perm, user);
+    if (level == "none") {
+        if (user !== null) {
+            throw new utils.HttpError("user does not have read access to project '" + project + "'", 403);
+        } else {
+            throw new utils.HttpError("user credentials not supplied to access project '" + project + "'", 401);
+        }
+    }
+
+    return null;
+}
+
+export function validateNewPermissions(perm) {
     let allowed = ["public", "viewers", "none"];
     if (typeof perm.read_access != "string" || allowed.indexOf(perm.read_access) == -1) {
         throw new utils.HttpError("'read_access' for permissions must be one of public, viewers or none", 400);
@@ -159,7 +177,7 @@ export async function setPermissionsHandler(request, bound_bucket, globals, nonb
             perms[x] = new_perms[x];
         }
     }
-    checkPermissions(perms);
+    validateNewPermissions(perms);
 
     nonblockers.push(bound_bucket.put(path, JSON.stringify(perms)));
     return new Response(null, { status: 202 });
