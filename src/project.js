@@ -110,7 +110,6 @@ export async function listAvailableVersions(project, bound_bucket) {
 
 export async function getProjectMetadataHandler(request, bound_bucket, globals, nonblockers) {
     let project = request.params.project;
-    let version = request.params.version;
     let master = globals.gh_master_token;
 
     let all_promises = [];
@@ -125,16 +124,14 @@ export async function getProjectMetadataHandler(request, bound_bucket, globals, 
 
     files.checkPermissions(perm, user, project);
 
-    let collected = [];
-    for (const v of versions) {
-        collected.push(
-            retrieve_project_version_metadata(project, v, bound_bucket, perm, nonblockers)
-                .catch(e => {
-                    console.warn("failed to retrieve metadata for project '" + project + "' (version '" + version + "'): " + e.message); // don't fail completely if version is bad.
-                    return [];
-                })
-        );
-    }
+    let collected = versions.map(async version => {
+        try {
+            return await retrieve_project_version_metadata(project, version, bound_bucket, perm, nonblockers);
+        } catch (e) {
+            console.warn("failed to retrieve metadata for project '" + project + "' (version '" + v + "'): " + e.message); // don't fail completely if version is bad.
+            return [];
+        }
+    });
 
     let finalized = await Promise.all(collected);
     let output = [];
@@ -153,7 +150,6 @@ export async function getProjectMetadataHandler(request, bound_bucket, globals, 
 
 export async function listProjectVersionsHandler(request, bound_bucket, globals, nonblockers) {
     let project = request.params.project;
-    let version = request.params.version;
     let master = globals.gh_master_token;
 
     let all_promises = [];
@@ -178,24 +174,6 @@ export async function listProjectVersionsHandler(request, bound_bucket, globals,
     }, 200);
 }
 
-async function retrieve_project_metadata(project, bound_bucket, user, nonblockers) {
-    try {
-        let perm = await auth.getPermissions(project, bound_bucket, nonblockers);
-        auth.checkPermissions(perm, user, nonblockers);
-    } catch (e) {
-        if (e.statusCode < 400 && e.statusCode >= 500) {
-            console.warn("failed to retrieve permissions for project '" + project + "': " + e.message); // don't fail completely if project is bad.
-        }
-        return null;
-    }
-
-    let all_versions = await listAvailableVersions(project, bound_bucket);
-    return { 
-        project_id: project,
-        aggs: all_versions.map(x => { return { "_extra.version": x } })
-    };
-}
-
 export async function listProjectsHandler(request, bound_bucket, globals, nonblockers) {
     let master = globals.gh_master_token;
     let user = await auth.findUser(request, master, nonblockers).catch(error => null);
@@ -216,7 +194,24 @@ export async function listProjectsHandler(request, bound_bucket, globals, nonblo
         }
     }
 
-    let project_promises = collected.map(x => retrieve_project_metadata(x, bound_bucket, user, nonblockers));
+    let project_promises = collected.map(async project => {
+        try {
+            let perm = await auth.getPermissions(project, bound_bucket, nonblockers);
+            auth.checkPermissions(perm, user, nonblockers);
+        } catch (e) {
+            if (e.statusCode < 400 && e.statusCode >= 500) {
+                console.warn("failed to retrieve permissions for project '" + project + "': " + e.message); // don't fail completely if project is bad.
+            }
+            return null;
+        }
+
+        let all_versions = await listAvailableVersions(project, bound_bucket);
+        return { 
+            project_id: project,
+            aggs: all_versions.map(x => { return { "_extra.version": x } })
+        };
+    });
+
     let resolved = await Promise.all(project_promises);
     let keep = [];
     for (const r of resolved) {
@@ -230,6 +225,7 @@ export async function listProjectsHandler(request, bound_bucket, globals, nonblo
         count: keep.length
     };
 
+    // Passing on the cursor for the next round.
     let headers = {};
     if (entries.truncated) {
         let scroll = "/projects?more=" + entries.cursor;
@@ -238,4 +234,27 @@ export async function listProjectsHandler(request, bound_bucket, globals, nonblo
     }
 
     return utils.jsonResponse(output, 200, headers);
+}
+
+export async function getProjectVersionInfoHandler(request, bound_bucket, globals, nonblockers) {
+    let project = request.params.project;
+    let version = request.params.version;
+    let master = globals.gh_master_token;
+
+    let all_promises = [];
+    all_promises.push(auth.findUser(request, master, nonblockers).catch(error => null));
+    all_promises.push(auth.getPermissions(project, bound_bucket, nonblockers));
+    all_promises.push(lock.isLocked(project, version, bound_bucket))
+
+    let resolved = await Promise.all(all_promises);
+    let user = resolved[0];
+    let perm = resolved[1];
+    let locked = resolved[2];
+
+    auth.checkPermissions(perm, user, nonblockers);
+    if (locked) {
+        throw new utils.HttpError("project '" + project + "' (version '" + version + "') is still locked", 400);
+    }
+
+    return utils.jsonResponse({ status: "ok", permissions: perm }, 200);
 }

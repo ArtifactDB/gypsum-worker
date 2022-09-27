@@ -67,6 +67,8 @@ router.get("/projects/:project/metadata", (request, bucket, nonblockers) => proj
 
 router.get("/projects/:project/version/:version/metadata", (request, bucket, nonblockers) => project.getProjectVersionMetadataHandler(request, bucket, globals, nonblockers));
 
+router.get("/projects/:project/version/:version/info", (request, bucket, nonblockers) => project.getProjectVersionInfoHandler(request, bucket, globals, nonblockers));
+
 router.get("/projects/:project/versions", (request, bucket, nonblockers) => project.listProjectVersionsHandler(request, bucket, globals, nonblockers));
 
 router.get("/projects/:project/permissions", (request, bucket, nonblockers) => auth.getPermissionsHandler(request, bucket, globals, nonblockers));
