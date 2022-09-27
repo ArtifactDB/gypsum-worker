@@ -3,6 +3,7 @@ import S3 from 'aws-sdk/clients/s3.js';
 
 import * as gh from "./github.js";
 import * as files from "./files.js";
+import * as project from "./project.js";
 import * as auth from "./auth.js";
 import * as upload from "./upload.js";
 import * as utils from "./utils.js";
@@ -59,6 +60,10 @@ router.put("/link/:from/:to", (request, bucket, nonblockers) => upload.createLin
 router.put("/projects/:project/version/:version/complete", (request, bucket, nonblockers) => upload.completeUploadHandler(request, bucket, globals, nonblockers));
 
 router.get("/jobs/:jobid", (request, bucket, nonblockers) => upload.queryJobIdHandler(request, bucket, globals, nonblockers));
+
+router.get("/projects/:project/metadata", (request, bucket, nonblockers) => project.getProjectMetadataHandler(request, bucket, globals, nonblockers));
+
+router.get("/projects/:project/version/:version/metadata", (request, bucket, nonblockers) => project.getProjectVersionMetadataHandler(request, bucket, globals, nonblockers));
 
 router.get("/projects/:project/permissions", (request, bucket, nonblockers) => auth.getPermissionsHandler(request, bucket, globals, nonblockers));
 
