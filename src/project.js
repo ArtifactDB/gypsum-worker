@@ -1,6 +1,7 @@
 import * as files from "./files.js";
 import * as auth from "./auth.js";
 import * as utils from "./utils.js";
+import * as lock from "./lock.js";
 
 async function getAggregatedMetadata(project, version, bound_bucket) {
     let aggr = await bound_bucket.get(project + "/" + version + "/..aggregated.json");
@@ -19,7 +20,17 @@ async function getLinks(project, version, bound_bucket) {
     }
 }
 
-function augment_file_metadata(project, version, aggr_meta, ver_meta, perm, link_meta) {
+async function retrieve_project_version_metadata(project, version, bound_bucket, perm, nonblockers) {
+    let resolved = await Promise.all([
+        getAggregatedMetadata(project, version, bound_bucket),
+        files.getVersionMetadata(project, version, bound_bucket, nonblockers),
+        getLinks(project, version, bound_bucket)
+    ]);
+
+    let aggr_meta = resolved[0];
+    let ver_meta = resolved[1];
+    let link_meta = resolved[2];
+
     for (const m of aggr_meta) {
         let id = project + ":" + m.path + "@" + version;
         let components = { project: project, path: m.path, version: version };
@@ -33,6 +44,8 @@ function augment_file_metadata(project, version, aggr_meta, ver_meta, perm, link
             }
         }
     }
+
+    return aggr_meta;
 }
 
 export async function getProjectVersionMetadataHandler(request, bound_bucket, globals, nonblockers) {
@@ -43,27 +56,19 @@ export async function getProjectVersionMetadataHandler(request, bound_bucket, gl
     let all_promises = [];
     all_promises.push(auth.findUser(request, master, nonblockers).catch(error => null));
     all_promises.push(auth.getPermissions(project, bound_bucket, nonblockers));
-    all_promises.push(files.getVersionMetadata(project, version, bound_bucket, nonblockers));
-    all_promises.push(getAggregatedMetadata(project, version, bound_bucket));
-    all_promises.push(getLinks(project, version, bound_bucket));
 
     // Resolving them all at once.
     let resolved = await Promise.all(all_promises);
     let user = resolved[0];
     let perm = resolved[1];
-    let ver_meta = resolved[2];
-    let aggr_meta = resolved[3];
-    let link_meta = resolved[4];
 
-    let err = files.checkPermissions(perm, user, project);
-    if (err !== null) {
-        return err;
-    }
+    files.checkPermissions(perm, user, project);
+
+    let aggr_meta = await retrieve_project_version_metadata(project, version, bound_bucket, perm, nonblockers);
     if (aggr_meta == null) {
         throw new utils.HttpError("cannot fetch metadata for locked project '" + project + "' (version '" + version + "')", 400);
     }
 
-    augment_file_metadata(project, version, aggr_meta, ver_meta, perm, link_meta);
     return utils.jsonResponse({
         results: aggr_meta,
         count: aggr_meta.length,
@@ -91,7 +96,16 @@ export async function listAvailableVersions(project, bound_bucket) {
         }
     }
 
-    return collected;
+    let lock_promises = collected.map(x => lock.isLocked(project, x, bound_bucket));
+    let is_locked = await Promise.all(lock_promises);
+    let output = [];
+    for (var i = 0; i < is_locked.length; i++) {
+        if (!is_locked[i]) {
+            output.push(collected[i]);
+        }
+    }
+
+    return output;
 }
 
 export async function getProjectMetadataHandler(request, bound_bucket, globals, nonblockers) {
@@ -109,28 +123,11 @@ export async function getProjectMetadataHandler(request, bound_bucket, globals, 
     let perm = resolved[1];
     let versions = resolved[2];
 
-    let err = files.checkPermissions(perm, user, project);
-    if (err !== null) {
-        return err;
-    }
+    files.checkPermissions(perm, user, project);
 
     let collected = [];
     for (const v of versions) {
-        let p1 = await getAggregatedMetadata(project, v, bound_bucket);
-        let p2 = await files.getVersionMetadata(project, v, bound_bucket);
-        let p3 = await getLinks(project, v, bound_bucket);
-
-        collected.push(
-            Promise.all([p1, p2, p3, v])
-                .then(x => {
-                    if (x[0] !== null) {
-                        augment_file_metadata(project, x[3], x[0], x[1], x[2]);
-                        return x[0];
-                    } else {
-                        return [];
-                    }
-                })
-        );
+        collected.push(retrieve_project_version_metadata(project, v, bound_bucket, perm, nonblockers));
     }
 
     let finalized = await Promise.all(collected);
@@ -145,5 +142,32 @@ export async function getProjectMetadataHandler(request, bound_bucket, globals, 
         results: output,
         count: output.length,
         total: output.length
+    }, 200);
+}
+
+export async function listProjectVersionsHandler(request, bound_bucket, globals, nonblockers) {
+    let project = request.params.project;
+    let version = request.params.version;
+    let master = globals.gh_master_token;
+
+    let all_promises = [];
+    all_promises.push(auth.findUser(request, master, nonblockers).catch(error => null));
+    all_promises.push(auth.getPermissions(project, bound_bucket, nonblockers));
+    all_promises.push(listAvailableVersions(project, bound_bucket));
+    all_promises.push(files.getLatestVersion(project, bound_bucket, nonblockers));
+
+    let resolved = await Promise.all(all_promises);
+    let user = resolved[0];
+    let perm = resolved[1];
+    let versions = resolved[2];
+    let latest = resolved[3];
+
+    files.checkPermissions(perm, user, project);
+
+    return utils.jsonResponse({
+        project_id: project,
+        aggs: versions.map(x => { return { "_extra.version": x } }),
+        total: versions.length,
+        latest: { "_extra.version": latest.version }
     }, 200);
 }
