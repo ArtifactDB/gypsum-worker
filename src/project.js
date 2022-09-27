@@ -53,7 +53,7 @@ export async function getProjectVersionMetadataHandler(request, bound_bucket, gl
     let master = globals.gh_master_token;
 
     let resolved = await utils.namedResolve({
-        user: auth.findUser(request, master, nonblockers).catch(error => null),
+        user: auth.findUserNoThrow(request, master, nonblockers),
         permissions: auth.getPermissions(project, bound_bucket, nonblockers)
     });
 
@@ -109,7 +109,7 @@ export async function getProjectMetadataHandler(request, bound_bucket, globals, 
     let master = globals.gh_master_token;
 
     let resolved = await utils.namedResolve({
-        user: auth.findUser(request, master, nonblockers).catch(error => null),
+        user: auth.findUserNoThrow(request, master, nonblockers),
         permissions: auth.getPermissions(project, bound_bucket, nonblockers),
         versions: listAvailableVersions(project, bound_bucket)
     });
@@ -146,7 +146,7 @@ export async function listProjectVersionsHandler(request, bound_bucket, globals,
     let master = globals.gh_master_token;
 
     let resolved = await utils.namedResolve({
-        user: auth.findUser(request, master, nonblockers).catch(error => null),
+        user: auth.findUserNoThrow(request, master, nonblockers),
         permissions: auth.getPermissions(project, bound_bucket, nonblockers),
         versions: listAvailableVersions(project, bound_bucket),
         latest: files.getLatestVersion(project, bound_bucket, nonblockers)
@@ -166,7 +166,7 @@ export async function listProjectVersionsHandler(request, bound_bucket, globals,
 
 export async function listProjectsHandler(request, bound_bucket, globals, nonblockers) {
     let master = globals.gh_master_token;
-    let user = await auth.findUser(request, master, nonblockers).catch(error => null);
+    let user = await auth.findUserNoThrow(request, master, nonblockers);
 
     // Looping across all projects.
     let params = { delimiter: "/", limit: 50 };
@@ -232,7 +232,7 @@ export async function getProjectVersionInfoHandler(request, bound_bucket, global
     let master = globals.gh_master_token;
 
     let resolved = await utils.namedResolve({
-        user: auth.findUser(request, master, nonblockers).catch(error => null),
+        user: auth.findUserNoThrow(request, master, nonblockers),
         permissions: auth.getPermissions(project, bound_bucket, nonblockers),
         locked: lock.isLocked(project, version, bound_bucket)
     });

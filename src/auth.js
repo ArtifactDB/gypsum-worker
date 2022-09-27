@@ -33,6 +33,15 @@ export async function findUser(request, master, nonblockers) {
     return user;
 }
 
+export async function findUserNoThrow(request, master, nonblockers) {
+    try {
+        return findUser(request, master, nonblockers);
+    } catch (e) {
+        console.warn(e.message);
+        return null;
+    }
+}
+
 export async function findUserHandler(request, bound_bucket, globals, nonblockers) {
     let master = globals.gh_master_token;
     let user = await findUser(request, master, nonblockers);
@@ -102,11 +111,7 @@ export async function getPermissionsHandler(request, bound_bucket, globals, nonb
         throw new utils.HttpError("requested project does not exist", 404);
     }
 
-    let user = null;
-    try { // just ignore invalid tokens.
-        user = await findUser(request, master, nonblockers);
-    } catch {}
-
+    let user = await findUserNoThrow(request, master, nonblockers);
     if (determinePrivileges(perms, user) == "none") {
         throw new utils.HttpError("user does not have access to the requested project", 403);
     }

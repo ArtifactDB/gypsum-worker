@@ -70,7 +70,7 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
 
     // Loading up on the promises.
     let all_promises = {
-        user: auth.findUser(request, master, nonblockers).catch(error => null),
+        user: auth.findUserNoThrow(request, master, nonblockers),
         permissions: auth.getPermissions(unpacked.project, bound_bucket, nonblockers),
         version_metadata: getVersionMetadata(unpacked.project, unpacked.version, bound_bucket, nonblockers)
     };
@@ -130,7 +130,7 @@ export async function getFileHandler(request, bound_bucket, globals, nonblockers
         // Checking a function-local cache to avoid paying the cost of hitting Cloudflare's cache.
         if (!allowed.has(unpacked.project)) {
             let resolved = await utils.namedResolve({
-                user: auth.findUser(request, master, nonblockers).catch(error => null),
+                user: auth.findUserNoThrow(request, master, nonblockers),
                 permissions: auth.getPermissions(unpacked.project, bound_bucket, nonblockers),
                 header: res
             });
