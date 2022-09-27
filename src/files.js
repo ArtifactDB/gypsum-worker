@@ -59,16 +59,16 @@ export function checkPermissions(perm, user, project) {
     return null;
 }
 
-export function createExtraMetadata(id, unpacked, meta, version_info, permissions) {
+export function createExtraMetadata(id, unpacked, file_meta, version_meta, permissions) {
     return {
-        "$schema": meta["$schema"],
+        "$schema": file_meta["$schema"],
         id: id,
         project_id: unpacked.project,
         version: unpacked.version,
-        metapath: meta.path,
-        meta_indexed: version_info.index_time,
-        meta_uploaded: version_info.upload_time,
-        uploaded: version_info.upload_time,
+        metapath: file_meta.path,
+        meta_indexed: version_meta.index_time,
+        meta_uploaded: version_meta.upload_time,
+        uploaded: version_meta.upload_time,
         permissions: permissions
     };
 }
@@ -85,50 +85,50 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
     }
 
     // Loading up on the promises.
-    let all_promises = [];
-    all_promises.push(auth.findUser(request, master, nonblockers).catch(error => null));
-    all_promises.push(auth.getPermissions(unpacked.project, bound_bucket, nonblockers));
-    all_promises.push(getVersionMetadata(unpacked.project, unpacked.version, bound_bucket, nonblockers));
+    let all_promises = {
+        user: auth.findUser(request, master, nonblockers).catch(error => null),
+        permissions: auth.getPermissions(unpacked.project, bound_bucket, nonblockers),
+        version_metadata: getVersionMetadata(unpacked.project, unpacked.version, bound_bucket, nonblockers)
+    };
 
     let r2path = unpacked.project + "/" + unpacked.version + "/" + unpacked.path;
-    all_promises.push(bound_bucket.get(r2path));
+    all_promises.file_metadata = bound_bucket.get(r2path);
 
     if (!pure_meta) {
         let ogpath = unpacked.project + "/" + unpacked.version + "/" + original;
-        all_promises.push(bound_bucket.head(ogpath));
-    } else {
-        all_promises.push(null); // placeholder to avoid loss of an index.
+        all_promises.file_header = bound_bucket.head(ogpath);
     }
 
-    // Resolving them all at once.
-    let resolved = await Promise.all(all_promises);
-    let user = resolved[0];
-    let perm = resolved[1];
-    let ver_meta = resolved[2];
-    let raw_meta = resolved[3];
-    let file_meta = resolved[4];
+    // Resolving them all at once for concurrency.
+    let resolved = await utils.namedResolve(all_promises);
+    let user = resolved.user;
+    let perm = resolved.permissions;
 
     let err = checkPermissions(perm, user, unpacked.project);
     if (err !== null) {
         return err;
     }
-    if (raw_meta === null) {
+
+    let file_res = resolved.file_metadata;
+    if (file_res === null) {
         throw new utils.HttpError("key '" + id + "' does not exist", 404);
     }
 
-    let meta = await raw_meta.json();
-    meta["_extra"] = createExtraMetadata(id, unpacked, meta, ver_meta, perm);
+    let ver_meta = resolved.version_metadata;
+    let file_meta = await file_res.json();
+    file_meta["_extra"] = createExtraMetadata(id, unpacked, file_meta, ver_meta, perm);
 
     if (!pure_meta) {
-        if (file_meta == null) {
+        let file_header = await resolved.file_header;
+        if (file_header == null) {
             throw new utils.HttpError("failed to retrieve header for '" + id + "'", 500);
         }
-        if ("artifactdb_id" in file_meta.customMetadata) {
-            meta["_extra"].link = { "id": file_meta.customMetadata.artifactdb_id };
+        if ("artifactdb_id" in file_header.customMetadata) {
+            file_meta["_extra"].link = { "id": file_header.customMetadata.artifactdb_id };
         }
     }
 
-    return utils.jsonResponse(meta, 200);
+    return utils.jsonResponse(file_meta, 200);
 }
 
 export async function getFileHandler(request, bound_bucket, globals, nonblockers) {
@@ -139,28 +139,25 @@ export async function getFileHandler(request, bound_bucket, globals, nonblockers
     let bucket_name = globals.r2_bucket_name;
     let s3obj = globals.s3_binding;
 
-    let previous = new Set();
-    let allowed = new Set();
+    let previous = new Set;
+    let allowed = new Set;
 
     while (1) {
         let res = bound_bucket.head(unpacked.project + "/" + unpacked.version + "/" + unpacked.path);
         let header;
 
-        // Checking a more local cache to avoid paying the cost of hitting Cloudflare's cache.
+        // Checking a function-local cache to avoid paying the cost of hitting Cloudflare's cache.
         if (!allowed.has(unpacked.project)) {
-            let all_promises = [];
-            all_promises.push(auth.findUser(request, master, nonblockers).catch(error => null));
-            all_promises.push(auth.getPermissions(unpacked.project, bound_bucket, nonblockers));
-            all_promises.push(res);
+            let resolved = await utils.namedResolve({
+                user: auth.findUser(request, master, nonblockers).catch(error => null),
+                permissions: auth.getPermissions(unpacked.project, bound_bucket, nonblockers),
+                header: res
+            });
 
-            let resolved = await Promise.all(all_promises);
-
-            let user = resolved[0];
-            let perm = resolved[1];
-            checkPermissions(perm, user, unpacked.project);
+            checkPermissions(resolved.permissions, resolved.user, unpacked.project);
             allowed.add(unpacked.project);
-
-            header = resolved[2];
+            header = resolved.header;
+            console.log(header);
         } else {
             header = await res;
         }

@@ -11,7 +11,7 @@ async function getAggregatedMetadata(project, version, bound_bucket) {
     return await aggr.json();
 }
 
-async function getLinks(project, version, bound_bucket) {
+async function get_links(project, version, bound_bucket) {
     let vals = await bound_bucket.get(project + "/" + version + "/..links.json");
     if (vals !== null) {
         return await vals.json();
@@ -21,22 +21,21 @@ async function getLinks(project, version, bound_bucket) {
 }
 
 async function retrieve_project_version_metadata(project, version, bound_bucket, perm, nonblockers) {
-    let resolved = await Promise.all([
-        getAggregatedMetadata(project, version, bound_bucket),
-        files.getVersionMetadata(project, version, bound_bucket, nonblockers),
-        getLinks(project, version, bound_bucket)
-    ]);
+    let resolved = await utils.namedResolve({
+        aggregated: getAggregatedMetadata(project, version, bound_bucket),
+        version: files.getVersionMetadata(project, version, bound_bucket, nonblockers),
+        links: get_links(project, version, bound_bucket)
+    });
 
-    let aggr_meta = resolved[0];
-    let ver_meta = resolved[1];
-    let link_meta = resolved[2];
-
+    let aggr_meta = resolved.aggregated;
+    let ver_meta = resolved.version;
     for (const m of aggr_meta) {
         let id = project + ":" + m.path + "@" + version;
         let components = { project: project, path: m.path, version: version };
         m["_extra"] = files.createExtraMetadata(id, components, m, ver_meta, perm);
     }
 
+    let link_meta = resolved.links;
     if (link_meta) {
         for (const m of aggr_meta) {
             if (m.path in link_meta) {
@@ -53,16 +52,13 @@ export async function getProjectVersionMetadataHandler(request, bound_bucket, gl
     let version = request.params.version;
     let master = globals.gh_master_token;
 
-    let all_promises = [];
-    all_promises.push(auth.findUser(request, master, nonblockers).catch(error => null));
-    all_promises.push(auth.getPermissions(project, bound_bucket, nonblockers));
+    let resolved = await utils.namedResolve({
+        user: auth.findUser(request, master, nonblockers).catch(error => null),
+        permissions: auth.getPermissions(project, bound_bucket, nonblockers)
+    });
 
-    // Resolving them all at once.
-    let resolved = await Promise.all(all_promises);
-    let user = resolved[0];
-    let perm = resolved[1];
-
-    files.checkPermissions(perm, user, project);
+    let perm = resolved.permissions;
+    files.checkPermissions(perm, resolved.user, project);
 
     let aggr_meta = await retrieve_project_version_metadata(project, version, bound_bucket, perm, nonblockers);
     if (aggr_meta == null) {
@@ -112,23 +108,20 @@ export async function getProjectMetadataHandler(request, bound_bucket, globals, 
     let project = request.params.project;
     let master = globals.gh_master_token;
 
-    let all_promises = [];
-    all_promises.push(auth.findUser(request, master, nonblockers).catch(error => null));
-    all_promises.push(auth.getPermissions(project, bound_bucket, nonblockers));
-    all_promises.push(listAvailableVersions(project, bound_bucket));
+    let resolved = await utils.namedResolve({
+        user: auth.findUser(request, master, nonblockers).catch(error => null),
+        permissions: auth.getPermissions(project, bound_bucket, nonblockers),
+        versions: listAvailableVersions(project, bound_bucket)
+    });
 
-    let resolved = await Promise.all(all_promises);
-    let user = resolved[0];
-    let perm = resolved[1];
-    let versions = resolved[2];
+    let perm = resolved.permissions;
+    files.checkPermissions(perm, resolved.user, project);
 
-    files.checkPermissions(perm, user, project);
-
-    let collected = versions.map(async version => {
+    let collected = resolved.versions.map(async version => {
         try {
             return await retrieve_project_version_metadata(project, version, bound_bucket, perm, nonblockers);
         } catch (e) {
-            console.warn("failed to retrieve metadata for project '" + project + "' (version '" + v + "'): " + e.message); // don't fail completely if version is bad.
+            console.warn("failed to retrieve metadata for project '" + project + "' (version '" + version + "'): " + e.message); // don't fail completely if version is bad.
             return [];
         }
     });
@@ -152,19 +145,16 @@ export async function listProjectVersionsHandler(request, bound_bucket, globals,
     let project = request.params.project;
     let master = globals.gh_master_token;
 
-    let all_promises = [];
-    all_promises.push(auth.findUser(request, master, nonblockers).catch(error => null));
-    all_promises.push(auth.getPermissions(project, bound_bucket, nonblockers));
-    all_promises.push(listAvailableVersions(project, bound_bucket));
-    all_promises.push(files.getLatestVersion(project, bound_bucket, nonblockers));
+    let resolved = await utils.namedResolve({
+        user: auth.findUser(request, master, nonblockers).catch(error => null),
+        permissions: auth.getPermissions(project, bound_bucket, nonblockers),
+        versions: listAvailableVersions(project, bound_bucket),
+        latest: files.getLatestVersion(project, bound_bucket, nonblockers)
+    });
 
-    let resolved = await Promise.all(all_promises);
-    let user = resolved[0];
-    let perm = resolved[1];
-    let versions = resolved[2];
-    let latest = resolved[3];
-
-    files.checkPermissions(perm, user, project);
+    files.checkPermissions(resolved.permissions, resolved.user, project);
+    let versions = resolved.versions;
+    let latest = resolved.latest;
 
     return utils.jsonResponse({
         project_id: project,
@@ -241,20 +231,16 @@ export async function getProjectVersionInfoHandler(request, bound_bucket, global
     let version = request.params.version;
     let master = globals.gh_master_token;
 
-    let all_promises = [];
-    all_promises.push(auth.findUser(request, master, nonblockers).catch(error => null));
-    all_promises.push(auth.getPermissions(project, bound_bucket, nonblockers));
-    all_promises.push(lock.isLocked(project, version, bound_bucket))
+    let resolved = await utils.namedResolve({
+        user: auth.findUser(request, master, nonblockers).catch(error => null),
+        permissions: auth.getPermissions(project, bound_bucket, nonblockers),
+        locked: lock.isLocked(project, version, bound_bucket)
+    });
 
-    let resolved = await Promise.all(all_promises);
-    let user = resolved[0];
-    let perm = resolved[1];
-    let locked = resolved[2];
-
-    auth.checkPermissions(perm, user, nonblockers);
-    if (locked) {
+    auth.checkPermissions(resolved.permissions, resolved.user, nonblockers);
+    if (resolved.locked) {
         throw new utils.HttpError("project '" + project + "' (version '" + version + "') is still locked", 400);
     }
 
-    return utils.jsonResponse({ status: "ok", permissions: perm }, 200);
+    return utils.jsonResponse({ status: "ok", permissions: resolved.permissions }, 200);
 }
