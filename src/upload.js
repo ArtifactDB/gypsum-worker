@@ -44,21 +44,29 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
 
     let md5able = [];
     let linked = {};
+    let link_expiry_checks = new Set;
+
     for (const f of files) {
         if (typeof f == "string") {
             add_presigned_url(f);
+
         } else if (typeof f == "object") {
             if (f.check === "md5") {
                 md5able.push(f);
+
             } else if (f.check == "link") {
                 let upack = utils.unpackId(f.value.artifactdb_id);
                 if (upack.version == "latest") {
                     throw new utils.HttpError("cannot link to a 'latest' alias in 'filenames'", 400);
                 }
+
+                link_expiry_checks.add(internal.expiry(upack.project, upack.version));
                 linked[f.filename] = f.value.artifactdb_id;
+
             } else {
                 throw new utils.HttpError("invalid entry in the request 'filenames'", 400);
             }
+
         } else {
             throw new utils.HttpError("invalid entry in the request 'filenames'", 400);
         }
@@ -69,7 +77,7 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
     // as we would otherwise do in the /files endpoint.
     if (md5able.length) {
         let lres = await bound_bucket.get(pkeys.latest(project));
-        if (lres == null) {
+        if (lres == null || lres.index_time < 0) {
             for (const f of md5able) {
                 add_presigned_url(f.filename);
             }
@@ -94,6 +102,15 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
                 promises.push(check_md5(f.filename, f.value.field, f.value.md5sum));
             }
             await Promise.all(promises);
+        }
+    }
+    
+    // Checking if the linked versions have any expiry date.
+    let bad_links = await Promise.all(Array.from(expiry_link_checks).map(bound_bucket.head(k)));
+    for (var i = 0; i < bad_links.length; i++) {
+        if (bad_links[i] !== null) {
+            let details = expiry_link_checks[i].split("/");
+            throw new utils.HttpError("detected links to a transient project '" + details[0] + "' (version '" + details[1] + "')", 400);
         }
     }
 
