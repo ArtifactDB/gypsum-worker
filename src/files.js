@@ -43,7 +43,7 @@ export async function getLatestVersion(project, bound_bucket, nonblockers) {
     return JSON.parse(data);
 }
 
-function checkPermissions(perm, user, project) {
+export function checkPermissions(perm, user, project) {
     if (perm == null) {
         throw new utils.HttpError("failed to load permissions for project '" + project + "'", 500);
     }
@@ -58,7 +58,21 @@ function checkPermissions(perm, user, project) {
 
     return null;
 }
-    
+
+export function createExtraMetadata(id, unpacked, meta, version_info, permissions) {
+    return {
+        "$schema": meta["$schema"],
+        id: id,
+        project_id: unpacked.project,
+        version: unpacked.version,
+        metapath: meta.path,
+        meta_indexed: version_info.index_time,
+        meta_uploaded: version_info.upload_time,
+        uploaded: version_info.upload_time,
+        permissions: permissions
+    };
+}
+
 export async function getFileMetadataHandler(request, bound_bucket, globals, nonblockers) {
     let id = decodeURIComponent(request.params.id);
     let master = globals.gh_master_token;
@@ -75,7 +89,6 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
     all_promises.push(auth.findUser(request, master, nonblockers).catch(error => null));
     all_promises.push(auth.getPermissions(unpacked.project, bound_bucket, nonblockers));
     all_promises.push(getVersionMetadata(unpacked.project, unpacked.version, bound_bucket, nonblockers));
-    all_promises.push(getLatestVersion(unpacked.project, bound_bucket, nonblockers));
 
     let r2path = unpacked.project + "/" + unpacked.version + "/" + unpacked.path;
     all_promises.push(bound_bucket.get(r2path));
@@ -92,9 +105,8 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
     let user = resolved[0];
     let perm = resolved[1];
     let ver_meta = resolved[2];
-    let lat_meta = resolved[3];
-    let raw_meta = resolved[4];
-    let file_meta = resolved[5];
+    let raw_meta = resolved[3];
+    let file_meta = resolved[4];
 
     let err = checkPermissions(perm, user, unpacked.project);
     if (err !== null) {
@@ -105,21 +117,14 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
     }
 
     let meta = await raw_meta.json();
-    meta["_extra"] = {
-        "$schema": meta["$schema"],
-        project: unpacked.project,
-        version: unpacked.version,
-        artifactdb_id: id,
-        ...ver_meta,
-        latest: (lat_meta.version == unpacked.version)
-    };
+    meta["_extra"] = createExtraMetadata(id, unpacked, meta, ver_meta, perm);
 
     if (!pure_meta) {
         if (file_meta == null) {
             throw new utils.HttpError("failed to retrieve header for '" + id + "'", 500);
         }
         if ("artifactdb_id" in file_meta.customMetadata) {
-            meta["_extra"].link = { "artifactdb_id": file_meta.customMetadata.artifactdb_id };
+            meta["_extra"].link = { "id": file_meta.customMetadata.artifactdb_id };
         }
     }
 
