@@ -2,9 +2,10 @@ import * as files from "./files.js";
 import * as auth from "./auth.js";
 import * as utils from "./utils.js";
 import * as lock from "./lock.js";
+import * as pkeys from "./internal.js";
 
 async function getAggregatedMetadata(project, version, bound_bucket) {
-    let aggr = await bound_bucket.get(project + "/" + version + "/..aggregated.json");
+    let aggr = await bound_bucket.get(pkeys.aggregated(project, version));
     if (aggr == null) {
         throw new utils.HttpError("failed to fetch aggregated metadata for '" + project + "' (version '" + version + "')", 500);
     }
@@ -12,7 +13,7 @@ async function getAggregatedMetadata(project, version, bound_bucket) {
 }
 
 async function get_links(project, version, bound_bucket) {
-    let vals = await bound_bucket.get(project + "/" + version + "/..links.json");
+    let vals = await bound_bucket.get(pkeys.links(project, version));
     if (vals !== null) {
         return await vals.json();
     } else {

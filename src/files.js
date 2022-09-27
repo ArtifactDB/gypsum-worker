@@ -1,5 +1,6 @@
 import * as auth from "./auth.js";
 import * as utils from "./utils.js";
+import * as pkeys from "./internal.js";
 
 export async function getVersionMetadata(project, version, bound_bucket, nonblockers) {
     const versionCache = await caches.open("version:cache");
@@ -12,7 +13,7 @@ export async function getVersionMetadata(project, version, bound_bucket, nonbloc
         return await check.json();
     }
 
-    let stuff = await bound_bucket.get(project + "/" + version + "/..revision.json");
+    let stuff = await bound_bucket.get(pkeys.versionMetadata(project, version));
     if (stuff == null) {
         throw new utils.HttpError("failed to retrieve metadata for project '" + project + "', version '" + version + "'", 404);
     }
@@ -33,7 +34,7 @@ export async function getLatestVersion(project, bound_bucket, nonblockers) {
         return await check.json();
     }
 
-    let stuff = await bound_bucket.get(project + "/..latest.json");
+    let stuff = await bound_bucket.get(pkeys.latest(project));
     if (stuff == null) {
         throw new utils.HttpError("failed to retrieve latest information for project '" + project + "'", 404);
     }

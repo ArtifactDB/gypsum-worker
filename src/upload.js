@@ -3,6 +3,7 @@ import * as utils from "./utils.js";
 import * as gh from "./github.js";
 import * as lock from "./lock.js";
 import * as expiry from "./expiry.js";
+import * as pkeys from "./internal.js";
 
 /**************** Initialize uploads ***************/
 
@@ -67,7 +68,7 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
     // fetch the 'latest' from the bucket rather than relying on the cache, 
     // as we would otherwise do in the /files endpoint.
     if (md5able.length) {
-        let lres = await bound_bucket.get(project + "/..latest.json");
+        let lres = await bound_bucket.get(pkeys.latest(project));
         if (lres == null) {
             for (const f of md5able) {
                 add_presigned_url(f.filename);
@@ -98,7 +99,7 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
 
     // If there are any links, save them for later use.
     if (Object.keys(linked).length) {
-        nonblockers.push(utils.quickUploadJson(bound_bucket, project + "/" + version + "/..links.json", linked));
+        nonblockers.push(utils.quickUploadJson(bound_bucket, pkeys.links(project, version), linked));
     }
 
     for (const [k, v] of Object.entries(linked)) {
@@ -111,7 +112,7 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
     // is idempotent; so we make sure it survives until expiration.
     if ("expires_in" in body) {
         let exp = expiry.expiresInMilliseconds(body.expires_in);
-        nonblockers.push(utils.quickUploadJson(bound_bucket, project + "/" + version + "/..expiry.json", { "expires_in": exp }));
+        nonblockers.push(utils.quickUploadJson(bound_bucket, pkeys.expiry(project, version), { "expires_in": exp }));
     }
 
     let presigned_vec = await Promise.all(precollected);

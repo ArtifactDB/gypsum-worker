@@ -1,11 +1,8 @@
 import * as utils from "./utils.js";
-
-function getLockPath(project, version) {
-    return project + "/" + version + "/..LOCK";
-}
+import * as pkeys from "./internal.js";
 
 export async function lockProject(project, version, bound_bucket, user, misc={}) {
-    let lck = getLockPath(project, version);
+    let lck = pkeys.lock(project, version);
     let h = await bound_bucket.head(lck);
     if (h !== null) {
         throw new utils.HttpError("project version has already been locked", 403);
@@ -15,7 +12,7 @@ export async function lockProject(project, version, bound_bucket, user, misc={})
 }
 
 export async function checkLock(project, version, bound_bucket, user) {
-    let lck = getLockPath(project, version);
+    let lck = pkeys.lock(project, version);
 
     let g = await bound_bucket.get(lck);
     if (g == null) {
@@ -31,6 +28,6 @@ export async function checkLock(project, version, bound_bucket, user) {
 }
 
 export async function isLocked(project, version, bound_bucket) {
-    let locked = await bound_bucket.head(project + "/" + version + "/..LOCK");
+    let locked = await bound_bucket.head(pkeys.lock(project, version));
     return (locked !== null);
 }

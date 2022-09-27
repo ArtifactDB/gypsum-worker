@@ -1,5 +1,6 @@
 import * as utils from "./utils.js";
 import * as gh from "./github.js";
+import * as pkeys from "./internal.js";
 
 export async function findUser(request, master, nonblockers) {
     let auth = request.headers.get("Authorization");
@@ -51,10 +52,6 @@ export async function findUserHandler(request, bound_bucket, globals, nonblocker
     return new Response(user, { status: 200, "Content-Type": "text" });
 }
 
-function getPermissionsPath(project) {
-    return project + "/..permissions.json";
-}
-
 export async function getPermissions(project, bound_bucket, nonblockers) {
     const permCache = await caches.open("permission:cache");
 
@@ -66,7 +63,7 @@ export async function getPermissions(project, bound_bucket, nonblockers) {
         return await check.json();
     }
 
-    let path = getPermissionsPath(project);
+    let path = pkeys.permissions(project);
     let res = await bound_bucket.get(path);
     if (res == null) {
         return null;
@@ -164,7 +161,7 @@ export async function setPermissionsHandler(request, bound_bucket, globals, nonb
     let user = await findUser(request, master, nonblockers);
 
     // Don't use the cache: get the file from storage again.
-    let path = getPermissionsPath(project);
+    let path = pkeys.permissions(project);
     let res = await bound_bucket.get(path);
     if (res == null) {
         throw new utils.HttpError("requested project does not exist", 404);
