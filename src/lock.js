@@ -30,3 +30,7 @@ export async function checkLock(project, version, bound_bucket, user) {
     return;
 }
 
+export async function isLocked(project, version, bound_bucket) {
+    let locked = await bound_bucket.head(project + "/" + version + "/..LOCK");
+    return (locked !== null);
+}
