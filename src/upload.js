@@ -102,7 +102,8 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
     }
 
     for (const [k, v] of Object.entries(linked)) {
-        linked[k] = "/link/" + encodeURIComponent(project + ":" + k + "@" + version) + "/" + encodeURIComponent(v);
+        let src = project + ":" + k + "@" + version;
+        linked[k] = "/link/" + btoa(src) + "/to/" + btoa(v);
     }
 
     // Saving expiry information. We used to store this in the lock file, but
@@ -136,9 +137,9 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
 /**************** Create links ***************/
 
 export async function createLinkHandler(request, bound_bucket, globals, nonblockers) {
-    let from = decodeURIComponent(request.params.from);
+    let from = atob(request.params.source);
+    let to = atob(request.params.target);
     let unpacked = utils.unpackId(from);
-    let to = decodeURIComponent(request.params.to);
 
     let master = globals.gh_master_token;
     let user = await auth.findUser(request, master, nonblockers);
