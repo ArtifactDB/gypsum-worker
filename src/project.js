@@ -127,7 +127,13 @@ export async function getProjectMetadataHandler(request, bound_bucket, globals, 
 
     let collected = [];
     for (const v of versions) {
-        collected.push(retrieve_project_version_metadata(project, v, bound_bucket, perm, nonblockers));
+        collected.push(
+            retrieve_project_version_metadata(project, v, bound_bucket, perm, nonblockers)
+                .catch(e => {
+                    console.warn("failed to retrieve metadata for project '" + project + "' (version '" + version + "'): " + e.message); // don't fail completely if version is bad.
+                    return [];
+                })
+        );
     }
 
     let finalized = await Promise.all(collected);
@@ -170,4 +176,66 @@ export async function listProjectVersionsHandler(request, bound_bucket, globals,
         total: versions.length,
         latest: { "_extra.version": latest.version }
     }, 200);
+}
+
+async function retrieve_project_metadata(project, bound_bucket, user, nonblockers) {
+    try {
+        let perm = await auth.getPermissions(project, bound_bucket, nonblockers);
+        auth.checkPermissions(perm, user, nonblockers);
+    } catch (e) {
+        if (e.statusCode < 400 && e.statusCode >= 500) {
+            console.warn("failed to retrieve permissions for project '" + project + "': " + e.message); // don't fail completely if project is bad.
+        }
+        return null;
+    }
+
+    let all_versions = await listAvailableVersions(project, bound_bucket);
+    return { 
+        project_id: project,
+        aggs: all_versions.map(x => { return { "_extra.version": x } })
+    };
+}
+
+export async function listProjectsHandler(request, bound_bucket, globals, nonblockers) {
+    let master = globals.gh_master_token;
+    let user = await auth.findUser(request, master, nonblockers).catch(error => null);
+
+    // Looping across all projects.
+    let params = { delimiter: "/", limit: 50 };
+    let continuation = request.query.more;
+    if (continuation) {
+        params.cursor = continuation;
+    }
+
+    let entries = await bound_bucket.list(params);
+    let collected = [];
+    for (const e of entries.delimitedPrefixes) {
+        if (!e.endsWith(".json")) {
+            let fragments = e.split("/");
+            collected.push(fragments[fragments.length - 2]);
+        }
+    }
+
+    let project_promises = collected.map(x => retrieve_project_metadata(x, bound_bucket, user, nonblockers));
+    let resolved = await Promise.all(project_promises);
+    let keep = [];
+    for (const r of resolved) {
+        if (r !== null) {
+            keep.push(r);
+        }
+    }
+
+    let output = {
+        results: keep,
+        count: keep.length
+    };
+
+    let headers = {};
+    if (entries.truncated) {
+        let scroll = "/projects?more=" + entries.cursor;
+        output.more = scroll;
+        headers.link = "<" + scroll + ">; rel=\"more\"";
+    }
+
+    return utils.jsonResponse(output, 200, headers);
 }

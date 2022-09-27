@@ -61,6 +61,8 @@ router.put("/projects/:project/version/:version/complete", (request, bucket, non
 
 router.get("/jobs/:jobid", (request, bucket, nonblockers) => upload.queryJobIdHandler(request, bucket, globals, nonblockers));
 
+router.get("/projects", (request, bucket, nonblockers) => project.listProjectsHandler(request, bucket, globals, nonblockers));
+
 router.get("/projects/:project/metadata", (request, bucket, nonblockers) => project.getProjectMetadataHandler(request, bucket, globals, nonblockers));
 
 router.get("/projects/:project/version/:version/metadata", (request, bucket, nonblockers) => project.getProjectVersionMetadataHandler(request, bucket, globals, nonblockers));
