@@ -189,12 +189,16 @@ export async function completeUploadHandler(request, bound_bucket, globals, nonb
     if (!("read_access" in body)) {
         body.read_access = "public";
     }
+    if (!("write_access" in body)) {
+        body.read_access = "owners";
+    }
     if (!("owners" in body)) {
         body.owners = [user];
     }
     if (!("viewers" in body)) {
         body.viewers = [];
     }
+    body.scope = "project";
     auth.validateNewPermissions(body);
 
     let overwrite = request.query.overwrite_permissions === "true";
@@ -205,7 +209,9 @@ export async function completeUploadHandler(request, bound_bucket, globals, nonb
             version: version,
             timestamp: Date.now(),
             permissions: { 
+                scope: "project",
                 read_access: body.read_access, 
+                write_access: body.write_access,
                 owners: body.owners,
                 viewers: body.viewers
             },

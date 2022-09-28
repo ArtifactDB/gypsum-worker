@@ -52,12 +52,19 @@ export async function findUserHandler(request, bound_bucket, globals, nonblocker
     return new Response(user, { status: 200, "Content-Type": "text" });
 }
 
-export async function getPermissions(project, bound_bucket, nonblockers) {
-    const permCache = await caches.open("permission:cache");
+function permissions_cache() {
+    return caches.open("permission:cache");
+}
 
+function permissions_cache_key(project) {
     // Key needs to be a URL.
-    const key = "https://github.com/ArtifactDB/gypsum-worker/permissions/" + project;
+    return "https://github.com/ArtifactDB/gypsum-worker/permissions/" + project;
+}
 
+export async function getPermissions(project, bound_bucket, nonblockers) {
+    const permCache = await permissions_cache();
+
+    const key = permissions_cache_key(project);
     let check = await permCache.match(key);
     if (check) {
         return await check.json();
@@ -135,9 +142,18 @@ export function checkReadPermissions(perm, user, project) {
 }
 
 export function validateNewPermissions(perm) {
-    let allowed = ["public", "viewers", "none"];
-    if (typeof perm.read_access != "string" || allowed.indexOf(perm.read_access) == -1) {
-        throw new utils.HttpError("'read_access' for permissions must be one of public, viewers or none", 400);
+    let allowed_readers = ["public", "viewers", "owners", "none"];
+    if (typeof perm.read_access != "string" || allowed_readers.indexOf(perm.read_access) == -1) {
+        throw new utils.HttpError("'read_access' for permissions must be one of public, viewers, owners, or none", 400);
+    }
+
+    let allowed_writers = ["owners", "none"];
+    if (typeof perm.write_access != "string" || allowed_writers.indexOf(perm.write_access) == -1) {
+        throw new utils.HttpError("'write_access' for permissions must be one of owners or none", 400);
+    }
+
+    if (perm.scope !== "project") {
+        throw new utils.HttpError("'scope' for permissions is currently limited to project", 400);
     }
 
     for (const v of perm.viewers) {
@@ -160,7 +176,8 @@ export async function setPermissionsHandler(request, bound_bucket, globals, nonb
     // Making sure the user identifies themselves first.
     let user = await findUser(request, master, nonblockers);
 
-    // Don't use the cache: get the file from storage again.
+    // Don't use the cache: get the file from storage again,
+    // just in case it was updated at some point.
     let path = pkeys.permissions(project);
     let res = await bound_bucket.get(path);
     if (res == null) {
@@ -180,7 +197,11 @@ export async function setPermissionsHandler(request, bound_bucket, globals, nonb
         }
     }
     validateNewPermissions(perms);
-
     nonblockers.push(bound_bucket.put(path, JSON.stringify(perms)));
+
+    // Clearing the cached permissions to trigger a reload on the next getPermissions() call.
+    const permCache = await permissions_cache();
+    nonblockers.push(permCache.delete(permissions_cache_key(project)));
+
     return new Response(null, { status: 202 });
 }

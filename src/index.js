@@ -73,7 +73,7 @@ router.get("/projects/:project/versions", (request, bucket, nonblockers) => proj
 
 router.get("/projects/:project/permissions", (request, bucket, nonblockers) => auth.getPermissionsHandler(request, bucket, globals, nonblockers));
 
-router.post("/projects/:project/permissions", (request, bucket, nonblockers) => auth.setPermissionsHandler(request, bucket, globals, nonblockers));
+router.put("/projects/:project/permissions", (request, bucket, nonblockers) => auth.setPermissionsHandler(request, bucket, globals, nonblockers));
 
 /*** Non-standard endpoints, for testing only ***/
 
