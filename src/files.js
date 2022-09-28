@@ -69,48 +69,85 @@ export function createExtraMetadata(id, unpacked, file_meta, version_meta, permi
 
 export async function getFileMetadataHandler(request, bound_bucket, globals, nonblockers) {
     let id = decodeURIComponent(request.params.id);
+    let follow_link = request.query.follow_link == "true";
     let master = globals.gh_master_token;
 
-    let unpacked = utils.unpackId(id);
-    let original = unpacked.path;
-    let pure_meta = unpacked.path.endsWith(".json")
-    if (!pure_meta) {
-        unpacked.path += ".json";
+    let previous = new Set;
+    let allowed = {};
+    let unpacked;
+    let original;
+    let pure_meta;
+    let file_meta;
+
+    while (1) {
+        unpacked = utils.unpackId(id);
+        original = unpacked.path;
+        pure_meta = unpacked.path.endsWith(".json")
+        if (!pure_meta) {
+            unpacked.path += ".json";
+        }
+
+        // Loading up on the promises.
+        let r2path = unpacked.project + "/" + unpacked.version + "/" + unpacked.path;
+        let promises = {
+            file_metadata: bound_bucket.get(r2path)
+        };
+
+        // Checking a function-local cache for auth, to avoid paying the cost of hitting Cloudflare's cache.
+        let resolved;
+        if (!(unpacked.project in allowed)) {
+            promises.user = auth.findUserNoThrow(request, master, nonblockers);
+            promises.permissions = auth.getPermissions(unpacked.project, bound_bucket, nonblockers);
+            resolved = await utils.namedResolve(promises);
+
+            let perm = resolved.permissions;
+            auth.checkReadPermissions(perm, resolved.user, unpacked.project);
+            allowed[unpacked.project] = perm;
+        } else {
+            resolved = await utils.namedResolve(promises);
+        }
+
+        let file_res = resolved.file_metadata;
+        if (file_res === null) {
+            throw new utils.HttpError("key '" + id + "' does not exist", 404);
+        }
+
+        file_meta = await file_res.json();
+
+        // Handling redirection if the retrieved document says so.
+        if (follow_link && file_meta["$schema"].startsWith("redirection/")) {
+            let type = file_meta["redirection"]["type"];
+            let loc = file_meta["redirection"]["location"];
+            let next;
+            if (type == "local") {
+                next = unpacked.project + ":" + loc + "@" + unpacked.version;
+            } else {
+                next = loc;
+            }
+            if (previous.has(next)) {
+                throw new utils.HttpError("detected circular links from '" + id + "' to '" + next + "'", 500);
+            }
+            id = next;
+            previous.add(id);
+        } else {
+            break;
+        }
     }
 
-    // Loading up on the promises.
-    let all_promises = {
-        user: auth.findUserNoThrow(request, master, nonblockers),
-        permissions: auth.getPermissions(unpacked.project, bound_bucket, nonblockers),
-        version_metadata: getVersionMetadata(unpacked.project, unpacked.version, bound_bucket, nonblockers)
+    // Adding more information.
+    let more_promises = {
+        version_metadata: getVersionMetadata(unpacked.project, unpacked.version, bound_bucket, nonblockers),
     };
-
-    let r2path = unpacked.project + "/" + unpacked.version + "/" + unpacked.path;
-    all_promises.file_metadata = bound_bucket.get(r2path);
-
     if (!pure_meta) {
         let ogpath = unpacked.project + "/" + unpacked.version + "/" + original;
-        all_promises.file_header = bound_bucket.head(ogpath);
+        more_promises.file_header = bound_bucket.head(ogpath);
     }
 
-    // Resolving them all at once for concurrency.
-    let resolved = await utils.namedResolve(all_promises);
-    let user = resolved.user;
-    let perm = resolved.permissions;
-
-    auth.checkReadPermissions(perm, user, unpacked.project);
-
-    let file_res = resolved.file_metadata;
-    if (file_res === null) {
-        throw new utils.HttpError("key '" + id + "' does not exist", 404);
-    }
-
-    let ver_meta = resolved.version_metadata;
-    let file_meta = await file_res.json();
-    file_meta["_extra"] = createExtraMetadata(id, unpacked, file_meta, ver_meta, perm);
+    let resolved = await utils.namedResolve(more_promises);
+    file_meta["_extra"] = createExtraMetadata(id, unpacked, file_meta, resolved.version_metadata, allowed[unpacked.project]);
 
     if (!pure_meta) {
-        let file_header = await resolved.file_header;
+        let file_header = resolved.file_header;
         if (file_header == null) {
             throw new utils.HttpError("failed to retrieve header for '" + id + "'", 500);
         }
@@ -124,7 +161,6 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
 
 export async function getFileHandler(request, bound_bucket, globals, nonblockers) {
     let id = decodeURIComponent(request.params.id);
-    let unpacked = utils.unpackId(id);
 
     let master = globals.gh_master_token;
     let bucket_name = globals.r2_bucket_name;
@@ -132,12 +168,14 @@ export async function getFileHandler(request, bound_bucket, globals, nonblockers
 
     let previous = new Set;
     let allowed = new Set;
+    let unpacked;
 
     while (1) {
+        unpacked = utils.unpackId(id);
         let res = bound_bucket.head(unpacked.project + "/" + unpacked.version + "/" + unpacked.path);
         let header;
 
-        // Checking a function-local cache to avoid paying the cost of hitting Cloudflare's cache.
+        // Checking a function-local cache for auth, to avoid paying the cost of hitting Cloudflare's cache.
         if (!allowed.has(unpacked.project)) {
             let resolved = await utils.namedResolve({
                 user: auth.findUserNoThrow(request, master, nonblockers),
@@ -148,7 +186,6 @@ export async function getFileHandler(request, bound_bucket, globals, nonblockers
             auth.checkReadPermissions(resolved.permissions, resolved.user, unpacked.project);
             allowed.add(unpacked.project);
             header = resolved.header;
-            console.log(header);
         } else {
             header = await res;
         }
@@ -164,7 +201,6 @@ export async function getFileHandler(request, bound_bucket, globals, nonblockers
                 throw new utils.HttpError("detected circular links from '" + id + "' to '" + next + "'", 500);
             }
             id = next;
-            unpacked = utils.unpackId(id);
             previous.add(id);
         } else {
             break;
