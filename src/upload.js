@@ -60,7 +60,7 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
                     throw new utils.HttpError("cannot link to a 'latest' alias in 'filenames'", 400);
                 }
 
-                link_expiry_checks.add(internal.expiry(upack.project, upack.version));
+                link_expiry_checks.add(pkeys.expiry(upack.project, upack.version));
                 linked[f.filename] = f.value.artifactdb_id;
 
             } else {
@@ -106,11 +106,14 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
     }
     
     // Checking if the linked versions have any expiry date.
-    let bad_links = await Promise.all(Array.from(expiry_link_checks).map(bound_bucket.head(k)));
-    for (var i = 0; i < bad_links.length; i++) {
-        if (bad_links[i] !== null) {
-            let details = expiry_link_checks[i].split("/");
-            throw new utils.HttpError("detected links to a transient project '" + details[0] + "' (version '" + details[1] + "')", 400);
+    {
+        let links = Array.from(link_expiry_checks);
+        let bad_links = await Promise.all(links.map(k => bound_bucket.head(k)));
+        for (var i = 0; i < bad_links.length; i++) {
+            if (bad_links[i] !== null) {
+                let details = links[i].split("/");
+                throw new utils.HttpError("detected links to a transient project '" + details[0] + "' (version '" + details[1] + "')", 400);
+            }
         }
     }
 
