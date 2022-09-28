@@ -45,7 +45,7 @@ export async function getLatestVersion(project, bound_bucket, nonblockers) {
 }
 
 export function createExtraMetadata(id, unpacked, file_meta, version_meta, permissions) {
-    return {
+    let output = {
         "$schema": file_meta["$schema"],
         id: id,
         project_id: unpacked.project,
@@ -56,6 +56,15 @@ export function createExtraMetadata(id, unpacked, file_meta, version_meta, permi
         uploaded: version_meta.upload_time,
         permissions: permissions
     };
+
+    if ("expiry_time" in version_meta) {
+        output.transient = {
+            expires_in: version_meta.expiry_time,
+            expires_job_id: version_meta.expiry_job_id
+        };
+    }
+
+    return output;
 }
 
 export async function getFileMetadataHandler(request, bound_bucket, globals, nonblockers) {
