@@ -151,8 +151,12 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
         master
     ));
 
-    let completer = "/projects/" + project + "/version/" + version + "/complete";
-    return utils.jsonResponse({ presigned_urls: presigned, links: linked, completion_url: completer }, 200);
+    return utils.jsonResponse({ 
+        presigned_urls: presigned, 
+        links: linked, 
+        completion_url: "/projects/" + project + "/version/" + version + "/complete",
+        abort_url: "/projects/" + project + "/version/" + version + "/abort"
+    }, 200);
 }
 
 /**************** Create links ***************/
@@ -242,4 +246,20 @@ export async function queryJobIdHandler(request, bound_bucket, globals, nonblock
         status: state,
         job_url: gh.createIssueUrl(jid)
     }, 200);
+}
+
+/**************** Abort upload ***************/
+
+export async function abortUploadHandler(request, bound_bucket, globals, nonblockers) {
+    let project = request.params.project;
+    let version = request.params.version;
+
+    let master = globals.gh_master_token;
+    let user = await auth.findUser(request, master, nonblockers);
+    await lock.checkLock(project, version, bound_bucket, user);
+
+    // Doesn't actually do anything, as we already have an purge job running as
+    // soon as the upload is started; this endpoint is just for compliance with
+    // the reference API.
+    return new Response(null, { status: 202 });
 }

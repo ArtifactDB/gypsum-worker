@@ -59,6 +59,8 @@ router.put("/link/:source/to/:target", (request, bucket, nonblockers) => upload.
 
 router.put("/projects/:project/version/:version/complete", (request, bucket, nonblockers) => upload.completeUploadHandler(request, bucket, globals, nonblockers));
 
+router.put("/projects/:project/version/:version/abort", (request, bucket, nonblockers) => upload.abortUploadHandler(request, bucket, globals, nonblockers));
+
 router.get("/jobs/:jobid", (request, bucket, nonblockers) => upload.queryJobIdHandler(request, bucket, globals, nonblockers));
 
 router.get("/projects", (request, bucket, nonblockers) => project.listProjectsHandler(request, bucket, globals, nonblockers));
