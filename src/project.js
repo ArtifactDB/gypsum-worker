@@ -3,6 +3,7 @@ import * as auth from "./auth.js";
 import * as utils from "./utils.js";
 import * as lock from "./lock.js";
 import * as pkeys from "./internal.js";
+import * as latest from "./latest.js";
 
 async function getAggregatedMetadata(project, version, bound_bucket) {
     let aggr = await bound_bucket.get(pkeys.aggregated(project, version));
@@ -21,15 +22,8 @@ async function get_links(project, version, bound_bucket) {
     }
 }
 
-async function retrieve_project_version_metadata(project, version, bound_bucket, perm, nonblockers) {
-    let resolved = await utils.namedResolve({
-        aggregated: getAggregatedMetadata(project, version, bound_bucket),
-        version: files.getVersionMetadata(project, version, bound_bucket, nonblockers),
-        links: get_links(project, version, bound_bucket)
-    });
-
+async function decorate_version_metadata(project, version, resolved, perm) {
     let aggr_meta = resolved.aggregated;
-    let ver_meta = resolved.version;
     for (const m of aggr_meta) {
         let id = project + ":" + m.path + "@" + version;
         let components = { project: project, path: m.path, version: version };
@@ -48,6 +42,30 @@ async function retrieve_project_version_metadata(project, version, bound_bucket,
     return aggr_meta;
 }
 
+async function retrieve_project_version_metadata_or_null(project, version, bound_bucket, perm, nonblockers) {
+    let ver_meta = await files.getVersionMetadataOrNull(project, version, bound_bucket, nonblockers),
+    if (ver_meta == null) {
+        return null;
+    }
+
+    let resolved = await utils.namedResolve({
+        aggregated: getAggregatedMetadata(project, version, bound_bucket),
+        links: get_links(project, version, bound_bucket)
+    });
+    resolved.version = ver_meta;
+
+    return decorate_version_metadata(project, version, resolved, perm);
+}
+
+async function retrieve_project_version_metadata(project, version, bound_bucket, perm, nonblockers) {
+    let resolved = await utils.namedResolve({
+        aggregated: getAggregatedMetadata(project, version, bound_bucket),
+        version: files.getVersionMetadata(project, version, bound_bucket, nonblockers),
+        links: get_links(project, version, bound_bucket)
+    });
+    return decorate_version_metadata(project, version, resolved, perm);
+}
+
 export async function getProjectVersionMetadataHandler(request, bound_bucket, globals, nonblockers) {
     let project = request.params.project;
     let version = request.params.version;
@@ -57,11 +75,18 @@ export async function getProjectVersionMetadataHandler(request, bound_bucket, gl
         user: auth.findUserNoThrow(request, master, nonblockers),
         permissions: auth.getPermissions(project, bound_bucket, nonblockers)
     });
-
     let perm = resolved.permissions;
     auth.checkReadPermissions(perm, resolved.user, project);
 
-    let aggr_meta = await retrieve_project_version_metadata(project, version, bound_bucket, perm, nonblockers);
+    let aggr_meta;
+    let aggr_fun = v => retrieve_project_version_metadata_or_null(project, v, bound_bucket, perm, nonblockers);
+    if (version == "latest") {
+        let attempt = await latest.attemptOnLatest(project, bound_bucket, aggr_fun, res => res == null);
+        aggr_meta = attempt.result;
+        version = attempt.version;
+    } else {
+        aggr_meta = await aggr_fun(unpacked.version);
+    }
     if (aggr_meta == null) {
         throw new utils.HttpError("cannot fetch metadata for locked project '" + project + "' (version '" + version + "')", 400);
     }
@@ -150,7 +175,7 @@ export async function listProjectVersionsHandler(request, bound_bucket, globals,
         user: auth.findUserNoThrow(request, master, nonblockers),
         permissions: auth.getPermissions(project, bound_bucket, nonblockers),
         versions: listAvailableVersions(project, bound_bucket),
-        latest: files.getLatestVersion(project, bound_bucket, nonblockers)
+        latest: latest.getLatestVersion(project, bound_bucket, nonblockers)
     });
 
     auth.checkReadPermissions(resolved.permissions, resolved.user, project);

@@ -4,6 +4,7 @@ import * as gh from "./github.js";
 import * as lock from "./lock.js";
 import * as expiry from "./expiry.js";
 import * as pkeys from "./internal.js";
+import * as latest from "./latest.js";
 
 /**************** Initialize uploads ***************/
 
@@ -72,19 +73,15 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
         }
     }
 
-    // Resolving the MD5sums against the current latest version. Note that we
-    // fetch the 'latest' from the bucket rather than relying on the cache, 
-    // as we would otherwise do in the /files endpoint.
+    // Resolving the MD5sums against the current latest version. 
     if (md5able.length) {
-        let lres = await bound_bucket.get(pkeys.latest(project));
+        let lres = await latest.getLatestPersistentVersionOrNull(project, bound_bucket);
         if (lres == null || lres.index_time < 0) {
             for (const f of md5able) {
                 add_presigned_url(f.filename);
             }
         } else {
-            let lmeta = await lres.json();
-            let last = lmeta.version;
-
+            let last = lres.version;
             async function check_md5(filename, field, md5sum) {
                 let res = await bound_bucket.get(project + "/" + last + "/" + filename + ".json");
                 if (res !== null) {

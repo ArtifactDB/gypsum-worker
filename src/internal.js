@@ -6,8 +6,12 @@ export function versionMetadata(project, version) {
     return project + "/" + version + "/..revision";
 }
 
-export function latest(project) {
+export function latestPersistent(project) {
     return project + "/..latest";
+}
+
+export function latestAll(project) {
+    return project + "/..latest_all";
 }
 
 export function lock(project, version) {

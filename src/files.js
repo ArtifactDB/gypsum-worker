@@ -1,8 +1,9 @@
 import * as auth from "./auth.js";
 import * as utils from "./utils.js";
 import * as pkeys from "./internal.js";
+import * as latest from "./latest.js";
 
-export async function getVersionMetadata(project, version, bound_bucket, nonblockers) {
+export async function getVersionMetadataOrNull(project, version, bound_bucket, nonblockers) {
     const versionCache = await caches.open("version:cache");
 
     // Key needs to be a URL.
@@ -15,7 +16,7 @@ export async function getVersionMetadata(project, version, bound_bucket, nonbloc
 
     let stuff = await bound_bucket.get(pkeys.versionMetadata(project, version));
     if (stuff == null) {
-        throw new utils.HttpError("failed to retrieve metadata for project '" + project + "', version '" + version + "'", 404);
+        return null;
     }
 
     let data = await stuff.text();
@@ -23,25 +24,12 @@ export async function getVersionMetadata(project, version, bound_bucket, nonbloc
     return JSON.parse(data);
 }
 
-export async function getLatestVersion(project, bound_bucket, nonblockers) {
-    const latestCache = await caches.open("latest:cache");
-
-    // Key needs to be a URL.
-    const key = "https://github.com/ArtifactDB/gypsum-worker/latest" + project;
-
-    let check = await latestCache.match(key);
-    if (check) {
-        return await check.json();
+export async function getVersionMetadata(project, version, bound_bucket, nonblockers) {
+    let out = getVersionMetadataOrNull(project, version, bound_bucket, nonblockers);
+    if (out == null) {
+        throw new utils.HttpError("failed to retrieve metadata for project '" + project + "', version '" + version + "'", 404);
     }
-
-    let stuff = await bound_bucket.get(pkeys.latest(project));
-    if (stuff == null) {
-        throw new utils.HttpError("failed to retrieve latest information for project '" + project + "'", 404);
-    }
-
-    let data = await stuff.text();
-    nonblockers.push(utils.quickCacheJsonText(latestCache, key, data, utils.minutesFromNow(5)));
-    return JSON.parse(data);
+    return out;
 }
 
 export function createExtraMetadata(id, unpacked, file_meta, version_meta, permissions) {
@@ -87,29 +75,29 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
             unpacked.path += ".json";
         }
 
-        // Loading up on the promises.
-        let r2path = unpacked.project + "/" + unpacked.version + "/" + unpacked.path;
-        let promises = {
-            file_metadata: bound_bucket.get(r2path)
-        };
-
-        // Checking a function-local cache for auth, to avoid paying the cost of hitting Cloudflare's cache.
-        let resolved;
+        // Checking a function-local cache for auth, to avoid paying the cost
+        // of hitting Cloudflare's cache when following links.
         if (!(unpacked.project in allowed)) {
-            promises.user = auth.findUserNoThrow(request, master, nonblockers);
-            promises.permissions = auth.getPermissions(unpacked.project, bound_bucket, nonblockers);
-            resolved = await utils.namedResolve(promises);
-
+            let resolved = await utils.namedResolve({
+                user: auth.findUserNoThrow(request, master, nonblockers),
+                permissions: auth.getPermissions(unpacked.project, bound_bucket, nonblockers)
+            });
             let perm = resolved.permissions;
             auth.checkReadPermissions(perm, resolved.user, unpacked.project);
             allowed[unpacked.project] = perm;
-        } else {
-            resolved = await utils.namedResolve(promises);
-        }
+        } 
 
-        let file_res = resolved.file_metadata;
+        let file_res;
+        let file_meta_fun = v => bound_bucket.get(unpacked.project + "/" + v + "/" + unpacked.path);
+        if (unpacked.version == "latest") {
+            let attempt = await latest.attemptOnLatest(unpacked.project, bound_bucket, file_meta_fun, res => res == null);
+            file_res = attempt.result;
+            unpacked.version = attempt.version;
+        } else {
+            file_res = await file_meta_fun(unpacked.version);
+        }
         if (file_res === null) {
-            throw new utils.HttpError("key '" + id + "' does not exist", 404);
+            throw new utils.HttpError("no metadata available for '" + id + "'", 404);
         }
 
         file_meta = await file_res.json();
@@ -173,23 +161,26 @@ export async function getFileHandler(request, bound_bucket, globals, nonblockers
     while (1) {
         unpacked = utils.unpackId(id);
         let res = bound_bucket.head(unpacked.project + "/" + unpacked.version + "/" + unpacked.path);
-        let header;
 
         // Checking a function-local cache for auth, to avoid paying the cost of hitting Cloudflare's cache.
         if (!allowed.has(unpacked.project)) {
             let resolved = await utils.namedResolve({
                 user: auth.findUserNoThrow(request, master, nonblockers),
                 permissions: auth.getPermissions(unpacked.project, bound_bucket, nonblockers),
-                header: res
             });
-
             auth.checkReadPermissions(resolved.permissions, resolved.user, unpacked.project);
             allowed.add(unpacked.project);
-            header = resolved.header;
-        } else {
-            header = await res;
         }
 
+        let header;
+        let file_header_fun = v => bound_bucket.head(unpacked.project + "/" + v + "/" + unpacked.path);
+        if (unpacked.version == "latest") {
+            let attempt = await latest.attemptOnLatest(unpacked.project, bound_bucket, file_header_fun, res => res == null);
+            header = attempt.result;
+            unpacked.version = attempt.version;
+        } else {
+            header = await file_header_fun(unpacked.version);
+        }
         if (header == null) {
             throw new utils.HttpError("failed to retrieve header for '" + id + "'", 500);
         }
