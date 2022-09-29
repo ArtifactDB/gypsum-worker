@@ -1,3 +1,4 @@
+import * as utils from "./utils.js";
 import * as pkeys from "./internal.js";
 
 export async function get_latest_version_from_source(project, bound_bucket, cache, cache_key, nonblockers) {
@@ -27,6 +28,7 @@ function latest_cache_key(project) {
 }
 
 export async function getLatestVersion(project, bound_bucket, nonblockers) {
+    console.log("YAY2");
     const latestCache = await latest_cache();
 
     let key = latest_cache_key(project);
@@ -49,7 +51,7 @@ export async function getLatestPersistentVersionOrNull(project, bound_bucket) {
     return await stuff.json();
 }
 
-export async function attemptOnLatest(project, bound_bucket, fun, fail, nonblockers) {
+export async function attemptOnLatest(project, bound_bucket, fun, nonblockers) {
     const latestCache = await latest_cache();
 
     let key = latest_cache_key(project);
@@ -60,7 +62,7 @@ export async function attemptOnLatest(project, bound_bucket, fun, fail, nonblock
     if (check == null) {
         let latest = await get_latest_version_from_source(project, bound_bucket, latestCache, key, nonblockers);
         let lv = latest.version;
-        return { version: lv, result: fun(lv) };
+        return { version: lv, result: await fun(lv) };
     }
 
     // Attempting to run the supplied function on the latest version in cache.
@@ -68,8 +70,8 @@ export async function attemptOnLatest(project, bound_bucket, fun, fail, nonblock
         let latest = await check.json();
         let lv = latest.version;
         let res = await fun(lv);
-        if (!fail(res)) {
-            return { version: lv, result: fun(lv) };
+        if (res != null) {
+            return { version: lv, result: res };
         }
     }
 
@@ -79,5 +81,5 @@ export async function attemptOnLatest(project, bound_bucket, fun, fail, nonblock
     await latestCache.delete(key);
     let latest = await get_latest_version_from_source(project, bound_bucket, latestCache, key, nonblockers);
     let lev = latest.version;
-    return { version: lv, result: fun(lv) };
+    return { version: lv, result: await fun(lv) };
 }

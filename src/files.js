@@ -90,7 +90,7 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
         let file_res;
         let file_meta_fun = v => bound_bucket.get(unpacked.project + "/" + v + "/" + unpacked.path);
         if (unpacked.version == "latest") {
-            let attempt = await latest.attemptOnLatest(unpacked.project, bound_bucket, file_meta_fun, res => res == null);
+            let attempt = await latest.attemptOnLatest(unpacked.project, bound_bucket, file_meta_fun, nonblockers);
             file_res = attempt.result;
             unpacked.version = attempt.version;
         } else {
@@ -175,7 +175,7 @@ export async function getFileHandler(request, bound_bucket, globals, nonblockers
         let header;
         let file_header_fun = v => bound_bucket.head(unpacked.project + "/" + v + "/" + unpacked.path);
         if (unpacked.version == "latest") {
-            let attempt = await latest.attemptOnLatest(unpacked.project, bound_bucket, file_header_fun, res => res == null);
+            let attempt = await latest.attemptOnLatest(unpacked.project, bound_bucket, file_header_fun, nonblockers);
             header = attempt.result;
             unpacked.version = attempt.version;
         } else {
