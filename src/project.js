@@ -271,7 +271,7 @@ export async function getProjectVersionInfoHandler(request, bound_bucket, global
             return utils.jsonResponse({ 
                 status: "error", 
                 permissions: resolved.permissions,
-                reasons: ["project version is still locked"]
+                anomalies: ["project version is still locked"]
             }, 200);
         }
         ver_meta = await check_version_meta(version);
@@ -285,7 +285,7 @@ export async function getProjectVersionInfoHandler(request, bound_bucket, global
         return utils.jsonResponse({ 
             status: "error", 
             permissions: resolved.permissions, 
-            reasons: ["cannot find version metadata"]
+            anomalies: ["cannot find version metadata"]
         }, 200);
     }
 
