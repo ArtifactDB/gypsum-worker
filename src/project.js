@@ -258,13 +258,35 @@ export async function getProjectVersionInfoHandler(request, bound_bucket, global
 
     let resolved = await utils.namedResolve({
         user: auth.findUserNoThrow(request, master, nonblockers),
-        permissions: auth.getPermissions(project, bound_bucket, nonblockers),
-        locked: lock.isLocked(project, version, bound_bucket)
+        permissions: auth.getPermissions(project, bound_bucket, nonblockers)
     });
-
     auth.checkReadPermissions(resolved.permissions, resolved.user, nonblockers);
-    if (resolved.locked) {
-        throw new utils.HttpError("project '" + project + "' (version '" + version + "') is still locked", 400);
+
+    let check_version_meta = v => bound_bucket.head(pkeys.versionMetadata(project, v));
+    let ver_meta;
+
+    if (version != "latest") {
+        let locked = await lock.isLocked(project, version, bound_bucket);
+        if (locked) {
+            return utils.jsonResponse({ 
+                status: "error", 
+                permissions: resolved.permissions,
+                reasons: ["project version is still locked"]
+            }, 200);
+        }
+        ver_meta = await check_version_meta(version);
+    } else {
+        let attempt = await latest.attemptOnLatest(project, bound_bucket, check_version_meta, nonblockers);
+        ver_meta = attempt.result;
+        version = attempt.version;
+    }
+
+    if (ver_meta == null) {
+        return utils.jsonResponse({ 
+            status: "error", 
+            permissions: resolved.permissions, 
+            reasons: ["cannot find version metadata"]
+        }, 200);
     }
 
     return utils.jsonResponse({ status: "ok", permissions: resolved.permissions }, 200);
