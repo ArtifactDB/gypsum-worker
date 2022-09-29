@@ -28,7 +28,6 @@ function latest_cache_key(project) {
 }
 
 export async function getLatestVersion(project, bound_bucket, nonblockers) {
-    console.log("YAY2");
     const latestCache = await latest_cache();
 
     let key = latest_cache_key(project);
