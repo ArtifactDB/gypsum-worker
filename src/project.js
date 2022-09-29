@@ -3,6 +3,7 @@ import * as auth from "./auth.js";
 import * as utils from "./utils.js";
 import * as lock from "./lock.js";
 import * as pkeys from "./internal.js";
+import * as latest from "./latest.js";
 
 async function getAggregatedMetadata(project, version, bound_bucket) {
     let aggr = await bound_bucket.get(pkeys.aggregated(project, version));
@@ -21,19 +22,12 @@ async function get_links(project, version, bound_bucket) {
     }
 }
 
-async function retrieve_project_version_metadata(project, version, bound_bucket, perm, nonblockers) {
-    let resolved = await utils.namedResolve({
-        aggregated: getAggregatedMetadata(project, version, bound_bucket),
-        version: files.getVersionMetadata(project, version, bound_bucket, nonblockers),
-        links: get_links(project, version, bound_bucket)
-    });
-
+async function decorate_version_metadata(project, version, resolved, perm) {
     let aggr_meta = resolved.aggregated;
-    let ver_meta = resolved.version;
     for (const m of aggr_meta) {
         let id = project + ":" + m.path + "@" + version;
         let components = { project: project, path: m.path, version: version };
-        m["_extra"] = files.createExtraMetadata(id, components, m, ver_meta, perm);
+        m["_extra"] = files.createExtraMetadata(id, components, m, resolved.version, perm);
     }
 
     let link_meta = resolved.links;
@@ -48,6 +42,30 @@ async function retrieve_project_version_metadata(project, version, bound_bucket,
     return aggr_meta;
 }
 
+async function retrieve_project_version_metadata_or_null(project, version, bound_bucket, perm, nonblockers) {
+    let ver_meta = await files.getVersionMetadataOrNull(project, version, bound_bucket, nonblockers);
+    if (ver_meta == null) {
+        return null;
+    }
+
+    let resolved = await utils.namedResolve({
+        aggregated: getAggregatedMetadata(project, version, bound_bucket),
+        links: get_links(project, version, bound_bucket)
+    });
+    resolved.version = ver_meta;
+
+    return decorate_version_metadata(project, version, resolved, perm);
+}
+
+async function retrieve_project_version_metadata(project, version, bound_bucket, perm, nonblockers) {
+    let resolved = await utils.namedResolve({
+        aggregated: getAggregatedMetadata(project, version, bound_bucket),
+        version: files.getVersionMetadata(project, version, bound_bucket, nonblockers),
+        links: get_links(project, version, bound_bucket)
+    });
+    return decorate_version_metadata(project, version, resolved, perm);
+}
+
 export async function getProjectVersionMetadataHandler(request, bound_bucket, globals, nonblockers) {
     let project = request.params.project;
     let version = request.params.version;
@@ -57,11 +75,18 @@ export async function getProjectVersionMetadataHandler(request, bound_bucket, gl
         user: auth.findUserNoThrow(request, master, nonblockers),
         permissions: auth.getPermissions(project, bound_bucket, nonblockers)
     });
-
     let perm = resolved.permissions;
     auth.checkReadPermissions(perm, resolved.user, project);
 
-    let aggr_meta = await retrieve_project_version_metadata(project, version, bound_bucket, perm, nonblockers);
+    let aggr_meta;
+    let aggr_fun = v => retrieve_project_version_metadata_or_null(project, v, bound_bucket, perm, nonblockers);
+    if (version == "latest") {
+        let attempt = await latest.attemptOnLatest(project, bound_bucket, aggr_fun, nonblockers);
+        aggr_meta = attempt.result;
+        version = attempt.version;
+    } else {
+        aggr_meta = await aggr_fun(version);
+    }
     if (aggr_meta == null) {
         throw new utils.HttpError("cannot fetch metadata for locked project '" + project + "' (version '" + version + "')", 400);
     }
@@ -150,18 +175,17 @@ export async function listProjectVersionsHandler(request, bound_bucket, globals,
         user: auth.findUserNoThrow(request, master, nonblockers),
         permissions: auth.getPermissions(project, bound_bucket, nonblockers),
         versions: listAvailableVersions(project, bound_bucket),
-        latest: files.getLatestVersion(project, bound_bucket, nonblockers)
+        latest: latest.getLatestVersion(project, bound_bucket, nonblockers)
     });
 
     auth.checkReadPermissions(resolved.permissions, resolved.user, project);
     let versions = resolved.versions;
-    let latest = resolved.latest;
 
     return utils.jsonResponse({
         project_id: project,
         aggs: versions.map(x => { return { "_extra.version": x } }),
         total: versions.length,
-        latest: { "_extra.version": latest.version }
+        latest: { "_extra.version": resolved.latest.version }
     }, 200);
 }
 
@@ -234,13 +258,35 @@ export async function getProjectVersionInfoHandler(request, bound_bucket, global
 
     let resolved = await utils.namedResolve({
         user: auth.findUserNoThrow(request, master, nonblockers),
-        permissions: auth.getPermissions(project, bound_bucket, nonblockers),
-        locked: lock.isLocked(project, version, bound_bucket)
+        permissions: auth.getPermissions(project, bound_bucket, nonblockers)
     });
-
     auth.checkReadPermissions(resolved.permissions, resolved.user, nonblockers);
-    if (resolved.locked) {
-        throw new utils.HttpError("project '" + project + "' (version '" + version + "') is still locked", 400);
+
+    let check_version_meta = v => bound_bucket.head(pkeys.versionMetadata(project, v));
+    let ver_meta;
+
+    if (version != "latest") {
+        let locked = await lock.isLocked(project, version, bound_bucket);
+        if (locked) {
+            return utils.jsonResponse({ 
+                status: "error", 
+                permissions: resolved.permissions,
+                anomalies: ["project version is still locked"]
+            }, 200);
+        }
+        ver_meta = await check_version_meta(version);
+    } else {
+        let attempt = await latest.attemptOnLatest(project, bound_bucket, check_version_meta, nonblockers);
+        ver_meta = attempt.result;
+        version = attempt.version;
+    }
+
+    if (ver_meta == null) {
+        return utils.jsonResponse({ 
+            status: "error", 
+            permissions: resolved.permissions, 
+            anomalies: ["cannot find version metadata"]
+        }, 200);
     }
 
     return utils.jsonResponse({ status: "ok", permissions: resolved.permissions }, 200);
