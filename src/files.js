@@ -93,6 +93,7 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
             let attempt = await latest.attemptOnLatest(unpacked.project, bound_bucket, file_meta_fun, nonblockers);
             file_res = attempt.result;
             unpacked.version = attempt.version;
+            id = utils.packId(unpacked.project, original, unpacked.version);
         } else {
             file_res = await file_meta_fun(unpacked.version);
         }
@@ -108,7 +109,7 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
             let loc = file_meta["redirection"]["location"];
             let next;
             if (type == "local") {
-                next = unpacked.project + ":" + loc + "@" + unpacked.version;
+                next = utils.packId(unpacked.project, loc, unpacked.version);
             } else {
                 next = loc;
             }

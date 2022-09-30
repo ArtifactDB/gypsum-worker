@@ -25,7 +25,7 @@ async function get_links(project, version, bound_bucket) {
 async function decorate_version_metadata(project, version, resolved, perm) {
     let aggr_meta = resolved.aggregated;
     for (const m of aggr_meta) {
-        let id = project + ":" + m.path + "@" + version;
+        let id = utils.packId(project, m.path, version);
         let components = { project: project, path: m.path, version: version };
         m["_extra"] = files.createExtraMetadata(id, components, m, resolved.version, perm);
     }

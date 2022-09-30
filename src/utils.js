@@ -5,6 +5,10 @@ export class HttpError extends Error {
     }
 }
 
+export function packId(project, path, version) {
+    return project + ":" + path + "@" + version;
+}
+
 export function unpackId(id) {
     let i1 = id.indexOf(":");
     if (i1 < 0) {

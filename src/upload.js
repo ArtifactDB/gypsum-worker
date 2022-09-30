@@ -90,7 +90,7 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
                 if (res !== null) {
                     let meta = await res.json();
                     if (meta[field] == md5sum) {
-                        linked[filename] = project + ":" + filename + "@" + last;
+                        linked[filename] = utils.packId(project, filename, last);
                         return;
                     }
                 } 
@@ -123,7 +123,7 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
     }
 
     for (const [k, v] of Object.entries(linked)) {
-        let src = project + ":" + k + "@" + version;
+        let src = utils.packId(project, k, version);
         linked[k] = "/link/" + btoa(src) + "/to/" + btoa(v);
     }
 
