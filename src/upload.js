@@ -196,7 +196,7 @@ export async function completeUploadHandler(request, bound_bucket, globals, nonb
         body.read_access = "public";
     }
     if (!("write_access" in body)) {
-        body.read_access = "owners";
+        body.write_access = "owners";
     }
     if (!("owners" in body)) {
         body.owners = [user];
