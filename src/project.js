@@ -119,10 +119,13 @@ export async function listAvailableVersions(project, bound_bucket) {
     }
 
     let lock_promises = collected.map(x => lock.isLocked(project, x, bound_bucket));
+    let ver_promises = collected.map(x => bound_bucket.head(pkeys.versionMetadata(project, x)));
+
     let is_locked = await Promise.all(lock_promises);
+    let has_ver_meta = await Promise.all(ver_promises);
     let output = [];
     for (var i = 0; i < is_locked.length; i++) {
-        if (!is_locked[i]) {
+        if (!is_locked[i] && has_ver_meta[i] != null) {
             output.push(collected[i]);
         }
     }
@@ -173,19 +176,28 @@ export async function listProjectVersionsHandler(request, bound_bucket, globals,
 
     let resolved = await utils.namedResolve({
         user: auth.findUserNoThrow(request, master, nonblockers),
-        permissions: auth.getPermissions(project, bound_bucket, nonblockers),
-        versions: listAvailableVersions(project, bound_bucket),
-        latest: latest.getLatestVersion(project, bound_bucket, nonblockers)
+        permissions: auth.getPermissions(project, bound_bucket, nonblockers)
     });
-
     auth.checkReadPermissions(resolved.permissions, resolved.user, project);
-    let versions = resolved.versions;
+    console.log(resolved);
+
+    let more_resolved = await utils.namedResolve({
+        versions: await listAvailableVersions(project, bound_bucket),
+        latest: await latest.getLatestVersion(project, bound_bucket, nonblockers)
+    });
+    let versions = more_resolved.versions;
+    let latver = more_resolved.latest.version;
+
+    if (versions.indexOf(latver) < 0) {
+        let reloaded = await latest.getLatestVersionNoCache(project, bound_bucket, nonblockers);
+        latver = reloaded.version;
+    }
 
     return utils.jsonResponse({
         project_id: project,
         aggs: versions.map(x => { return { "_extra.version": x } }),
         total: versions.length,
-        latest: { "_extra.version": resolved.latest.version }
+        latest: { "_extra.version": latver }
     }, 200);
 }
 

@@ -39,6 +39,12 @@ export async function getLatestVersion(project, bound_bucket, nonblockers) {
     return await get_latest_version_from_source(project, bound_bucket, latestCache, key, nonblockers);
 }
 
+export async function getLatestVersionNoCache(project, bound_bucket, nonblockers) {
+    const latestCache = await latest_cache();
+    let key = latest_cache_key(project);
+    return await get_latest_version_from_source(project, bound_bucket, latestCache, key, nonblockers);
+}
+
 export async function getLatestPersistentVersionOrNull(project, bound_bucket) {
     // Don't bother to cache this, as (i) it's only required for upload start
     // and (ii) we always want to get the very latest from source anyway when
