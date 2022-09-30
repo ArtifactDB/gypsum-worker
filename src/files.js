@@ -182,7 +182,7 @@ export async function getFileHandler(request, bound_bucket, globals, nonblockers
             header = await file_header_fun(unpacked.version);
         }
         if (header == null) {
-            throw new utils.HttpError("failed to retrieve header for '" + id + "'", 500);
+            throw new utils.HttpError("failed to retrieve header for '" + id + "'", 404);
         }
 
         // Following the next link until we get to a non-linked resource.
