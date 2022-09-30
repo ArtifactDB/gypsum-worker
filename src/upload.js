@@ -20,12 +20,17 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
     if (user == null) {
         throw new utils.HttpError("no user identity supplied", 401);
     } else if (!auth.uploaders.has(user)) {
-        throw new utils.HttpError("user is not registered as an uploader", 403);
+        throw new utils.HttpError("user '" + user + "' is not registered as a general uploader", 403);
     } else {
         let perms = await auth.getPermissions(project, bound_bucket, nonblockers);
         if (perms !== null && auth.determinePrivileges(perms, user) != "owner") {
-            throw new utils.HttpError("user is not registered as an owner of the project", 403);
+            throw new utils.HttpError("user is not registered as an owner of project '" + project + "'", 403);
         }
+    }
+
+    let ver_meta = await bound_bucket.head(pkeys.versionMetadata(project, version));
+    if (ver_meta != null) {
+        throw new utils.HttpError("version '" + version + "' already exists for project '" + project + "'", 400);
     }
 
     await lock.lockProject(project, version, bound_bucket, user);
