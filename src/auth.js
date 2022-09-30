@@ -2,7 +2,7 @@ import * as utils from "./utils.js";
 import * as gh from "./github.js";
 import * as pkeys from "./internal.js";
 
-export async function findUser(request, master, nonblockers) {
+async function find_user(request, master, nonblockers) {
     let auth = request.headers.get("Authorization");
     if (auth == null || !auth.startsWith("Bearer ")) {
         return null;
@@ -34,9 +34,17 @@ export async function findUser(request, master, nonblockers) {
     return user;
 }
 
+export async function findUser(request, master, nonblockers) {
+    let user = find_user(request, master, nonblockers);
+    if (user == null) {
+        throw new utils.HttpError("no user identity supplied", 401);
+    }
+    return user;
+}
+
 export async function findUserNoThrow(request, master, nonblockers) {
     try {
-        return findUser(request, master, nonblockers);
+        return find_user(request, master, nonblockers);
     } catch (e) {
         console.warn(e.message);
         return null;
@@ -46,9 +54,6 @@ export async function findUserNoThrow(request, master, nonblockers) {
 export async function findUserHandler(request, bound_bucket, globals, nonblockers) {
     let master = globals.gh_master_token;
     let user = await findUser(request, master, nonblockers);
-    if (user === null) {
-        throw new utils.HttpError("no user identity supplied", 401);
-    }
     return new Response(user, { status: 200, "Content-Type": "text" });
 }
 
@@ -185,8 +190,8 @@ export async function setPermissionsHandler(request, bound_bucket, globals, nonb
     }
 
     let perms = await res.json();
-    if (determinePrivileges(perms, user) == "owner") {
-        throw new utils.HttpError("user does not own the requested project", 403);
+    if (determinePrivileges(perms, user) !== "owner") {
+        throw new utils.HttpError("user '" + user + "' does not own the requested project", 403);
     }
 
     // Updating everything on top of the existing permissions.

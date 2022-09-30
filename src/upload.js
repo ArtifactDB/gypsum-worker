@@ -17,9 +17,7 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
     let s3obj = globals.s3_binding;
 
     let user = await auth.findUser(request, master, nonblockers);
-    if (user == null) {
-        throw new utils.HttpError("no user identity supplied", 401);
-    } else if (!auth.uploaders.has(user)) {
+    if (!auth.uploaders.has(user)) {
         throw new utils.HttpError("user '" + user + "' is not registered as a general uploader", 403);
     } else {
         let perms = await auth.getPermissions(project, bound_bucket, nonblockers);
