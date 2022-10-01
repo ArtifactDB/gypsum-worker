@@ -10,8 +10,15 @@ import * as s3 from "./s3.js";
 /**************** Initialize uploads ***************/
 
 export async function initializeUploadHandler(request, nonblockers) {
-    let project = request.params.project;
-    let version = request.params.version;
+    let project = decodeURIComponent(request.params.project);
+    let version = decodeURIComponent(request.params.version);
+
+    if (project.indexOf("/") >= 0 || project.indexOf(":") >= 0) {
+        throw new utils.HttpError("project name cannot contain '/' or ':'", 400);
+    }
+    if (version.indexOf("/") >= 0 || version.indexOf("@") >= 0) {
+        throw new utils.HttpError("version name cannot contain '/' or 'a'", 400);
+    }
 
     let bucket = s3.getBucketName();
     let s3obj = s3.getS3Object();
@@ -181,8 +188,8 @@ export async function createLinkHandler(request, nonblockers) {
 /**************** Complete uploads ***************/
 
 export async function completeUploadHandler(request, nonblockers) {
-    let project = request.params.project;
-    let version = request.params.version;
+    let project = decodeURIComponent(request.params.project);
+    let version = decodeURIComponent(request.params.version);
 
     let user = await auth.findUser(request, nonblockers);
     await lock.checkLock(project, version, user);
@@ -247,8 +254,8 @@ export async function queryJobIdHandler(request, nonblockers) {
 /**************** Abort upload ***************/
 
 export async function abortUploadHandler(request, nonblockers) {
-    let project = request.params.project;
-    let version = request.params.version;
+    let project = decodeURIComponent(request.params.project);
+    let version = decodeURIComponent(request.params.version);
 
     let user = await auth.findUser(request, nonblockers);
     await lock.checkLock(project, version, user);

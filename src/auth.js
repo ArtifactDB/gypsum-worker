@@ -114,8 +114,7 @@ export const uploaders = new Set([
 ]);
 
 export async function getPermissionsHandler(request, nonblockers) {
-    let project = request.params.project;
-    let bound_bucket = s3.getR2Binding();
+    let project = decodeURIComponent(request.params.project);
 
     let perms = await getPermissions(project, nonblockers);
     if (perms == null) {
@@ -177,7 +176,7 @@ export function validateNewPermissions(perm) {
 }
 
 export async function setPermissionsHandler(request, nonblockers) {
-    let project = request.params.project;
+    let project = decodeURIComponent(request.params.project);
     let bound_bucket = s3.getR2Binding();
 
     // Making sure the user identifies themselves first.

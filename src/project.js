@@ -70,8 +70,8 @@ async function retrieve_project_version_metadata(project, version, perm, nonbloc
 }
 
 export async function getProjectVersionMetadataHandler(request, nonblockers) {
-    let project = request.params.project;
-    let version = request.params.version;
+    let project = decodeURIComponent(request.params.project);
+    let version = decodeURIComponent(request.params.version);
 
     let resolved = await utils.namedResolve({
         user: auth.findUserNoThrow(request, nonblockers),
@@ -137,8 +137,7 @@ export async function listAvailableVersions(project) {
 }
 
 export async function getProjectMetadataHandler(request, nonblockers) {
-    let bound_bucket = s3.getR2Binding();
-    let project = request.params.project;
+    let project = decodeURIComponent(request.params.project);
 
     let resolved = await utils.namedResolve({
         user: auth.findUserNoThrow(request, nonblockers),
@@ -174,8 +173,7 @@ export async function getProjectMetadataHandler(request, nonblockers) {
 }
 
 export async function listProjectVersionsHandler(request, nonblockers) {
-    let bound_bucket = s3.getR2Binding();
-    let project = request.params.project;
+    let project = decodeURIComponent(request.params.project);
 
     let resolved = await utils.namedResolve({
         user: auth.findUserNoThrow(request, nonblockers),
@@ -266,8 +264,8 @@ export async function listProjectsHandler(request, nonblockers) {
 }
 
 export async function getProjectVersionInfoHandler(request, nonblockers) {
-    let project = request.params.project;
-    let version = request.params.version;
+    let project = decodeURIComponent(request.params.project);
+    let version = decodeURIComponent(request.params.version);
     let bound_bucket = s3.getR2Binding();
 
     let resolved = await utils.namedResolve({
