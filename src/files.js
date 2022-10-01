@@ -141,7 +141,7 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
             throw new utils.HttpError("failed to retrieve header for '" + id + "'", 500);
         }
         if ("artifactdb_id" in file_header.customMetadata) {
-            file_meta["_extra"].link = { "id": file_header.customMetadata.artifactdb_id };
+            file_meta["_extra"].link = { "artifactdb": file_header.customMetadata.artifactdb_id };
         }
     }
 
