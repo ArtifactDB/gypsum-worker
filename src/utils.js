@@ -1,3 +1,5 @@
+import * as s3 from "./s3.js";
+
 export class HttpError extends Error {
     constructor(message, code) {
         super(message);
@@ -65,7 +67,7 @@ export function quickCacheJson(cache, key, value, expires) {
     return quickCacheJsonText(cache, key, JSON.stringify(value), expires);
 }
 
-export function quickUploadJson(bound_bucket, path, value, custom = null) {
+export function quickUploadJson(path, value, custom = null) {
     let meta = {
         httpMetadata: { contentType: "application/json" }
     };
@@ -74,6 +76,7 @@ export function quickUploadJson(bound_bucket, path, value, custom = null) {
         meta.customMetadata = custom;
     }
 
+    let bound_bucket = s3.getR2Binding();
     return bound_bucket.put(path, JSON.stringify(value), meta);
 }
 

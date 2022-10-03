@@ -4,8 +4,10 @@ import * as utils from "./utils.js";
 import * as lock from "./lock.js";
 import * as pkeys from "./internal.js";
 import * as latest from "./latest.js";
+import * as s3 from "./s3.js";
 
-async function getAggregatedMetadata(project, version, bound_bucket) {
+async function getAggregatedMetadata(project, version) {
+    let bound_bucket = s3.getR2Binding();
     let aggr = await bound_bucket.get(pkeys.aggregated(project, version));
     if (aggr == null) {
         throw new utils.HttpError("failed to fetch aggregated metadata for '" + project + "' (version '" + version + "')", 500);
@@ -13,7 +15,8 @@ async function getAggregatedMetadata(project, version, bound_bucket) {
     return await aggr.json();
 }
 
-async function get_links(project, version, bound_bucket) {
+async function get_links(project, version) {
+    let bound_bucket = s3.getR2Binding();
     let vals = await bound_bucket.get(pkeys.links(project, version));
     if (vals !== null) {
         return await vals.json();
@@ -42,46 +45,45 @@ async function decorate_version_metadata(project, version, resolved, perm) {
     return aggr_meta;
 }
 
-async function retrieve_project_version_metadata_or_null(project, version, bound_bucket, perm, nonblockers) {
-    let ver_meta = await files.getVersionMetadataOrNull(project, version, bound_bucket, nonblockers);
+async function retrieve_project_version_metadata_or_null(project, version, perm, nonblockers) {
+    let ver_meta = await files.getVersionMetadataOrNull(project, version, nonblockers);
     if (ver_meta == null) {
         return null;
     }
 
     let resolved = await utils.namedResolve({
-        aggregated: getAggregatedMetadata(project, version, bound_bucket),
-        links: get_links(project, version, bound_bucket)
+        aggregated: getAggregatedMetadata(project, version),
+        links: get_links(project, version)
     });
     resolved.version = ver_meta;
 
     return decorate_version_metadata(project, version, resolved, perm);
 }
 
-async function retrieve_project_version_metadata(project, version, bound_bucket, perm, nonblockers) {
+async function retrieve_project_version_metadata(project, version, perm, nonblockers) {
     let resolved = await utils.namedResolve({
-        aggregated: getAggregatedMetadata(project, version, bound_bucket),
-        version: files.getVersionMetadata(project, version, bound_bucket, nonblockers),
-        links: get_links(project, version, bound_bucket)
+        aggregated: getAggregatedMetadata(project, version),
+        version: files.getVersionMetadata(project, version, nonblockers),
+        links: get_links(project, version)
     });
     return decorate_version_metadata(project, version, resolved, perm);
 }
 
-export async function getProjectVersionMetadataHandler(request, bound_bucket, globals, nonblockers) {
+export async function getProjectVersionMetadataHandler(request, nonblockers) {
     let project = request.params.project;
     let version = request.params.version;
-    let master = globals.gh_master_token;
 
     let resolved = await utils.namedResolve({
-        user: auth.findUserNoThrow(request, master, nonblockers),
-        permissions: auth.getPermissions(project, bound_bucket, nonblockers)
+        user: auth.findUserNoThrow(request, nonblockers),
+        permissions: auth.getPermissions(project, nonblockers)
     });
     let perm = resolved.permissions;
     auth.checkReadPermissions(perm, resolved.user, project);
 
     let aggr_meta;
-    let aggr_fun = v => retrieve_project_version_metadata_or_null(project, v, bound_bucket, perm, nonblockers);
+    let aggr_fun = v => retrieve_project_version_metadata_or_null(project, v, perm, nonblockers);
     if (version == "latest") {
-        let attempt = await latest.attemptOnLatest(project, bound_bucket, aggr_fun, nonblockers);
+        let attempt = await latest.attemptOnLatest(project, aggr_fun, nonblockers);
         aggr_meta = attempt.result;
         version = attempt.version;
     } else {
@@ -98,7 +100,8 @@ export async function getProjectVersionMetadataHandler(request, bound_bucket, gl
     }, 200);
 }
 
-export async function listAvailableVersions(project, bound_bucket) {
+export async function listAvailableVersions(project) {
+    let bound_bucket = s3.getR2Binding();
     let collected = [];
     let params = { prefix: project + "/", delimiter: "/" };
 
@@ -118,7 +121,7 @@ export async function listAvailableVersions(project, bound_bucket) {
         }
     }
 
-    let lock_promises = collected.map(x => lock.isLocked(project, x, bound_bucket));
+    let lock_promises = collected.map(x => lock.isLocked(project, x));
     let ver_promises = collected.map(x => bound_bucket.head(pkeys.versionMetadata(project, x)));
 
     let is_locked = await Promise.all(lock_promises);
@@ -133,14 +136,14 @@ export async function listAvailableVersions(project, bound_bucket) {
     return output;
 }
 
-export async function getProjectMetadataHandler(request, bound_bucket, globals, nonblockers) {
+export async function getProjectMetadataHandler(request, nonblockers) {
+    let bound_bucket = s3.getR2Binding();
     let project = request.params.project;
-    let master = globals.gh_master_token;
 
     let resolved = await utils.namedResolve({
-        user: auth.findUserNoThrow(request, master, nonblockers),
-        permissions: auth.getPermissions(project, bound_bucket, nonblockers),
-        versions: listAvailableVersions(project, bound_bucket)
+        user: auth.findUserNoThrow(request, nonblockers),
+        permissions: auth.getPermissions(project, nonblockers),
+        versions: listAvailableVersions(project)
     });
 
     let perm = resolved.permissions;
@@ -148,7 +151,7 @@ export async function getProjectMetadataHandler(request, bound_bucket, globals, 
 
     let collected = resolved.versions.map(async version => {
         try {
-            return await retrieve_project_version_metadata(project, version, bound_bucket, perm, nonblockers);
+            return await retrieve_project_version_metadata(project, version, perm, nonblockers);
         } catch (e) {
             console.warn("failed to retrieve metadata for project '" + project + "' (version '" + version + "'): " + e.message); // don't fail completely if version is bad.
             return [];
@@ -170,26 +173,26 @@ export async function getProjectMetadataHandler(request, bound_bucket, globals, 
     }, 200);
 }
 
-export async function listProjectVersionsHandler(request, bound_bucket, globals, nonblockers) {
+export async function listProjectVersionsHandler(request, nonblockers) {
+    let bound_bucket = s3.getR2Binding();
     let project = request.params.project;
-    let master = globals.gh_master_token;
 
     let resolved = await utils.namedResolve({
-        user: auth.findUserNoThrow(request, master, nonblockers),
-        permissions: auth.getPermissions(project, bound_bucket, nonblockers)
+        user: auth.findUserNoThrow(request, nonblockers),
+        permissions: auth.getPermissions(project, nonblockers)
     });
     auth.checkReadPermissions(resolved.permissions, resolved.user, project);
     console.log(resolved);
 
     let more_resolved = await utils.namedResolve({
-        versions: await listAvailableVersions(project, bound_bucket),
-        latest: await latest.getLatestVersion(project, bound_bucket, nonblockers)
+        versions: await listAvailableVersions(project),
+        latest: await latest.getLatestVersion(project, nonblockers)
     });
     let versions = more_resolved.versions;
     let latver = more_resolved.latest.version;
 
     if (versions.indexOf(latver) < 0) {
-        let reloaded = await latest.getLatestVersionNoCache(project, bound_bucket, nonblockers);
+        let reloaded = await latest.getLatestVersionNoCache(project, nonblockers);
         latver = reloaded.version;
     }
 
@@ -201,9 +204,9 @@ export async function listProjectVersionsHandler(request, bound_bucket, globals,
     }, 200);
 }
 
-export async function listProjectsHandler(request, bound_bucket, globals, nonblockers) {
-    let master = globals.gh_master_token;
-    let user = await auth.findUserNoThrow(request, master, nonblockers);
+export async function listProjectsHandler(request, nonblockers) {
+    let bound_bucket = s3.getR2Binding();
+    let user = await auth.findUserNoThrow(request, nonblockers);
 
     // Looping across all projects.
     let params = { delimiter: "/", limit: 50 };
@@ -223,7 +226,7 @@ export async function listProjectsHandler(request, bound_bucket, globals, nonblo
 
     let project_promises = collected.map(async project => {
         try {
-            let perm = await auth.getPermissions(project, bound_bucket, nonblockers);
+            let perm = await auth.getPermissions(project, nonblockers);
             auth.checkReadPermissions(perm, user, nonblockers);
         } catch (e) {
             if (e.statusCode < 400 && e.statusCode >= 500) {
@@ -232,7 +235,7 @@ export async function listProjectsHandler(request, bound_bucket, globals, nonblo
             return null;
         }
 
-        let all_versions = await listAvailableVersions(project, bound_bucket);
+        let all_versions = await listAvailableVersions(project);
         return { 
             project_id: project,
             aggs: all_versions.map(x => { return { "_extra.version": x } })
@@ -263,14 +266,14 @@ export async function listProjectsHandler(request, bound_bucket, globals, nonblo
     return utils.jsonResponse(output, 200, headers);
 }
 
-export async function getProjectVersionInfoHandler(request, bound_bucket, globals, nonblockers) {
+export async function getProjectVersionInfoHandler(request, nonblockers) {
     let project = request.params.project;
     let version = request.params.version;
-    let master = globals.gh_master_token;
+    let bound_bucket = s3.getR2Binding();
 
     let resolved = await utils.namedResolve({
-        user: auth.findUserNoThrow(request, master, nonblockers),
-        permissions: auth.getPermissions(project, bound_bucket, nonblockers)
+        user: auth.findUserNoThrow(request, nonblockers),
+        permissions: auth.getPermissions(project, nonblockers)
     });
     auth.checkReadPermissions(resolved.permissions, resolved.user, nonblockers);
 
@@ -278,7 +281,7 @@ export async function getProjectVersionInfoHandler(request, bound_bucket, global
     let ver_meta;
 
     if (version != "latest") {
-        let locked = await lock.isLocked(project, version, bound_bucket);
+        let locked = await lock.isLocked(project, version);
         if (locked) {
             return utils.jsonResponse({ 
                 status: "error", 
@@ -288,7 +291,7 @@ export async function getProjectVersionInfoHandler(request, bound_bucket, global
         }
         ver_meta = await check_version_meta(version);
     } else {
-        let attempt = await latest.attemptOnLatest(project, bound_bucket, check_version_meta, nonblockers);
+        let attempt = await latest.attemptOnLatest(project, check_version_meta, nonblockers);
         ver_meta = attempt.result;
         version = attempt.version;
     }

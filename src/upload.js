@@ -5,22 +5,23 @@ import * as lock from "./lock.js";
 import * as expiry from "./expiry.js";
 import * as pkeys from "./internal.js";
 import * as latest from "./latest.js";
+import * as s3 from "./s3.js";
 
 /**************** Initialize uploads ***************/
 
-export async function initializeUploadHandler(request, bound_bucket, globals, nonblockers) {
+export async function initializeUploadHandler(request, nonblockers) {
     let project = request.params.project;
     let version = request.params.version;
 
-    let bucket = globals.r2_bucket_name;
-    let master = globals.gh_master_token;
-    let s3obj = globals.s3_binding;
+    let bucket = s3.getBucketName();
+    let s3obj = s3.getS3Object();
+    let bound_bucket = s3.getR2Binding();
 
-    let user = await auth.findUser(request, master, nonblockers);
+    let user = await auth.findUser(request, nonblockers);
     if (!auth.uploaders.has(user)) {
         throw new utils.HttpError("user '" + user + "' is not registered as a general uploader", 403);
     } else {
-        let perms = await auth.getPermissions(project, bound_bucket, nonblockers);
+        let perms = await auth.getPermissions(project, nonblockers);
         if (perms !== null && auth.determinePrivileges(perms, user) != "owner") {
             throw new utils.HttpError("user is not registered as an owner of project '" + project + "'", 403);
         }
@@ -31,7 +32,7 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
         throw new utils.HttpError("version '" + version + "' already exists for project '" + project + "'", 400);
     }
 
-    await lock.lockProject(project, version, bound_bucket, user);
+    await lock.lockProject(project, version, user);
     let body = await request.json();
     let files = body.filenames;
 
@@ -78,7 +79,7 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
 
     // Resolving the MD5sums against the current latest version. 
     if (md5able.length) {
-        let lres = await latest.getLatestPersistentVersionOrNull(project, bound_bucket);
+        let lres = await latest.getLatestPersistentVersionOrNull(project);
         if (lres == null || lres.index_time < 0) {
             for (const f of md5able) {
                 add_presigned_url(f.filename);
@@ -119,7 +120,7 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
 
     // If there are any links, save them for later use.
     if (Object.keys(linked).length) {
-        nonblockers.push(utils.quickUploadJson(bound_bucket, pkeys.links(project, version), linked));
+        nonblockers.push(utils.quickUploadJson(pkeys.links(project, version), linked));
     }
 
     for (const [k, v] of Object.entries(linked)) {
@@ -132,7 +133,7 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
     // is idempotent; so we make sure it survives until expiration.
     if ("expires_in" in body) {
         let exp = expiry.expiresInMilliseconds(body.expires_in);
-        nonblockers.push(utils.quickUploadJson(bound_bucket, pkeys.expiry(project, version), { "expires_in": exp }));
+        nonblockers.push(utils.quickUploadJson(pkeys.expiry(project, version), { "expires_in": exp }));
     }
 
     let presigned_vec = await Promise.all(precollected);
@@ -147,8 +148,7 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
             version: version,
             mode: "incomplete",
             delete_after: Date.now() + 2 * 3600 * 1000 
-        }),
-        master
+        })
     ));
 
     return utils.jsonResponse({ 
@@ -161,33 +161,31 @@ export async function initializeUploadHandler(request, bound_bucket, globals, no
 
 /**************** Create links ***************/
 
-export async function createLinkHandler(request, bound_bucket, globals, nonblockers) {
+export async function createLinkHandler(request, nonblockers) {
     let from = atob(request.params.source);
     let to = atob(request.params.target);
     let unpacked = utils.unpackId(from);
 
-    let master = globals.gh_master_token;
-    let user = await auth.findUser(request, master, nonblockers);
-    await lock.checkLock(unpacked.project, unpacked.version, bound_bucket, user);
+    let user = await auth.findUser(request, nonblockers);
+    await lock.checkLock(unpacked.project, unpacked.version, user);
 
     let path = unpacked.project + "/" + unpacked.version + "/" + unpacked.path;
     let details = { "artifactdb_id": to };
 
     // Store the details both inside the file and as the metadata.
-    nonblockers.push(utils.quickUploadJson(bound_bucket, path, details, details));
+    nonblockers.push(utils.quickUploadJson(path, details, details));
 
     return new Response(null, { status: 202 });
 }
 
 /**************** Complete uploads ***************/
 
-export async function completeUploadHandler(request, bound_bucket, globals, nonblockers) {
+export async function completeUploadHandler(request, nonblockers) {
     let project = request.params.project;
     let version = request.params.version;
 
-    let master = globals.gh_master_token;
-    let user = await auth.findUser(request, master, nonblockers);
-    await lock.checkLock(project, version, bound_bucket, user);
+    let user = await auth.findUser(request, nonblockers);
+    await lock.checkLock(project, version, user);
 
     let body = await request.json();
     if (!("read_access" in body)) {
@@ -220,19 +218,17 @@ export async function completeUploadHandler(request, bound_bucket, globals, nonb
                 viewers: body.viewers
             },
             overwrite_permissions: overwrite
-        }),
-        master
+        })
     );
     let payload = await info.json();
 
     return utils.jsonResponse({ job_id: payload.number }, 202);
 }
 
-export async function queryJobIdHandler(request, bound_bucket, globals, nonblockers) {
+export async function queryJobIdHandler(request, nonblockers) {
     let jid = request.params.jobid;
-    let master = globals.gh_master_token;
 
-    let info = await gh.getIssue(jid, master);
+    let info = await gh.getIssue(jid);
     let payload = await info.json();
 
     let state = "PENDING";
@@ -250,13 +246,12 @@ export async function queryJobIdHandler(request, bound_bucket, globals, nonblock
 
 /**************** Abort upload ***************/
 
-export async function abortUploadHandler(request, bound_bucket, globals, nonblockers) {
+export async function abortUploadHandler(request, nonblockers) {
     let project = request.params.project;
     let version = request.params.version;
 
-    let master = globals.gh_master_token;
-    let user = await auth.findUser(request, master, nonblockers);
-    await lock.checkLock(project, version, bound_bucket, user);
+    let user = await auth.findUser(request, nonblockers);
+    await lock.checkLock(project, version, user);
 
     // Doesn't actually do anything, as we already have an purge job running as
     // soon as the upload is started; this endpoint is just for compliance with

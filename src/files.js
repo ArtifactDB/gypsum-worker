@@ -2,9 +2,11 @@ import * as auth from "./auth.js";
 import * as utils from "./utils.js";
 import * as pkeys from "./internal.js";
 import * as latest from "./latest.js";
+import * as s3 from "./s3.js";
 
-export async function getVersionMetadataOrNull(project, version, bound_bucket, nonblockers) {
+export async function getVersionMetadataOrNull(project, version, nonblockers) {
     const versionCache = await caches.open("version:cache");
+    let bound_bucket = s3.getR2Binding();
 
     // Key needs to be a URL.
     const key = "https://github.com/ArtifactDB/gypsum-worker/" + project + "/version/" + version + "/metadata";
@@ -24,8 +26,8 @@ export async function getVersionMetadataOrNull(project, version, bound_bucket, n
     return JSON.parse(data);
 }
 
-export async function getVersionMetadata(project, version, bound_bucket, nonblockers) {
-    let out = getVersionMetadataOrNull(project, version, bound_bucket, nonblockers);
+export async function getVersionMetadata(project, version, nonblockers) {
+    let out = getVersionMetadataOrNull(project, version, nonblockers);
     if (out == null) {
         throw new utils.HttpError("failed to retrieve metadata for project '" + project + "', version '" + version + "'", 404);
     }
@@ -55,10 +57,10 @@ export function createExtraMetadata(id, unpacked, file_meta, version_meta, permi
     return output;
 }
 
-export async function getFileMetadataHandler(request, bound_bucket, globals, nonblockers) {
+export async function getFileMetadataHandler(request, nonblockers) {
     let id = decodeURIComponent(request.params.id);
     let follow_link = request.query.follow_link == "true";
-    let master = globals.gh_master_token;
+    let bound_bucket = s3.getR2Binding();
 
     let previous = new Set;
     let allowed = {};
@@ -79,8 +81,8 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
         // of hitting Cloudflare's cache when following links.
         if (!(unpacked.project in allowed)) {
             let resolved = await utils.namedResolve({
-                user: auth.findUserNoThrow(request, master, nonblockers),
-                permissions: auth.getPermissions(unpacked.project, bound_bucket, nonblockers)
+                user: auth.findUserNoThrow(request, nonblockers),
+                permissions: auth.getPermissions(unpacked.project, nonblockers)
             });
             let perm = resolved.permissions;
             auth.checkReadPermissions(perm, resolved.user, unpacked.project);
@@ -90,7 +92,7 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
         let file_res;
         let file_meta_fun = v => bound_bucket.get(unpacked.project + "/" + v + "/" + unpacked.path);
         if (unpacked.version == "latest") {
-            let attempt = await latest.attemptOnLatest(unpacked.project, bound_bucket, file_meta_fun, nonblockers);
+            let attempt = await latest.attemptOnLatest(unpacked.project, file_meta_fun, nonblockers);
             file_res = attempt.result;
             unpacked.version = attempt.version;
             id = utils.packId(unpacked.project, original, unpacked.version);
@@ -125,7 +127,7 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
 
     // Adding more information.
     let more_promises = {
-        version_metadata: getVersionMetadata(unpacked.project, unpacked.version, bound_bucket, nonblockers),
+        version_metadata: getVersionMetadata(unpacked.project, unpacked.version, nonblockers),
     };
     if (!pure_meta) {
         let ogpath = unpacked.project + "/" + unpacked.version + "/" + original;
@@ -148,12 +150,12 @@ export async function getFileMetadataHandler(request, bound_bucket, globals, non
     return utils.jsonResponse(file_meta, 200);
 }
 
-export async function getFileHandler(request, bound_bucket, globals, nonblockers) {
+export async function getFileHandler(request, nonblockers) {
     let id = decodeURIComponent(request.params.id);
+    let bound_bucket = s3.getR2Binding();
 
-    let master = globals.gh_master_token;
-    let bucket_name = globals.r2_bucket_name;
-    let s3obj = globals.s3_binding;
+    let bucket_name = s3.getBucketName();
+    let s3obj = s3.getS3Object();
 
     let previous = new Set;
     let allowed = new Set;
@@ -166,8 +168,8 @@ export async function getFileHandler(request, bound_bucket, globals, nonblockers
         // Checking a function-local cache for auth, to avoid paying the cost of hitting Cloudflare's cache.
         if (!allowed.has(unpacked.project)) {
             let resolved = await utils.namedResolve({
-                user: auth.findUserNoThrow(request, master, nonblockers),
-                permissions: auth.getPermissions(unpacked.project, bound_bucket, nonblockers),
+                user: auth.findUserNoThrow(request, nonblockers),
+                permissions: auth.getPermissions(unpacked.project, nonblockers),
             });
             auth.checkReadPermissions(resolved.permissions, resolved.user, unpacked.project);
             allowed.add(unpacked.project);
@@ -176,7 +178,7 @@ export async function getFileHandler(request, bound_bucket, globals, nonblockers
         let header;
         let file_header_fun = v => bound_bucket.head(unpacked.project + "/" + v + "/" + unpacked.path);
         if (unpacked.version == "latest") {
-            let attempt = await latest.attemptOnLatest(unpacked.project, bound_bucket, file_header_fun, nonblockers);
+            let attempt = await latest.attemptOnLatest(unpacked.project, file_header_fun, nonblockers);
             header = attempt.result;
             unpacked.version = attempt.version;
         } else {

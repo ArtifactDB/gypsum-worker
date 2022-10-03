@@ -1,8 +1,9 @@
 import * as utils from "./utils.js";
 import * as gh from "./github.js";
 import * as pkeys from "./internal.js";
+import * as s3 from "./s3.js";
 
-async function find_user(request, master, nonblockers) {
+async function find_user(request, nonblockers) {
     let auth = request.headers.get("Authorization");
     if (auth == null || !auth.startsWith("Bearer ")) {
         return null;
@@ -15,6 +16,7 @@ async function find_user(request, master, nonblockers) {
     // server-side secret, which should be good enough.
     let key;
     {
+        let master = gh.getToken();
         let enc = new TextEncoder();
         let ckey = await crypto.subtle.importKey("raw", enc.encode(master), { name: "HMAC", hash: "SHA-256" }, false, [ "sign" ]);
         let secured = await crypto.subtle.sign({ name: "HMAC" }, ckey, enc.encode(token));
@@ -34,26 +36,25 @@ async function find_user(request, master, nonblockers) {
     return user;
 }
 
-export async function findUser(request, master, nonblockers) {
-    let user = find_user(request, master, nonblockers);
+export async function findUser(request, nonblockers) {
+    let user = find_user(request, nonblockers);
     if (user == null) {
         throw new utils.HttpError("no user identity supplied", 401);
     }
     return user;
 }
 
-export async function findUserNoThrow(request, master, nonblockers) {
+export async function findUserNoThrow(request, nonblockers) {
     try {
-        return find_user(request, master, nonblockers);
+        return find_user(request, nonblockers);
     } catch (e) {
         console.warn(e.message);
         return null;
     }
 }
 
-export async function findUserHandler(request, bound_bucket, globals, nonblockers) {
-    let master = globals.gh_master_token;
-    let user = await findUser(request, master, nonblockers);
+export async function findUserHandler(request, nonblockers) {
+    let user = await findUser(request, nonblockers);
     return new Response(user, { status: 200, "Content-Type": "text" });
 }
 
@@ -66,8 +67,9 @@ function permissions_cache_key(project) {
     return "https://github.com/ArtifactDB/gypsum-worker/permissions/" + project;
 }
 
-export async function getPermissions(project, bound_bucket, nonblockers) {
+export async function getPermissions(project, nonblockers) {
     const permCache = await permissions_cache();
+    let bound_bucket = s3.getR2Binding();
 
     const key = permissions_cache_key(project);
     let check = await permCache.match(key);
@@ -111,16 +113,16 @@ export const uploaders = new Set([
     "vjcitn"
 ]);
 
-export async function getPermissionsHandler(request, bound_bucket, globals, nonblockers) {
+export async function getPermissionsHandler(request, nonblockers) {
     let project = request.params.project;
-    let master = globals.gh_master_token;
+    let bound_bucket = s3.getR2Binding();
 
-    let perms = await getPermissions(project, bound_bucket, nonblockers);
+    let perms = await getPermissions(project, nonblockers);
     if (perms == null) {
         throw new utils.HttpError("requested project does not exist", 404);
     }
 
-    let user = await findUserNoThrow(request, master, nonblockers);
+    let user = await findUserNoThrow(request, nonblockers);
     if (determinePrivileges(perms, user) == "none") {
         throw new utils.HttpError("user does not have access to the requested project", 403);
     }
@@ -174,12 +176,12 @@ export function validateNewPermissions(perm) {
     }
 }
 
-export async function setPermissionsHandler(request, bound_bucket, globals, nonblockers) {
+export async function setPermissionsHandler(request, nonblockers) {
     let project = request.params.project;
-    let master = globals.gh_master_token;
+    let bound_bucket = s3.getR2Binding();
 
     // Making sure the user identifies themselves first.
-    let user = await findUser(request, master, nonblockers);
+    let user = await findUser(request, nonblockers);
 
     // Don't use the cache: get the file from storage again,
     // just in case it was updated at some point.

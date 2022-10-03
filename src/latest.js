@@ -1,7 +1,10 @@
 import * as utils from "./utils.js";
 import * as pkeys from "./internal.js";
+import * as s3 from "./s3.js";
 
-export async function get_latest_version_from_source(project, bound_bucket, cache, cache_key, nonblockers) {
+export async function get_latest_version_from_source(project, cache, cache_key, nonblockers) {
+    let bound_bucket = s3.getR2Binding();
+
     let stuff = await bound_bucket.get(pkeys.latestAll(project));
     if (stuff == null) {
         throw new utils.HttpError("failed to retrieve latest version for project '" + project + "'", 404);
@@ -27,7 +30,7 @@ function latest_cache_key(project) {
     return "https://github.com/ArtifactDB/gypsum-worker/latest/" + project;
 }
 
-export async function getLatestVersion(project, bound_bucket, nonblockers) {
+export async function getLatestVersion(project, nonblockers) {
     const latestCache = await latest_cache();
 
     let key = latest_cache_key(project);
@@ -36,16 +39,18 @@ export async function getLatestVersion(project, bound_bucket, nonblockers) {
         return await check.json();
     }
 
-    return await get_latest_version_from_source(project, bound_bucket, latestCache, key, nonblockers);
+    return await get_latest_version_from_source(project, latestCache, key, nonblockers);
 }
 
-export async function getLatestVersionNoCache(project, bound_bucket, nonblockers) {
+export async function getLatestVersionNoCache(project, nonblockers) {
     const latestCache = await latest_cache();
     let key = latest_cache_key(project);
-    return await get_latest_version_from_source(project, bound_bucket, latestCache, key, nonblockers);
+    return await get_latest_version_from_source(project, latestCache, key, nonblockers);
 }
 
-export async function getLatestPersistentVersionOrNull(project, bound_bucket) {
+export async function getLatestPersistentVersionOrNull(project) {
+    let bound_bucket = s3.getR2Binding();
+
     // Don't bother to cache this, as (i) it's only required for upload start
     // and (ii) we always want to get the very latest from source anyway when
     // defining links to write to the bucket.
@@ -53,10 +58,11 @@ export async function getLatestPersistentVersionOrNull(project, bound_bucket) {
     if (stuff == null) {
         return null;
     }
+
     return await stuff.json();
 }
 
-export async function attemptOnLatest(project, bound_bucket, fun, nonblockers) {
+export async function attemptOnLatest(project, fun, nonblockers) {
     const latestCache = await latest_cache();
 
     let key = latest_cache_key(project);
@@ -65,7 +71,7 @@ export async function attemptOnLatest(project, bound_bucket, fun, nonblockers) {
     // If nothing was cached, the latest ID must be fetched from source directly,
     // in which case we don't have to worry about cache invalidity.
     if (check == null) {
-        let latest = await get_latest_version_from_source(project, bound_bucket, latestCache, key, nonblockers);
+        let latest = await get_latest_version_from_source(project, latestCache, key, nonblockers);
         let lv = latest.version;
         return { version: lv, result: await fun(lv) };
     }
@@ -84,7 +90,7 @@ export async function attemptOnLatest(project, bound_bucket, fun, nonblockers) {
     // the cache, re-acquire the latest version again, and re-run the function.
     // If that ALSO fails... you're on your own.
     await latestCache.delete(key);
-    let latest = await get_latest_version_from_source(project, bound_bucket, latestCache, key, nonblockers);
+    let latest = await get_latest_version_from_source(project, latestCache, key, nonblockers);
     let lev = latest.version;
     return { version: lv, result: await fun(lv) };
 }

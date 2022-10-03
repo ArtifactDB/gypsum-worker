@@ -1,4 +1,4 @@
-name = "gypsum-test"
+name = "gypsum-test" # ~> Name of the worker, to be used in the endpoint URL.
 type = "webpack"
 
 account_id = ""
@@ -8,7 +8,11 @@ zone_id = ""
 compatibility_date = "2022-03-04"
 
 [[r2_buckets]]
-binding = 'GYPSUM_BUCKET'
-bucket_name = 'gypsum-test'
-preview_bucket_name = 'gypsum-test'
+binding = 'BOUND_BUCKET' 
+bucket_name = 'gypsum-test' # ~> Name of the bucket.
+preview_bucket_name = 'gypsum-test' # ~> Name of the test bucket, for development purposes.
 
+[vars]
+R2_BUCKET_NAME = 'gypsum-test' # ~> Name of the bucket. Should be the same as r2_buckets.bucket_name.
+GITHUB_CI_REPOSITORY = 'ArtifactDB/gypsum-actions' # ~> Name of the GitHub repository to use for CI/CD.
+GITHUB_USER_AGENT = 'gypsum-test-worker' # ~> User agent for GitHub requests.

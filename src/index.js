@@ -1,5 +1,4 @@
 import { Router } from 'itty-router'
-import S3 from 'aws-sdk/clients/s3.js';
 
 import * as gh from "./github.js";
 import * as files from "./files.js";
@@ -7,19 +6,16 @@ import * as project from "./project.js";
 import * as auth from "./auth.js";
 import * as upload from "./upload.js";
 import * as utils from "./utils.js";
+import * as s3 from "./s3.js";
+
+gh.setToken(GITHUB_PAT);
+gh.setRepository(GITHUB_CI_REPOSITORY);
+gh.setUserAgent(GITHUB_USER_AGENT);
+s3.setBucketName(R2_BUCKET_NAME);
+s3.setS3Object(ACCOUNT_ID, ACCESS_KEY_ID, SECRET_ACCESS_KEY);
+s3.setR2Binding(BOUND_BUCKET);
 
 const router = Router();
-
-const globals = {
-    gh_master_token: GITHUB_PAT,
-    r2_bucket_name: "gypsum-test",
-    s3_binding: new S3({
-        endpoint: `https://${ACCOUNT_ID}.r2.cloudflarestorage.com`,
-        accessKeyId: `${ACCESS_KEY_ID}`,
-        secretAccessKey: `${SECRET_ACCESS_KEY}`,
-        signatureVersion: 'v4',
-    })
-};
 
 /*** CORS-related shenanigans ***/
 
@@ -49,37 +45,37 @@ function handleOptions(request) {
 
 /*** Setting up the routes ***/
 
-router.get("/files/:id/metadata", (request, bucket, nonblockers) => files.getFileMetadataHandler(request, bucket, globals, nonblockers));
+router.get("/files/:id/metadata", files.getFileMetadataHandler);
 
-router.get("/files/:id", (request, bucket, nonblockers) => files.getFileHandler(request, bucket, globals, nonblockers));
+router.get("/files/:id", files.getFileHandler);
 
-router.post("/projects/:project/version/:version/upload", (request, bucket, nonblockers) => upload.initializeUploadHandler(request, bucket, globals, nonblockers));
+router.post("/projects/:project/version/:version/upload", upload.initializeUploadHandler);
 
-router.put("/link/:source/to/:target", (request, bucket, nonblockers) => upload.createLinkHandler(request, bucket, globals, nonblockers));
+router.put("/link/:source/to/:target", upload.createLinkHandler);
 
-router.put("/projects/:project/version/:version/complete", (request, bucket, nonblockers) => upload.completeUploadHandler(request, bucket, globals, nonblockers));
+router.put("/projects/:project/version/:version/complete", upload.completeUploadHandler);
 
-router.put("/projects/:project/version/:version/abort", (request, bucket, nonblockers) => upload.abortUploadHandler(request, bucket, globals, nonblockers));
+router.put("/projects/:project/version/:version/abort", upload.abortUploadHandler);
 
-router.get("/jobs/:jobid", (request, bucket, nonblockers) => upload.queryJobIdHandler(request, bucket, globals, nonblockers));
+router.get("/jobs/:jobid", upload.queryJobIdHandler);
 
-router.get("/projects", (request, bucket, nonblockers) => project.listProjectsHandler(request, bucket, globals, nonblockers));
+router.get("/projects", project.listProjectsHandler);
 
-router.get("/projects/:project/metadata", (request, bucket, nonblockers) => project.getProjectMetadataHandler(request, bucket, globals, nonblockers));
+router.get("/projects/:project/metadata", project.getProjectMetadataHandler);
 
-router.get("/projects/:project/version/:version/metadata", (request, bucket, nonblockers) => project.getProjectVersionMetadataHandler(request, bucket, globals, nonblockers));
+router.get("/projects/:project/version/:version/metadata", project.getProjectVersionMetadataHandler);
 
-router.get("/projects/:project/version/:version/info", (request, bucket, nonblockers) => project.getProjectVersionInfoHandler(request, bucket, globals, nonblockers));
+router.get("/projects/:project/version/:version/info", project.getProjectVersionInfoHandler);
 
-router.get("/projects/:project/versions", (request, bucket, nonblockers) => project.listProjectVersionsHandler(request, bucket, globals, nonblockers));
+router.get("/projects/:project/versions", project.listProjectVersionsHandler);
 
-router.get("/projects/:project/permissions", (request, bucket, nonblockers) => auth.getPermissionsHandler(request, bucket, globals, nonblockers));
+router.get("/projects/:project/permissions", auth.getPermissionsHandler);
 
-router.put("/projects/:project/permissions", (request, bucket, nonblockers) => auth.setPermissionsHandler(request, bucket, globals, nonblockers));
+router.put("/projects/:project/permissions", auth.setPermissionsHandler);
 
 /*** Non-standard endpoints, for testing only ***/
 
-router.get("/user", (request, bucket, nonblockers) => auth.findUserHandler(request, bucket, globals, nonblockers));
+router.get("/user", auth.findUserHandler);
 
 /*** Setting up the listener ***/
 
@@ -94,7 +90,7 @@ addEventListener('fetch', event => {
 
     let nonblockers = [];
     let resp = router
-        .handle(request, GYPSUM_BUCKET, nonblockers)
+        .handle(request, nonblockers)
         .catch(error => {
             if (error instanceof utils.HttpError) {
                 return utils.errorResponse(error.message, error.statusCode);
