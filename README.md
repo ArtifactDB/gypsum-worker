@@ -54,10 +54,10 @@ Pick a GitHub user account for performing CI/CD. This may be your own, but it ma
 ### Step 4: variables and secrets
 
 Modify the indicated variables (denoted by `~>`) in [`wrangler.toml`](wrangler.toml).
+Note that some of the variables need to be listed multiple times - this is unfortunate but necessary as `wrangler` does not automatically expose those variables to the worker's code.
 
 Add the following secrets via `wrangler secret put`:
 
-- `ACCOUNT_ID`, for the R2 account ID (32-character string at the top-right corner of the R2 tab on the Cloudflare dashboard).
 - `ACCESS_KEY_ID`, for the access key ID (click "manage API tokens" at the top-right corner of the R2 tab on the Cloudflare dashboard).
 - `SECRET_ACCESS_KEY`, for the access secret associated with the access key ID.
 - `GITHUB_PAT`, for the GitHub personal access token of the CI/CD user account. 

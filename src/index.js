@@ -12,7 +12,7 @@ gh.setToken(GITHUB_PAT);
 gh.setRepository(GITHUB_CI_REPOSITORY);
 gh.setUserAgent(GITHUB_USER_AGENT);
 s3.setBucketName(R2_BUCKET_NAME);
-s3.setS3Object(ACCOUNT_ID, ACCESS_KEY_ID, SECRET_ACCESS_KEY);
+s3.setS3Object(CF_ACCOUNT_ID, ACCESS_KEY_ID, SECRET_ACCESS_KEY);
 s3.setR2Binding(BOUND_BUCKET);
 
 const router = Router();
