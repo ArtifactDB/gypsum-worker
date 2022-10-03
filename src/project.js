@@ -182,7 +182,6 @@ export async function listProjectVersionsHandler(request, nonblockers) {
         permissions: auth.getPermissions(project, nonblockers)
     });
     auth.checkReadPermissions(resolved.permissions, resolved.user, project);
-    console.log(resolved);
 
     let more_resolved = await utils.namedResolve({
         versions: await listAvailableVersions(project),
