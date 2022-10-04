@@ -80,7 +80,7 @@ export async function initializeUploadHandler(request, nonblockers) {
                 throw new utils.HttpError("cannot link to a 'latest' alias in 'filenames'", 400);
             }
             link_expiry_checks.add(pkeys.expiry(upack.project, upack.version));
-            linked.push({ filename: f.filename, url: f.value.artifactdb_id });
+            linked.push({ filename: f.filename, target: f.value.artifactdb_id });
         } else {
             throw new utils.HttpError("invalid entry in the request 'filenames'", 400);
         }
@@ -100,7 +100,7 @@ export async function initializeUploadHandler(request, nonblockers) {
                 if (res !== null) {
                     let meta = await res.json();
                     if (meta[field] == md5sum) {
-                        linked.push({ filename: filename, url: utils.packId(project, filename, last) });
+                        linked.push({ filename: filename, target: utils.packId(project, filename, last) });
                         return;
                     }
                 } 
@@ -129,13 +129,18 @@ export async function initializeUploadHandler(request, nonblockers) {
 
     // If there are any links, save them for later use.
     if (linked.length) {
-        nonblockers.push(utils.quickUploadJson(pkeys.links(project, version), linked));
+        let link_targets = {};
+        for (const l of linked) {
+            link_targets[l.filename] = l.target;
+        }
+        nonblockers.push(utils.quickUploadJson(pkeys.links(project, version), link_targets));
     }
 
     for (var i = 0; i < linked.length; i++) {
         let current = linked[i];
         let src = utils.packId(project, current.filename, version);
-        current.url = "/link/" + btoa(src) + "/to/" + btoa(current.url);
+        current.url = "/link/" + btoa(src) + "/to/" + btoa(current.target);
+        delete current.target;
     }
 
     // Saving expiry information. We used to store this in the lock file, but
