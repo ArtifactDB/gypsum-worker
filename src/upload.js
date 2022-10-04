@@ -44,41 +44,43 @@ export async function initializeUploadHandler(request, nonblockers) {
     let files = body.filenames;
 
     let precollected = [];
-    let prenames = []
-    function add_presigned_url(f) {
-        let params = { Bucket: bucket, Key: project + "/" + version + "/" + f, Expires: 3600 };
+    let prenames = [];
+    let premd5 = [];
+    function add_presigned_url(f, md5) {
+        // Convert hex to base64 to keep S3 happy.
+        let hits = md5.match(/\w{2}/g);
+        let converted = hits.map(a => String.fromCharCode(parseInt(a, 16)));
+        let md5_64 = btoa(converted.join(""));
+
+        let params = { Bucket: bucket, Key: project + "/" + version + "/" + f, Expires: 3600, ContentMD5: md5_64 };
         if (f.endsWith(".json")) {
             params.ContentType = "application/json";
         }
         precollected.push(s3obj.getSignedUrlPromise('putObject', params));
         prenames.push(f);
+        premd5.push(md5_64);
     }
 
     let md5able = [];
-    let linked = {};
+    let linked = [];
     let link_expiry_checks = new Set;
 
     for (const f of files) {
-        if (typeof f == "string") {
-            add_presigned_url(f);
+        if (typeof f != "object") {
+            throw new utils.HttpError("invalid entry in the request 'filenames'", 400);
+        }
 
-        } else if (typeof f == "object") {
-            if (f.check === "md5") {
-                md5able.push(f);
-
-            } else if (f.check == "link") {
-                let upack = utils.unpackId(f.value.artifactdb_id);
-                if (upack.version == "latest") {
-                    throw new utils.HttpError("cannot link to a 'latest' alias in 'filenames'", 400);
-                }
-
-                link_expiry_checks.add(pkeys.expiry(upack.project, upack.version));
-                linked[f.filename] = f.value.artifactdb_id;
-
-            } else {
-                throw new utils.HttpError("invalid entry in the request 'filenames'", 400);
+        if (f.check === "simple") {
+            add_presigned_url(f.filename, f.value.md5sum);
+        } else if (f.check === "md5") {
+            md5able.push(f);
+        } else if (f.check == "link") {
+            let upack = utils.unpackId(f.value.artifactdb_id);
+            if (upack.version == "latest") {
+                throw new utils.HttpError("cannot link to a 'latest' alias in 'filenames'", 400);
             }
-
+            link_expiry_checks.add(pkeys.expiry(upack.project, upack.version));
+            linked.push({ filename: f.filename, url: f.value.artifactdb_id });
         } else {
             throw new utils.HttpError("invalid entry in the request 'filenames'", 400);
         }
@@ -89,7 +91,7 @@ export async function initializeUploadHandler(request, nonblockers) {
         let lres = await latest.getLatestPersistentVersionOrNull(project);
         if (lres == null || lres.index_time < 0) {
             for (const f of md5able) {
-                add_presigned_url(f.filename);
+                add_presigned_url(f.filename, f.value.md5sum);
             }
         } else {
             let last = lres.version;
@@ -98,11 +100,11 @@ export async function initializeUploadHandler(request, nonblockers) {
                 if (res !== null) {
                     let meta = await res.json();
                     if (meta[field] == md5sum) {
-                        linked[filename] = utils.packId(project, filename, last);
+                        linked.push({ filename: filename, url: utils.packId(project, filename, last) });
                         return;
                     }
                 } 
-                add_presigned_url(filename);
+                add_presigned_url(filename, md5sum);
             }
 
             let promises = [];
@@ -126,13 +128,14 @@ export async function initializeUploadHandler(request, nonblockers) {
     }
 
     // If there are any links, save them for later use.
-    if (Object.keys(linked).length) {
+    if (linked.length) {
         nonblockers.push(utils.quickUploadJson(pkeys.links(project, version), linked));
     }
 
-    for (const [k, v] of Object.entries(linked)) {
-        let src = utils.packId(project, k, version);
-        linked[k] = "/link/" + btoa(src) + "/to/" + btoa(v);
+    for (var i = 0; i < linked.length; i++) {
+        let current = linked[i];
+        let src = utils.packId(project, current.filename, version);
+        current.url = "/link/" + btoa(src) + "/to/" + btoa(current.url);
     }
 
     // Saving expiry information. We used to store this in the lock file, but
@@ -144,14 +147,17 @@ export async function initializeUploadHandler(request, nonblockers) {
     }
 
     let presigned_vec = await Promise.all(precollected);
-    let presigned = {};
+    let presigned = [];
     for (var i = 0; i < presigned_vec.length; i++) {
-        presigned[prenames[i]] = presigned_vec[i];
+        presigned.push({ filename: prenames[i], url: presigned_vec[i], md5sum: premd5[i] });
     }
 
-    let all_files = Object.keys(presigned);
-    for (const l of Object.keys(linked)) {
-        all_files.push(l);
+    let all_files = [];
+    for (const p of presigned) {
+        all_files.push(p.filename);
+    }
+    for (const l of linked) {
+        all_files.push(l.filename);
     }
     nonblockers.push(utils.quickUploadJson(pkeys.versionManifest(project, version), all_files));
 
