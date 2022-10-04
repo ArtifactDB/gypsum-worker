@@ -149,6 +149,12 @@ export async function initializeUploadHandler(request, nonblockers) {
         presigned[prenames[i]] = presigned_vec[i];
     }
 
+    let all_files = Object.keys(presigned);
+    for (const l of Object.keys(linked)) {
+        all_files.push(l);
+    }
+    nonblockers.push(utils.quickUploadJson(pkeys.versionManifest(project, version), all_files));
+
     nonblockers.push(gh.postNewIssue("purge project",
         JSON.stringify({ 
             project: project,

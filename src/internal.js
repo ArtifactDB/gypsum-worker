@@ -6,6 +6,10 @@ export function versionMetadata(project, version) {
     return project + "/" + version + "/..revision";
 }
 
+export function versionManifest(project, version) {
+    return project + "/" + version + "/..manifest";
+}
+
 export function latestPersistent(project) {
     return project + "/..latest";
 }
