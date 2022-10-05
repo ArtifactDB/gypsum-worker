@@ -2,7 +2,7 @@ import * as utils from "./utils.js";
 import * as pkeys from "./internal.js";
 import * as s3 from "./s3.js";
 
-export async function lockProject(project, version, user, misc={}) {
+export async function lockProject(project, version, user_name, misc={}) {
     let bound_bucket = s3.getR2Binding();
     let lck = pkeys.lock(project, version);
 
@@ -11,11 +11,11 @@ export async function lockProject(project, version, user, misc={}) {
         throw new utils.HttpError("project version has already been locked", 403);
     }
 
-    await bound_bucket.put(lck, JSON.stringify({ user: user, misc: misc }));
+    await bound_bucket.put(lck, JSON.stringify({ user_name: user_name, misc: misc }));
     return;
 }
 
-export async function checkLock(project, version, user) {
+export async function checkLock(project, version, user_name) {
     let bound_bucket = s3.getR2Binding();
     let lck = pkeys.lock(project, version);
 
@@ -25,7 +25,7 @@ export async function checkLock(project, version, user) {
     }
 
     let body = await g.json();
-    if (body.user !== user) {
+    if (body.user_name !== user_name) {
         throw new utils.HttpError("project version was locked for upload by a different user", 403);
     }
 

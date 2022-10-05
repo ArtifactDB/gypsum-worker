@@ -78,6 +78,23 @@ export async function identifyUser(token) {
     return res;
 }
 
+export async function identifyUserOrgs(token) {
+    let URL = api + "/user/orgs";
+
+    let res = await fetch(URL, { 
+        headers: {
+            "Authorization": "Bearer " + token,
+            "User-Agent": user_agent
+        }
+    });
+
+    if (!res.ok) {
+        throw new utils.HttpError("failed to query GitHub for user organizations", 401);
+    }
+
+    return res;
+}
+
 export function createIssueUrl(id) {
     return "https://github.com/" + repository + "/issues/" + id;
 }

@@ -28,13 +28,11 @@ export async function initializeUploadHandler(request, nonblockers) {
     let bound_bucket = s3.getR2Binding();
 
     let user = await auth.findUser(request, nonblockers);
-    if (!auth.uploaders.has(user)) {
+    if (!auth.uploaders.has(user.login)) {
         throw new utils.HttpError("user '" + user + "' is not registered as a general uploader", 403);
     } else {
         let perms = await auth.getPermissions(project, nonblockers);
-        if (perms !== null && auth.determinePrivileges(perms, user) != "owner") {
-            throw new utils.HttpError("user is not registered as an owner of project '" + project + "'", 403);
-        }
+        auth.checkWritePermissions(perms, user, project);
     }
 
     let ver_meta = await bound_bucket.head(pkeys.versionMetadata(project, version));
@@ -42,7 +40,7 @@ export async function initializeUploadHandler(request, nonblockers) {
         throw new utils.HttpError("version '" + version + "' already exists for project '" + project + "'", 400);
     }
 
-    await lock.lockProject(project, version, user);
+    await lock.lockProject(project, version, user.login);
     let body = await request.json();
     let files = body.filenames;
 
@@ -199,7 +197,7 @@ export async function createLinkHandler(request, nonblockers) {
     let unpacked = utils.unpackId(from);
 
     let user = await auth.findUser(request, nonblockers);
-    await lock.checkLock(unpacked.project, unpacked.version, user);
+    await lock.checkLock(unpacked.project, unpacked.version, user.login);
 
     let path = unpacked.project + "/" + unpacked.version + "/" + unpacked.path;
     let details = { "artifactdb_id": to };
@@ -217,7 +215,7 @@ export async function completeUploadHandler(request, nonblockers) {
     let version = decodeURIComponent(request.params.version);
 
     let user = await auth.findUser(request, nonblockers);
-    await lock.checkLock(project, version, user);
+    await lock.checkLock(project, version, user.login);
 
     let body = await request.json();
     if (!("read_access" in body)) {
@@ -227,7 +225,7 @@ export async function completeUploadHandler(request, nonblockers) {
         body.write_access = "owners";
     }
     if (!("owners" in body)) {
-        body.owners = [user];
+        body.owners = [user.login];
     }
     if (!("viewers" in body)) {
         body.viewers = [];
@@ -283,7 +281,7 @@ export async function abortUploadHandler(request, nonblockers) {
     let version = decodeURIComponent(request.params.version);
 
     let user = await auth.findUser(request, nonblockers);
-    await lock.checkLock(project, version, user);
+    await lock.checkLock(project, version, user.login);
 
     // Doesn't actually do anything, as we already have an purge job running as
     // soon as the upload is started; this endpoint is just for compliance with

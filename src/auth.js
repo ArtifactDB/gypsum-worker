@@ -26,13 +26,17 @@ async function find_user(request, nonblockers) {
     const userCache = await caches.open("user:cache");
     let check = await userCache.match(key);
     if (check) {
-        let info = await check.json();
-        return info.login;
+        return await check.json();
     }
 
-    let res = await gh.identifyUser(token);
-    let user = (await res.json()).login;
-    nonblockers.push(utils.quickCacheJson(userCache, key, { login: user }, utils.hoursFromNow(2)));
+    let resolved = await utils.namedResolve({
+        user: gh.identifyUser(token),
+        organizations: gh.identifyUserOrgs(token)
+    });
+
+    let user = (await resolved.user.json()).login;
+    let orgs = await resolved.organizations.json();
+    nonblockers.push(utils.quickCacheJson(userCache, key, { login: user, organizations: orgs }, utils.hoursFromNow(2)));
     return user;
 }
 
@@ -88,22 +92,6 @@ export async function getPermissions(project, nonblockers) {
     return JSON.parse(data);
 }
 
-export function determinePrivileges(perm, user) {
-    if (user !== null && perm.owners.indexOf(user) >= 0) {
-        return "owner";
-    }
-
-    if (perm.read_access == "public") {
-        return "viewer";
-    }
-
-    if (perm.read_access == "viewers" && user !== null && perm.viewers.indexOf(user) >= 0) {
-        return "viewer";
-    }
-
-    return "none";
-}
-
 export const uploaders = new Set([
     "ArtifactDB-bot", 
     "LTLA", 
@@ -122,29 +110,71 @@ export async function getPermissionsHandler(request, nonblockers) {
     }
 
     let user = await findUserNoThrow(request, nonblockers);
-    if (determinePrivileges(perms, user) == "none") {
-        throw new utils.HttpError("user does not have access to the requested project", 403);
-    }
+    checkReadPermissions(perms, user, project);
 
     return utils.jsonResponse(perms, 200);
 }
 
+function is_member_of(login, orgs, allowed) {
+    // TODO: cache the return value to avoid having to recompute
+    // this on subsequent requests? Not sure if it's worth it,
+    // unless the permission structure is very complicated.
+    if (orgs.length == 0) {
+        return allowed.indexOf(login) >= 0;
+    }
+
+    let all = new Set(allowed);
+    let present = all.has(login);
+    if (present) {
+        return true;
+    }
+
+    for (const o of orgs) {
+        if (all.has(o)) {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 export function checkReadPermissions(perm, user, project) {
     if (perm == null) {
         throw new utils.HttpError("failed to load permissions for project '" + project + "'", 500);
     }
 
-    let level = determinePrivileges(perm, user);
-    if (level == "none") {
-        if (user !== null) {
-            throw new utils.HttpError("user does not have read access to project '" + project + "'", 403);
-        } else {
-            throw new utils.HttpError("user credentials not supplied to access project '" + project + "'", 401);
-        }
+    if (perm.read_access == "public") {
+        return null;
     }
 
-    return null;
+    if (user == null) {
+        throw new utils.HttpError("user credentials not supplied to access project '" + project + "'", 401);
+    }
+
+    let in_owners = is_member_of(user.login, user.organizations, perm.owners);
+    if (perm.read_access == "owners" && in_owners) {
+        return null;
+    }
+
+    let in_viewers = is_member_of(user.login, user.organizations, perm.viewers);
+    if (perm.read_access == "viewers" && (in_owners || in_viewers)) {
+        return null;
+    }
+
+    throw new utils.HttpError("user does not have read access to project '" + project + "'", 403);
+}
+
+export function checkWritePermissions(perm, user, project) {
+    if (perm == null) {
+        throw new utils.HttpError("failed to load permissions for project '" + project + "'", 500);
+    }
+
+    let in_owners = is_member_of(user.login, user.organizations, perm.owners);
+    if (perm.write_access == "owners" && in_owners) {
+        return null;
+    }
+
+    throw new utils.HttpError("user does not have read access to project '" + project + "'", 403);
 }
 
 export function validateNewPermissions(perm) {
@@ -191,9 +221,7 @@ export async function setPermissionsHandler(request, nonblockers) {
     }
 
     let perms = await res.json();
-    if (determinePrivileges(perms, user) !== "owner") {
-        throw new utils.HttpError("user '" + user + "' does not own the requested project", 403);
-    }
+    checkWritePermissions(perms, user, project);
 
     // Updating everything on top of the existing permissions.
     let new_perms = await request.json();
