@@ -72,7 +72,7 @@ export async function initializeUploadHandler(request, nonblockers) {
         }
 
         let fname = f.filename;
-        if (fname.startsWith("..") || fname.match("/..")) {
+        if (fname.startsWith("..") || fname.includes("/..")) {
             throw new utils.HttpError("'filenames' path elements cannot start with the reserved '..' pattern", 400);
         }
 

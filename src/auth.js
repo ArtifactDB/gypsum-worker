@@ -36,8 +36,9 @@ async function find_user(request, nonblockers) {
 
     let user = (await resolved.user.json()).login;
     let orgs = await resolved.organizations.json();
-    nonblockers.push(utils.quickCacheJson(userCache, key, { login: user, organizations: orgs }, utils.hoursFromNow(2)));
-    return user;
+    let val = { login: user, organizations: orgs };
+    nonblockers.push(utils.quickCacheJson(userCache, key, val, utils.hoursFromNow(2)));
+    return val;
 }
 
 export async function findUser(request, nonblockers) {
