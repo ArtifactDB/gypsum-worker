@@ -14,17 +14,16 @@ Pricing also seems fairly reasonable when scaling up for more demanding applicat
 - [`GET /files/{id}/metadata`](https://github.com/ArtifactDB/ArtifactDB-api-contract#get-file-metadata)
 - [`GET /projects/{project}/metadata`](https://github.com/ArtifactDB/ArtifactDB-api-contract#get-project-metadata)
 - [`GET /projects/{project}/version/{version}/metadata`](https://github.com/ArtifactDB/ArtifactDB-api-contract#get-project-version-metadata)
-- `GET /projects/{project}/version/{version}/info`
+- [`GET /projects/{project}/version/{version}/info`](https://github.com/ArtifactDB/ArtifactDB-api-contract#get-version-information)
 - [`GET /projects/{project}/permissions`](https://github.com/ArtifactDB/ArtifactDB-api-contract#get-project-permissions)
-- `GET /projects`
-- `GET /projects/{project}/versions`
-- `PUT /projects/{project}/permissions`
+- [`GET /projects`](https://github.com/ArtifactDB/ArtifactDB-api-contract#list-projects)
+- [`GET /projects/{project}/versions`](https://github.com/ArtifactDB/ArtifactDB-api-contract#list-project-versions)
+- [`PUT /projects/{project}/permissions`](https://github.com/ArtifactDB/ArtifactDB-api-contract#set-project-permissions)
   - Only `"scope": "project"` is supported.
-- `PUT /link/{source}/to/{target}`
-- `POST /projects/{id}/version/{version}/upload` 
-- `PUT /projects/{id}/version/{version}/complete`
-- `PUT /projects/{id}/version/{version}/abort`
-- `GET /jobs/{jobid}`
+- [`POST /projects/{id}/version/{version}/upload`](https://github.com/ArtifactDb/ArtifactDB-api-contract#start-version-upload)
+- [`PUT /projects/{id}/version/{version}/complete`](https://github.com/ArtifactDb/ArtifactDB-api-contract#complete-version-upload)
+- [`PUT /projects/{id}/version/{version}/abort`](https://github.com/ArtifactDb/ArtifactDB-api-contract#abort-version-upload)
+- [`GET /jobs/{jobid}`](https://github.com/ArtifactDB/ArtifactDB-api-contract#get-post-upload-job-status)
 
 The most obvious omission is the unavailability of search endpoints, as we currently can't host a search index inside the Cloudflare ecosystem.
 
