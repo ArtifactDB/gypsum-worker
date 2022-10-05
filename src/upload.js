@@ -19,6 +19,9 @@ export async function initializeUploadHandler(request, nonblockers) {
     if (version.indexOf("/") >= 0 || version.indexOf("@") >= 0) {
         throw new utils.HttpError("version name cannot contain '/' or 'a'", 400);
     }
+    if (project.startsWith("..") || version.startsWith("..")) {
+        throw new utils.HttpError("project and version name cannot start with the reserved '..' pattern", 400);
+    }
 
     let bucket = s3.getBucketName();
     let s3obj = s3.getS3Object();
@@ -70,8 +73,13 @@ export async function initializeUploadHandler(request, nonblockers) {
             throw new utils.HttpError("invalid entry in the request 'filenames'", 400);
         }
 
+        let fname = f.filename;
+        if (fname.startsWith("..") || fname.match("/..")) {
+            throw new utils.HttpError("'filenames' path elements cannot start with the reserved '..' pattern", 400);
+        }
+
         if (f.check === "simple") {
-            add_presigned_url(f.filename, f.value.md5sum);
+            add_presigned_url(fname, f.value.md5sum);
         } else if (f.check === "md5") {
             md5able.push(f);
         } else if (f.check == "link") {
@@ -80,7 +88,7 @@ export async function initializeUploadHandler(request, nonblockers) {
                 throw new utils.HttpError("cannot link to a 'latest' alias in 'filenames'", 400);
             }
             link_expiry_checks.add(pkeys.expiry(upack.project, upack.version));
-            linked.push({ filename: f.filename, target: f.value.artifactdb_id });
+            linked.push({ filename: fname, target: f.value.artifactdb_id });
         } else {
             throw new utils.HttpError("invalid entry in the request 'filenames'", 400);
         }
