@@ -170,12 +170,16 @@ export function checkWritePermissions(perm, user, project) {
         throw new utils.HttpError("failed to load permissions for project '" + project + "'", 500);
     }
 
+    if (user == null) {
+        throw new utils.HttpError("user credentials not supplied to write to project '" + project + "'", 401);
+    }
+
     let in_owners = is_member_of(user.login, user.organizations, perm.owners);
     if (perm.write_access == "owners" && in_owners) {
         return null;
     }
 
-    throw new utils.HttpError("user does not have read access to project '" + project + "'", 403);
+    throw new utils.HttpError("user does not have write access to project '" + project + "'", 403);
 }
 
 export function validateNewPermissions(perm) {

@@ -27,12 +27,16 @@ export async function initializeUploadHandler(request, nonblockers) {
     let s3obj = s3.getS3Object();
     let bound_bucket = s3.getR2Binding();
 
-    let user = await auth.findUser(request, nonblockers);
-    if (!auth.uploaders.has(user.login)) {
-        throw new utils.HttpError("user '" + user + "' is not registered as a general uploader", 403);
-    } else {
-        let perms = await auth.getPermissions(project, nonblockers);
+    let resolved = await utils.namedResolve({
+        user: auth.findUser(request, nonblockers),
+        permissions: auth.getPermissions(project, nonblockers)
+    });
+    let user = resolved.user;
+    let perms = resolved.permissions;
+    if (perms !== null) {
         auth.checkWritePermissions(perms, user, project);
+    } else if (!auth.uploaders.has(user.login)) {
+        throw new utils.HttpError("user '" + user + "' is not registered as a general uploader", 403);
     }
 
     let ver_meta = await bound_bucket.head(pkeys.versionMetadata(project, version));
