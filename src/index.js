@@ -8,11 +8,22 @@ import * as upload from "./upload.js";
 import * as utils from "./utils.js";
 import * as s3 from "./s3.js";
 
-gh.setToken(GITHUB_PAT);
+if (typeof GITHUB_PAT !== "undefined") {
+    gh.setToken(GITHUB_PAT);
+} else {
+    console.warn("missing the GITHUB_PAT secret");
+}
+
 gh.setRepository(GITHUB_CI_REPOSITORY);
 gh.setUserAgent(GITHUB_USER_AGENT);
 s3.setBucketName(R2_BUCKET_NAME);
-s3.setS3Object(CF_ACCOUNT_ID, ACCESS_KEY_ID, SECRET_ACCESS_KEY);
+
+if (typeof ACCESS_KEY_ID !== "undefined" && typeof SECRET_ACCESS_KEY != "undefined") {
+    s3.setS3Object(CF_ACCOUNT_ID, ACCESS_KEY_ID, SECRET_ACCESS_KEY);
+} else {
+    console.warn("missing the ACCESS_KEY_ID or SECRET_ACCESS_KEY secrets");
+}
+
 s3.setR2Binding(BOUND_BUCKET);
 
 const router = Router();
