@@ -67,6 +67,7 @@ export async function getFileMetadataHandler(request, nonblockers) {
     let unpacked;
     let original;
     let pure_meta;
+    let is_redirect;
     let file_meta;
 
     while (1) {
@@ -106,15 +107,21 @@ export async function getFileMetadataHandler(request, nonblockers) {
         file_meta = await file_res.json();
 
         // Handling redirection if the retrieved document says so.
-        if (follow_link && file_meta["$schema"].startsWith("redirection/")) {
-            let type = file_meta["redirection"]["type"];
-            let loc = file_meta["redirection"]["location"];
+        is_redirect = file_meta["$schema"].startsWith("redirection/");
+        if (follow_link && is_redirect) {
+            let targets = file_metadata["redirection"]["targets"];
+            if (targets.length == 0) {
+                break;
+            }
+
             let next;
-            if (type == "local") {
+            let loc = target[0]["location"];
+            if (target[0]["type"] == "local") {
                 next = utils.packId(unpacked.project, loc, unpacked.version);
             } else {
                 next = loc;
             }
+
             if (previous.has(next)) {
                 throw new utils.HttpError("detected circular links from '" + id + "' to '" + next + "'", 500);
             }
@@ -129,7 +136,7 @@ export async function getFileMetadataHandler(request, nonblockers) {
     let more_promises = {
         version_metadata: getVersionMetadata(unpacked.project, unpacked.version, nonblockers),
     };
-    if (!pure_meta) {
+    if (!pure_meta && !is_redirect) {
         let ogpath = unpacked.project + "/" + unpacked.version + "/" + original;
         more_promises.file_header = bound_bucket.head(ogpath);
     }
@@ -137,7 +144,7 @@ export async function getFileMetadataHandler(request, nonblockers) {
     let resolved = await utils.namedResolve(more_promises);
     file_meta["_extra"] = createExtraMetadata(id, unpacked, file_meta, resolved.version_metadata, allowed[unpacked.project]);
 
-    if (!pure_meta) {
+    if (!pure_meta && !is_redirect) {
         let file_header = resolved.file_header;
         if (file_header == null) {
             throw new utils.HttpError("failed to retrieve header for '" + id + "'", 500);
