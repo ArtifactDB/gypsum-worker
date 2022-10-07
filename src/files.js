@@ -109,14 +109,14 @@ export async function getFileMetadataHandler(request, nonblockers) {
         // Handling redirection if the retrieved document says so.
         is_redirect = file_meta["$schema"].startsWith("redirection/");
         if (follow_link && is_redirect) {
-            let targets = file_metadata["redirection"]["targets"];
+            let targets = file_meta["redirection"]["targets"];
             if (targets.length == 0) {
                 break;
             }
 
             let next;
-            let loc = target[0]["location"];
-            if (target[0]["type"] == "local") {
+            let loc = targets[0]["location"];
+            if (targets[0]["type"] == "local") {
                 next = utils.packId(unpacked.project, loc, unpacked.version);
             } else {
                 next = loc;
