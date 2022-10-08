@@ -93,15 +93,6 @@ export async function getPermissions(project, nonblockers) {
     return JSON.parse(data);
 }
 
-export const uploaders = new Set([
-    "ArtifactDB-bot", 
-    "LTLA", 
-    "lelongs", 
-    "jkanche", 
-    "PeteHaitch", 
-    "vjcitn"
-]);
-
 export async function getPermissionsHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
 
@@ -180,6 +171,25 @@ export function checkWritePermissions(perm, user, project) {
     }
 
     throw new utils.HttpError("user does not have write access to project '" + project + "'", 403);
+}
+
+var uploaders = [];
+
+export function setUploaders(x) {
+    uploaders = x;
+    return;
+}
+
+export function checkNewUploadPermissions(user) {
+    if (user == null) {
+        throw new utils.HttpError("user credentials not supplied to upload new project", 401);
+    }
+
+    if (is_member_of(user.login, user.organizations, uploaders)) {
+        return null;
+    }
+
+    throw new utils.HttpError("user is not authorized to upload a new project", 403);
 }
 
 export function validateNewPermissions(perm) {

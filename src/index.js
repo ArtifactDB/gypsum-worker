@@ -14,6 +14,7 @@ if (typeof GITHUB_PAT !== "undefined") {
     console.warn("missing the GITHUB_PAT secret");
 }
 
+auth.setUploaders(ALLOWED_UPLOADERS.split(","));
 gh.setRepository(GITHUB_CI_REPOSITORY);
 gh.setUserAgent(GITHUB_USER_AGENT);
 s3.setBucketName(R2_BUCKET_NAME);

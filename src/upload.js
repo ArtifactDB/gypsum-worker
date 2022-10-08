@@ -35,8 +35,8 @@ export async function initializeUploadHandler(request, nonblockers) {
     let perms = resolved.permissions;
     if (perms !== null) {
         auth.checkWritePermissions(perms, user, project);
-    } else if (!auth.uploaders.has(user.login)) {
-        throw new utils.HttpError("user '" + user + "' is not registered as a general uploader", 403);
+    } else {
+        auth.checkNewUploadPermissions(user);
     }
 
     let ver_meta = await bound_bucket.head(pkeys.versionMetadata(project, version));
