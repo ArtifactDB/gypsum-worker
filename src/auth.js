@@ -29,14 +29,26 @@ async function find_user(request, nonblockers) {
         return await check.json();
     }
 
-    let resolved = await utils.namedResolve({
-        user: gh.identifyUser(token),
-        organizations: gh.identifyUserOrgs(token)
-    });
+    let user_prom = gh.identifyUser(token);
+    let org_prom = gh.identifyUserOrgs(token);
 
-    let user = (await resolved.user.json()).login;
-    let orgs = await resolved.organizations.json();
-    let val = { login: user, organizations: orgs };
+    // Sometimes the token doesn't provide the appropriate organization-level
+    // permissions, so this ends up failing: but let's try to keep going. 
+    let orgs = [];
+    try {
+        orgs = await (await org_prom).json();
+    } catch (e) {
+        if (e.statusCode == 401) {
+            console.warn(e.message);
+        } else {
+            throw e;
+        }
+    }
+
+    let val = { 
+        login: (await (await user_prom).json()).login,
+        organizations: orgs 
+    };
     nonblockers.push(utils.quickCacheJson(userCache, key, val, utils.hoursFromNow(2)));
     return val;
 }
@@ -60,7 +72,7 @@ export async function findUserNoThrow(request, nonblockers) {
 
 export async function findUserHandler(request, nonblockers) {
     let user = await findUser(request, nonblockers);
-    return new Response(user, { status: 200, "Content-Type": "text" });
+    return utils.jsonResponse(user, 200);
 }
 
 function permissions_cache() {
