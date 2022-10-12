@@ -155,7 +155,7 @@ function is_member_of(login, orgs, allowed) {
 
 export function checkReadPermissions(perm, user, project) {
     if (perm == null) {
-        throw new utils.HttpError("failed to load permissions for project '" + project + "'", 500);
+        throw new utils.HttpError("failed to load permissions for project '" + project + "'", 404);
     }
 
     if (perm.read_access == "public") {
@@ -181,7 +181,7 @@ export function checkReadPermissions(perm, user, project) {
 
 export function checkWritePermissions(perm, user, project) {
     if (perm == null) {
-        throw new utils.HttpError("failed to load permissions for project '" + project + "'", 500);
+        throw new utils.HttpError("failed to load permissions for project '" + project + "'", 404);
     }
 
     if (user == null) {
