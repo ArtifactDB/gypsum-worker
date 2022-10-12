@@ -107,13 +107,24 @@ export async function getPermissions(project, nonblockers) {
 
 export async function getPermissionsHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
+    let user_prom = findUserNoThrow(request, nonblockers);
 
-    let perms = await getPermissions(project, nonblockers);
+    // Non-standard endpoint, provided for testing.
+    let perm_prom;
+    if (request.query.force_reload === "true") {
+        let bound_bucket = s3.getR2Binding();
+        let key = pkeys.permissions(project);
+        perm_prom = bound_bucket.get(key).then(res => (res == null ? null : res.json()));
+    } else {
+        perm_prom = getPermissions(project, nonblockers);
+    }
+
+    let perms = await perm_prom;
     if (perms == null) {
         throw new utils.HttpError("requested project does not exist", 404);
     }
 
-    let user = await findUserNoThrow(request, nonblockers);
+    let user = await user_prom;
     checkReadPermissions(perms, user, project);
 
     return utils.jsonResponse(perms, 200);
