@@ -2,6 +2,7 @@ import * as utils from "./utils.js";
 import * as gh from "./github.js";
 import * as pkeys from "./internal.js";
 import * as s3 from "./s3.js";
+import { permissions as set_perm_validator } from "./validators.js";
 
 async function find_user(request, nonblockers) {
     let auth = request.headers.get("Authorization");
@@ -261,8 +262,12 @@ export async function setPermissionsHandler(request, nonblockers) {
     let perms = await res.json();
     checkWritePermissions(perms, user, project);
 
-    // Updating everything on top of the existing permissions.
     let new_perms = await request.json();
+    if (!set_perm_validator(new_perms)) {
+        throw new utils.HttpError("invalid request body: " + set_perm_validator.errors[0].message + " (" + set_perm_validator.errors[0].schemaPath + ")", 400);
+    }
+
+    // Updating everything on top of the existing permissions.
     for (const x of Object.keys(perms)) {
         if (x in new_perms) {
             perms[x] = new_perms[x];

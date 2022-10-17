@@ -8,7 +8,12 @@
   "author": "LTLA <infinite.monkeys.with.keyboards@gmail.com>",
   "license": "MIT",
   "dependencies": {
+    "ajv": "^8.11.0",
     "aws-sdk": "^2.1221.0",
     "itty-router": "^2.5.2"
+  },
+  "devDependencies": {
+    "isomorphic-fetch": "^3.0.0",
+    "pretty-js": "^0.2.2"
   }
 }
