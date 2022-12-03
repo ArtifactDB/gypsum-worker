@@ -1,6 +1,12 @@
 import * as fs from "fs";
 import * as crypto from "crypto";
 
+export const S3Obj = {
+    getSignedUrlPromise: async (operation, details) => {
+        return "https://pretend-presigned-url/" + details.Key + "?expires_in=" + details.Expires;
+    }
+};
+
 function computeHash(contents) {
     if (typeof contents == "string") {
         let enc = new TextEncoder;
@@ -79,7 +85,7 @@ export async function mockPublicProject() {
         owners: ["ArtifactDB-bot"],
         viewers:[]
     };
-    await BOUND_BUCKET.put("test-public/..permissions", JSON.stringify(latest), jsonmeta);
-    
+    await BOUND_BUCKET.put("test-public/..permissions", JSON.stringify(perms), jsonmeta);
+
     return null;
 }
