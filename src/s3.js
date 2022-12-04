@@ -1,4 +1,5 @@
-import S3 from 'aws-sdk/clients/s3.js';
+import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 var r2_bucket_name = "placeholder";
 var s3_object = null;
@@ -14,12 +15,27 @@ export function getBucketName() {
 }
 
 export function setS3Object(account_id, access_key, secret_key) {
-    s3_object = new S3({
-        endpoint: "https://" + account_id + ".r2.cloudflarestorage.com",
-        accessKeyId: access_key,
-        secretAccessKey: secret_key,
-        signatureVersion: 'v4',
-    });
+    s3_object = { 
+        client: new S3Client({
+            endpoint: "https://" + account_id + ".r2.cloudflarestorage.com",
+            credentials: {
+                accessKeyId: access_key,
+                secretAccessKey: secret_key
+            },
+            region: "auto"
+        })
+    };
+
+    s3_object.getSignedUrlPromise = async (mode, params) => {
+        let command;
+        if (mode == 'getObject') {
+            command = new GetObjectCommand({ Bucket: params.Bucket, Key: params.Key });
+        } else {
+            command = new PutObjectCommand({ Bucket: params.Bucket, Key: params.Key });
+        }
+        return await getSignedUrl(s3_object.client, command, { expiresIn: params.Expiry });
+    }
+
     return;
 }
 
