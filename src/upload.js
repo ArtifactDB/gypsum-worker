@@ -6,6 +6,7 @@ import * as expiry from "./expiry.js";
 import * as pkeys from "./internal.js";
 import * as latest from "./latest.js";
 import * as s3 from "./s3.js";
+import { complete_project_version, upload_project_version } from "./validators.js";
 
 /**************** Initialize uploads ***************/
 
@@ -46,7 +47,9 @@ export async function initializeUploadHandler(request, nonblockers) {
 
     await lock.lockProject(project, version, user.login);
     let body = await request.json();
-    let files = body.filenames;
+    if (!upload_project_version(body)) {
+        throw new utils.HttpError("invalid request body: " + upload_project_version.errors[0].message + " (" + upload_project_version.errors[0].schemaPath + ")", 400);
+    }
 
     let precollected = [];
     let prenames = [];
@@ -69,8 +72,9 @@ export async function initializeUploadHandler(request, nonblockers) {
     let md5able = [];
     let linked = [];
     let link_expiry_checks = new Set;
+    let link_projects = new Set;
 
-    for (const f of files) {
+    for (const f of body.filenames) {
         if (typeof f != "object") {
             throw new utils.HttpError("invalid entry in the request 'filenames'", 400);
         }
@@ -89,6 +93,7 @@ export async function initializeUploadHandler(request, nonblockers) {
             if (upack.version == "latest") {
                 throw new utils.HttpError("cannot link to a 'latest' alias in 'filenames'", 400);
             }
+            link_projects.add(upack.project);
             link_expiry_checks.add(pkeys.expiry(upack.project, upack.version));
             linked.push({ filename: fname, target: f.value.artifactdb_id });
         } else {
@@ -125,7 +130,7 @@ export async function initializeUploadHandler(request, nonblockers) {
         }
     }
     
-    // Checking if the linked versions have any expiry date.
+    // Checking if the linked versions have appropriate permissions, and any expiry date.
     {
         let links = Array.from(link_expiry_checks);
         let bad_links = await Promise.all(links.map(k => bound_bucket.head(k)));
@@ -133,6 +138,17 @@ export async function initializeUploadHandler(request, nonblockers) {
             if (bad_links[i] !== null) {
                 let details = links[i].split("/");
                 throw new utils.HttpError("detected links to a transient project '" + details[0] + "' (version '" + details[1] + "')", 400);
+            }
+        }
+
+        let projects = Array.from(link_projects);
+        let project_perms = await Promise.all(projects.map(p => auth.getPermissions(p, nonblockers)));
+        for (var i = 0; i < project_perms.length; i++) {
+            try {
+                auth.checkReadPermissions(project_perms[i], user, projects[i]);
+            } catch (e) {
+                e.message = "failed to create a link; " + e.message;
+                throw e;
             }
         }
     }
@@ -222,6 +238,10 @@ export async function completeUploadHandler(request, nonblockers) {
     await lock.checkLock(project, version, user.login);
 
     let body = await request.json();
+    if (!complete_project_version(body)) {
+        throw new utils.HttpError("invalid request body: " + complete_project_version.errors[0].message + " (" + complete_project_version.errors[0].schemaPath + ")", 400);
+    }
+
     if (!("read_access" in body)) {
         body.read_access = "public";
     }

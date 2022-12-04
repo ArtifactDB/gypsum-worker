@@ -2,6 +2,7 @@ import * as utils from "./utils.js";
 import * as gh from "./github.js";
 import * as pkeys from "./internal.js";
 import * as s3 from "./s3.js";
+import { permissions as set_perm_validator } from "./validators.js";
 
 async function find_user(request, nonblockers) {
     let auth = request.headers.get("Authorization");
@@ -29,14 +30,26 @@ async function find_user(request, nonblockers) {
         return await check.json();
     }
 
-    let resolved = await utils.namedResolve({
-        user: gh.identifyUser(token),
-        organizations: gh.identifyUserOrgs(token)
-    });
+    let user_prom = gh.identifyUser(token);
+    let org_prom = gh.identifyUserOrgs(token);
 
-    let user = (await resolved.user.json()).login;
-    let orgs = await resolved.organizations.json();
-    let val = { login: user, organizations: orgs };
+    // Sometimes the token doesn't provide the appropriate organization-level
+    // permissions, so this ends up failing: but let's try to keep going. 
+    let orgs = [];
+    try {
+        orgs = await (await org_prom).json();
+    } catch (e) {
+        if (e.statusCode == 401) {
+            console.warn(e.message);
+        } else {
+            throw e;
+        }
+    }
+
+    let val = { 
+        login: (await (await user_prom).json()).login,
+        organizations: orgs 
+    };
     nonblockers.push(utils.quickCacheJson(userCache, key, val, utils.hoursFromNow(2)));
     return val;
 }
@@ -60,7 +73,7 @@ export async function findUserNoThrow(request, nonblockers) {
 
 export async function findUserHandler(request, nonblockers) {
     let user = await findUser(request, nonblockers);
-    return new Response(user, { status: 200, "Content-Type": "text" });
+    return utils.jsonResponse(user, 200);
 }
 
 function permissions_cache() {
@@ -95,13 +108,24 @@ export async function getPermissions(project, nonblockers) {
 
 export async function getPermissionsHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
+    let user_prom = findUserNoThrow(request, nonblockers);
 
-    let perms = await getPermissions(project, nonblockers);
+    // Non-standard endpoint, provided for testing.
+    let perm_prom;
+    if (request.query.force_reload === "true") {
+        let bound_bucket = s3.getR2Binding();
+        let key = pkeys.permissions(project);
+        perm_prom = bound_bucket.get(key).then(res => (res == null ? null : res.json()));
+    } else {
+        perm_prom = getPermissions(project, nonblockers);
+    }
+
+    let perms = await perm_prom;
     if (perms == null) {
         throw new utils.HttpError("requested project does not exist", 404);
     }
 
-    let user = await findUserNoThrow(request, nonblockers);
+    let user = await user_prom;
     checkReadPermissions(perms, user, project);
 
     return utils.jsonResponse(perms, 200);
@@ -132,7 +156,7 @@ function is_member_of(login, orgs, allowed) {
 
 export function checkReadPermissions(perm, user, project) {
     if (perm == null) {
-        throw new utils.HttpError("failed to load permissions for project '" + project + "'", 500);
+        throw new utils.HttpError("failed to load permissions for project '" + project + "'", 404);
     }
 
     if (perm.read_access == "public") {
@@ -158,7 +182,7 @@ export function checkReadPermissions(perm, user, project) {
 
 export function checkWritePermissions(perm, user, project) {
     if (perm == null) {
-        throw new utils.HttpError("failed to load permissions for project '" + project + "'", 500);
+        throw new utils.HttpError("failed to load permissions for project '" + project + "'", 404);
     }
 
     if (user == null) {
@@ -238,8 +262,12 @@ export async function setPermissionsHandler(request, nonblockers) {
     let perms = await res.json();
     checkWritePermissions(perms, user, project);
 
-    // Updating everything on top of the existing permissions.
     let new_perms = await request.json();
+    if (!set_perm_validator(new_perms)) {
+        throw new utils.HttpError("invalid request body: " + set_perm_validator.errors[0].message + " (" + set_perm_validator.errors[0].schemaPath + ")", 400);
+    }
+
+    // Updating everything on top of the existing permissions.
     for (const x of Object.keys(perms)) {
         if (x in new_perms) {
             perms[x] = new_perms[x];

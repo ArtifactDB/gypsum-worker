@@ -67,3 +67,9 @@ Add the following secrets via `wrangler secret put`:
 Run `wrangler publish` to deploy to Cloudflare Workers.
 This will create an API at `https://<WORKER_NAME>.<ACCOUNT_NAME>.workers.dev`.
 See [here](https://developers.cloudflare.com/workers/platform/environments) for instructions on publishing to a custom domain.
+
+## Maintainer notes
+
+We use the request schemas from the [**ArtifactDB-api-contract**](https://github.com/ArtifactDB/ArtifactDB-api-contract) repository to validate non-trivial request bodies.
+These are pre-compiled by [**ajv**](https://ajv.js.org) to produce [`src/validators.js`](src/validators.js) for direct use in the worker;
+we can update this file by simply running the [`create_validators.js`](create_validators.js) script.
