@@ -19,6 +19,18 @@ const jsonmeta = {
     httpMetadata: { contentType: "application/json" }
 };
 
+async function dumpVersionSundries(project, version, all_meta) {
+    await BOUND_BUCKET.put(project + "/" + version + "/..aggregated", JSON.stringify(all_meta), jsonmeta); 
+    await BOUND_BUCKET.put(project + "/" + version + "/..revision",
+        JSON.stringify({
+            upload_time: (new Date).toISOString(),
+            index_time: (new Date).toISOString()
+        }),
+        jsonmeta
+    );
+    return;
+}
+
 export async function mockProjectVersion(project, version, files) {
     let promises = [];
     let base = project + "/" + version;
@@ -40,20 +52,13 @@ export async function mockProjectVersion(project, version, files) {
         promises.push(BOUND_BUCKET.put(base + "/" + rpath + ".json", JSON.stringify(meta), jsonmeta));
     }
 
-    promises.push(BOUND_BUCKET.put(project + "/" + version + "/..aggregated", JSON.stringify(all_meta), jsonmeta)); 
-    promises.push(BOUND_BUCKET.put(project + "/" + version + "/..revision",
-        JSON.stringify({
-            upload_time: (new Date).toISOString(),
-            index_time: (new Date).toISOString()
-        }),
-        jsonmeta
-    ));
-
     await Promise.all(promises);
+    await dumpVersionSundries(project, version, all_meta);
+
     return all_meta;
 }
 
-function mockFiles() {
+export function mockFiles() {
     let contents = "";
     for (var i = 1; i <= 100; i++) {
         contents += String(i) + "\n";
@@ -101,19 +106,48 @@ export async function mockPrivateProject() {
     return null;
 }
 
-async function addRedirection(project, from, to) {
+export async function addRedirection(project, version, from, to, type="local") {
     let meta = {
         path: from,
         "$schema": "redirection/v1.json",
         redirection: {
             targets: [
                 {
-                    type: "local",
+                    type: type,
                     location: to
                 }
             ]
         }
     };
-    await BOUND_BUCKET.push(project + "/" + version + "/" + from, JSON.stringify(meta), jsonmeta);
+    await BOUND_BUCKET.put(project + "/" + version + "/" + from + ".json", JSON.stringify(meta), jsonmeta);
     return;
 }
+
+export async function mockLinkedProjectVersion(project, version, links) {
+    let promises = [];
+    let base = project + "/" + version;
+
+    let all_meta = [];
+    for (const [rpath, target] of Object.entries(links)) {
+        let link = { artifactdb_id: target };
+        promises.push(BOUND_BUCKET.put(base + "/" + rpath, JSON.stringify(link), { customMetadata: link }));
+
+        let meta = { 
+            "$schema": "generic_file/v1.json",
+            "generic_file": {
+                "format": "text"
+            },
+            md5sum: "dontcare",
+            path: rpath 
+        };
+        all_meta.push(meta);
+
+        promises.push(BOUND_BUCKET.put(base + "/" + rpath + ".json", JSON.stringify(meta), jsonmeta));
+    }
+
+    await Promise.all(promises);
+    await dumpVersionSundries(project, version, all_meta);
+    return all_meta;
+}
+
+

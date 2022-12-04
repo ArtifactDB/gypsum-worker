@@ -45,7 +45,7 @@ test("getVersionMetadata works correctly", async () => {
     expect(() => files.getVersionMetadata("test-public", "foo", nb)).rejects.toThrow("failed to retrieve metadata");
 })
 
-test("getFileMetadataHandler works correctly with no links", async () => {
+test("getFileMetadataHandler works correctly for base usage", async () => {
     let req = new Request("http://localhost");
     req.params = { id: encodeURIComponent("test-public:foo/bar.txt@base") };
     req.query = {};
@@ -81,7 +81,24 @@ utils.testauth("getFileMetadataHandler succeeds/fails correctly for private data
     expect(body.path).toBe("whee.txt");
 })
 
-test("getFileHandler works correctly with no links", async () => {
+test("getFileMetadataHandler resolves the latest alias", async () => {
+    let req = new Request("http://localhost");
+    req.params = { id: encodeURIComponent("test-public:foo/bar.txt@latest") };
+    req.query = {};
+
+    let nb = [];
+    let meta = await files.getFileMetadataHandler(req, nb);
+    expect(meta instanceof Response).toBe(true);
+    expect(meta.status).toBe(200);
+
+    let body = await meta.json();
+    expect(body.path).toBe("foo/bar.txt");
+    expect(body._extra.project_id).toBe("test-public");
+    expect(body._extra.version).toBe("modified");
+})
+
+
+test("getFileHandler works correctly", async () => {
     let req = new Request("http://localhost");
     req.params = { id: encodeURIComponent("test-public:blah.txt@base") };
     req.query = {};
@@ -123,4 +140,201 @@ utils.testauth("getFileHandler succeeds/fails correctly for private datasets", a
     // Checking that the key is properly set up.
     let redirect = meta.headers.get("Location");
     expect(redirect).toMatch("test-private/base/whee.txt");
+})
+
+test("getFileHandler resolves the latest alias", async () => {
+    let req = new Request("http://localhost");
+    req.params = { id: encodeURIComponent("test-public:whee.txt@latest") };
+    req.query = {};
+
+    let nb = [];
+    let meta = await files.getFileHandler(req, nb);
+    expect(meta instanceof Response).toBe(true);
+    expect(meta.status).toBe(302);
+
+    // Checking that the key is properly set up.
+    let redirect = meta.headers.get("Location");
+    expect(redirect).toMatch("test-public/modified/whee.txt");
+})
+
+test("getFileMetadataHandler redirects correctly in simple cases", async () => {
+    let payload = setup.mockFiles();
+    await setup.mockProjectVersion("test-redirect-simple", "check", payload);
+    await setup.addRedirection("test-redirect-simple", "check", "Aaron", "foo/bar.txt")
+    await setup.dumpProjectSundries("test-redirect-simple", "check");
+
+    // No redirection for the metadata.
+    let req = new Request("http://localhost");
+    req.params = { id: encodeURIComponent("test-redirect-simple:Aaron@check") };
+    req.query = {};
+
+    {
+        let nb = [];
+        let meta = await files.getFileMetadataHandler(req, nb);
+        expect(meta instanceof Response).toBe(true);
+        expect(meta.status).toBe(200);
+
+        let body = await meta.json();
+        expect(body.path).toBe("Aaron");
+        expect(body["$schema"]).toMatch("redirection");
+    }
+
+    // With redirection.
+    req.query["follow_link"] = "true";
+
+    {
+        let nb = [];
+        let meta = await files.getFileMetadataHandler(req, nb);
+        expect(meta instanceof Response).toBe(true);
+        expect(meta.status).toBe(200);
+
+        let body = await meta.json();
+        expect(body.path).toBe("foo/bar.txt");
+        expect(body["$schema"]).toMatch("generic");
+    }
+})
+
+test("getFileMetadataHandler redirects correctly in chains", async () => {
+    let payload = setup.mockFiles();
+    await setup.mockProjectVersion("test-redirect-chains", "check", payload);
+    await setup.addRedirection("test-redirect-chains", "check", "Akari", "foo/bar.txt")
+    await setup.addRedirection("test-redirect-chains", "check", "Aika", "Akari")
+    await setup.dumpProjectSundries("test-redirect-chains", "check");
+
+    let req = new Request("http://localhost");
+    req.params = { id: encodeURIComponent("test-redirect-chains:Aika@check") };
+    req.query = { follow_link: "true" };
+
+    {
+        let nb = [];
+        let meta = await files.getFileMetadataHandler(req, nb);
+        expect(meta instanceof Response).toBe(true);
+        expect(meta.status).toBe(200);
+
+        let body = await meta.json();
+        expect(body.path).toBe("foo/bar.txt");
+        expect(body["$schema"]).toMatch("generic");
+    }
+
+    // Unless they're circular.
+    await setup.addRedirection("test-redirect-chains", "check", "Akari", "Aika")
+    {
+        let nb = [];
+        await utils.expectError(files.getFileMetadataHandler(req, nb), "circular");
+    }
+})
+
+utils.testauth("getFileMetadataHandler refuses to redirect into private projects", async () => {
+    await setup.mockProjectVersion("test-redirect-private", "check", {});
+    await setup.addRedirection("test-redirect-private", "check", "Alice", "test-private:blah.txt@base", "ArtifactDB")
+    await setup.dumpProjectSundries("test-redirect-private", "check");
+
+    let req = new Request("http://localhost");
+    req.params = { id: encodeURIComponent("test-redirect-private:Alice@check") };
+    req.query = { "follow_link": "true" };
+
+    // Fails first. 
+    let nb = [];
+    await utils.expectError(files.getFileMetadataHandler(req, nb), "user credentials not supplied");
+
+    // Adding headers to the request object, and doing it again.
+    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+
+    {
+        let nb = [];
+        let meta = await files.getFileMetadataHandler(req, nb);
+        expect(meta instanceof Response).toBe(true);
+        expect(meta.status).toBe(200);
+
+        let body = await meta.json();
+        expect(body.path).toBe("blah.txt");
+        expect(body["$schema"]).toMatch("generic");
+    }
+})
+
+test("getFileHandler follows links correctly in simple cases", async () => {
+    await setup.mockLinkedProjectVersion("test-link-simple", "foo", {
+        "whee.txt": "test-public:whee.txt@modified",
+        "blah.txt": "test-public:blah.txt@modified",
+        "foo/bar.txt": "test-public:foo/bar.txt@modified"
+    });
+    await setup.dumpProjectSundries("test-link-simple", "foo");
+
+    // No redirection for the metadata.
+    let req = new Request("http://localhost");
+    req.params = { id: encodeURIComponent("test-link-simple:whee.txt@foo") };
+    req.query = {};
+
+    let nb = [];
+    let meta = await files.getFileHandler(req, nb);
+    expect(meta instanceof Response).toBe(true);
+    expect(meta.status).toBe(302);
+
+    // Checking that the key is properly set up.
+    let redirect = meta.headers.get("Location");
+    expect(redirect).toMatch("test-public/modified/whee.txt");
+})
+
+test("getFileHandler follows links correctly in chains", async () => {
+    await setup.mockLinkedProjectVersion("test-link-chained", "foo", {
+        "blah.txt": "test-public:blah.txt@modified",
+        "whee.txt": "test-link-chained:whee.txt@bar"
+    });
+    await setup.mockLinkedProjectVersion("test-link-chained", "bar", {
+        "blah.txt": "test-link-chained:blah.txt@foo",
+        "whee.txt": "test-link-chained:whee.txt@foo"
+    });
+    await setup.dumpProjectSundries("test-link-chained", "bar");
+
+    // No redirection for the metadata.
+    let req = new Request("http://localhost");
+    req.params = { id: encodeURIComponent("test-link-chained:blah.txt@bar") };
+    req.query = {};
+
+    let nb = [];
+    let meta = await files.getFileHandler(req, nb);
+    expect(meta instanceof Response).toBe(true);
+    expect(meta.status).toBe(302);
+
+    // Checking that the key is properly set up.
+    let redirect = meta.headers.get("Location");
+    expect(redirect).toMatch("test-public/modified/blah.txt");
+
+    // Unless it's circular.
+    {
+        let req = new Request("http://localhost");
+        req.params = { id: encodeURIComponent("test-link-chained:whee.txt@bar") };
+        req.query = {};
+
+        let nb = [];
+        await utils.expectError(files.getFileHandler(req, nb), "circular");
+    }
+})
+
+utils.testauth("getFileHandler refuses to follow links into private projects", async () => {
+    await setup.mockLinkedProjectVersion("test-link-private", "foo", {
+        "foo/bar.txt": "test-private:foo/bar.txt@base"
+    });
+    await setup.dumpProjectSundries("test-link-private", "foo");
+
+    let req = new Request("http://localhost");
+    req.params = { id: encodeURIComponent("test-link-private:foo/bar.txt@foo") };
+    req.query = { "follow_link": "true" };
+
+    // Fails first. 
+    let nb = [];
+    await utils.expectError(files.getFileHandler(req, nb), "user credentials not supplied");
+
+    // Adding headers to the request object, and doing it again.
+    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+
+    {
+        let nb = [];
+        let meta = await files.getFileHandler(req, nb);
+        expect(meta instanceof Response).toBe(true);
+        expect(meta.status).toBe(302);
+
+        let redirect = meta.headers.get("Location");
+        expect(redirect).toMatch("test-private/base/foo/bar.txt");
+    }
 })
