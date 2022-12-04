@@ -23,6 +23,11 @@ export function setS3Object(account_id, access_key, secret_key) {
     return;
 }
 
+export function setS3ObjectDirectly(s3obj) { // for testing purposes only.
+    s3_object = s3obj;
+    return;
+}
+
 export function getS3Object() {
     return s3_object;
 }

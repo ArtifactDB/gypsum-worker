@@ -27,7 +27,7 @@ export async function getVersionMetadataOrNull(project, version, nonblockers) {
 }
 
 export async function getVersionMetadata(project, version, nonblockers) {
-    let out = getVersionMetadataOrNull(project, version, nonblockers);
+    let out = await getVersionMetadataOrNull(project, version, nonblockers);
     if (out == null) {
         throw new utils.HttpError("failed to retrieve metadata for project '" + project + "', version '" + version + "'", 404);
     }
