@@ -1,10 +1,8 @@
 name = "gypsum-test" # ~> Name of the worker, to be used in the endpoint URL.
-type = "webpack"
+main = "src/index.js"
 
 account_id = "bfb2e522e0b245720424784fcf7c04c0" # ~> Cloudflare account ID, as listed on the R2 page of the Cloudflare dashboard.
 workers_dev = true
-route = ""
-zone_id = ""
 compatibility_date = "2022-03-04"
 
 [[r2_buckets]]
