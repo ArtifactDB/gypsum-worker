@@ -1,5 +1,6 @@
 // taken from https://github.com/microsoft/accessibility-insights-web/pull/5421/commits/9ad4e618019298d82732d49d00aafb846fb6bac7
 // via https://github.com/microsoft/accessibility-insights-web/pull/5421#issuecomment-1109168149
+// Needed to add a nearest-parent package.json to avoid treating this as an ESM.
 
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
