@@ -1,7 +1,7 @@
-export const testauth = ("GITHUB_TEST_TOKEN" in process.env ? test : test.skip);
+export const testauth = ("BOT_TEST_TOKEN" in process.env ? test : test.skip);
 
 export function fetchTestPAT() {
-    return process.env.GITHUB_TEST_TOKEN;
+    return process.env.BOT_TEST_TOKEN;
 }
 
 // Providing our own checks for errors, as sometimes toThrow doesn't work. It
