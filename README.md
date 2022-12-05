@@ -41,6 +41,7 @@ This will require some credit card details, but for casual use, you are unlikely
 Fork this repository and clone it into your local environment. 
 
 Follow [these](https://developers.cloudflare.com/workers/wrangler/get-started/) instructions to install the `wrangler` tool.
+Note that we currently require version 2 of `wrangler`.
 
 Run `wrangler login` to authenticate into your Cloudflare account.
 
