@@ -55,7 +55,7 @@ async function find_user(request, nonblockers) {
 }
 
 export async function findUser(request, nonblockers) {
-    let user = find_user(request, nonblockers);
+    let user = await find_user(request, nonblockers);
     if (user == null) {
         throw new utils.HttpError("no user identity supplied", 401);
     }
