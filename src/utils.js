@@ -27,7 +27,7 @@ export function unpackId(id) {
     }
 
     if (i2 < i1) {
-        throw new HttpError("could not identify version from 'id'", 400);
+        throw new HttpError("could not identify path from 'id'", 400);
     } else if (i1 +1 == i2){
         throw new HttpError("'id' should not have an empty path", 400);
     }
