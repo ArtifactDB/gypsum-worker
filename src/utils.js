@@ -48,17 +48,17 @@ export function errorResponse(reason, code, headers={}) {
 }
 
 export function minutesFromNow(n) {
-    return (new Date(Date.now() + n * 60000)).toUTCString();
+    return n * 60;
 }
 
 export function hoursFromNow(n) {
-    return (new Date(Date.now() + n * 3600000)).toUTCString();
+    return n * 3600;
 }
 
 export function quickCacheJsonText(cache, key, value, expires) {
     let headers = {
-        "Content-Type": "application/json",
-        "Expires": expires
+        "Cache-Control": "max-age=" + String(expires),
+        "Content-Type": "application/json"
     };
     return cache.put(key, new Response(value, { headers: headers }));
 }

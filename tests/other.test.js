@@ -49,39 +49,24 @@ test("error responses are correctly constructed", async () => {
 })
 
 test("time conversions are performed properly", () => {
-    {
-        let now = Date.now();
-        let newtime = other.minutesFromNow(10);
-        let delta = new Date(newtime) - now
-        let expected = 10 * 60 * 1000;
-        expect(Math.abs(delta - expected)).toBeLessThan(1000);
-    }
-
-    {
-        let now = Date.now();
-        let newtime = other.hoursFromNow(10);
-        let delta = new Date(newtime) - now
-        let expected = 10 * 3600 * 1000;
-        expect(Math.abs(delta - expected)).toBeLessThan(1000);
-    }
+    expect(other.minutesFromNow(10)).toBe(10 * 60);
+    expect(other.hoursFromNow(5)).toBe(5 * 3600);
 })
 
 test("caching of JSON payloads works correctly", async () => {
     const testcache = await caches.open("test_cache");
-    let key = "https://www.foobar.com/downloads";
-    await other.quickCacheJson(testcache, key, { "eagle": 1, "falcon": 2 }, 2000); // expires in a few seconds.
+    let key = new Request("https://www.foobar.com/downloads");
+    await other.quickCacheJson(testcache, key, { "eagle": 1, "falcon": 2 }, 2); // expires in a few seconds.
 
     let res = await testcache.match(key);
-    if (res) { // miniflare's cache API implementation doesn't seem to actually cache?
-        let body = await res.json();
-        expect(body.eagle).toBe(1);
-        expect(body.falcon).toBe(2);
+    let body = await res.json();
+    expect(body.eagle).toBe(1);
+    expect(body.falcon).toBe(2);
 
-        await new Promise(resolve => setTimeout(2000, resolve));
-
-        let res2 = await caches.get(key);
-        expect(res2).toBeNull();
-    }
+    // Check that it expired properly.
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    let res2 = await testcache.match(key);
+    expect(res2).toBeUndefined();
 })
 
 test("quick JSON uploading works as expected", async () => {
