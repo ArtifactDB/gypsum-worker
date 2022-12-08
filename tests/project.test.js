@@ -1,5 +1,6 @@
 import * as f_ from "../src/index.js";
 import * as proj from "../src/project.js";
+import * as lock from "../src/lock.js";
 import * as setup from "./setup.js";
 import * as utils from "./utils.js";
 
@@ -165,6 +166,44 @@ test("listProjectsHandler works correctly", async () => {
     expect(found_public.aggs.map(x => x["_extra.version"]).sort()).toEqual(["base", "modified"]);
 })
 
+test("listProjectsHandler ignores locked projects", async () => {
+    let payload = setup.mockFiles();
+    await setup.mockProjectVersion("test-locked", "base", payload);
+    await setup.dumpProjectSundries("test-locked", "base");
+
+    let req = new Request("http://localhost");
+    req.query = {};
+
+    // Initial check.
+    let nb = [];
+    let res = await proj.listProjectsHandler(req, nb);
+    expect(res.status).toBe(200);
+
+    let body = await res.json();
+    expect(body.count).toBeGreaterThan(0);
+
+    let found_locked = null;
+    for (const x of body.results) {
+        if (x.project_id == "test-locked") {
+            found_locked = x;
+        }
+    }
+    expect(found_locked.aggs.length).toBeGreaterThan(0);
+
+    // Repeating with locks.
+    await lock.lockProject("test-locked", "base");
+    let lres = await proj.listProjectsHandler(req, nb);
+    let lbody = await lres.json();
+
+    found_locked = null;
+    for (const x of lbody.results) {
+        if (x.project_id == "test-locked") {
+            found_locked = x;
+        }
+    }
+    expect(found_locked.aggs.length).toBe(0);
+})
+
 utils.testauth("listProjectsHandler works correctly with authentication", async () => {
     let req = new Request("http://localhost");
     req.query = {};
@@ -292,3 +331,18 @@ utils.testauth("getProjectVersionInfoHandler fails correctly when unauthorized",
     expect(body.permissions.owners).toEqual(["ArtifactDB-bot"]);
     expect(body.permissions.read_access).toBe("viewers");
 })
+
+test("getProjectVersionInfoHandler fails correctly when locked", async () => {
+    let req = new Request("http://localhost");
+    req.params = { project: "test-public", version: "locked" };
+    await lock.lockProject("test-public", "locked");
+
+    let nb = [];
+    let res = await proj.getProjectVersionInfoHandler(req, nb);
+    expect(res.status).toBe(200);
+
+    let body = await res.json();
+    expect(body.status).toBe("error");
+    expect(body.anomalies[0]).toMatch("locked");
+})
+
