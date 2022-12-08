@@ -3,7 +3,7 @@ import * as utils from "./utils.js";
 const api = "https://api.github.com";
 var repository = "placeholder";
 var user_agent = "placeholder";
-var master_token =  "placeholder";
+var master_token = null;
 
 export function setRepository(repo) {
     repository = repo;
@@ -25,6 +25,10 @@ export function getToken() {
 }
 
 export async function postNewIssue(title, body) {
+    if (master_token == null) {
+        return { title: title, body: body };
+    }
+
     let URL = api + "/repos/" + repository + "/issues";
 
     let res = await fetch(URL, {

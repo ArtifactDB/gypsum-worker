@@ -31,9 +31,9 @@ export function setS3Object(account_id, access_key, secret_key) {
         if (mode == 'getObject') {
             command = new GetObjectCommand({ Bucket: params.Bucket, Key: params.Key });
         } else {
-            command = new PutObjectCommand({ Bucket: params.Bucket, Key: params.Key });
+            command = new PutObjectCommand({ Bucket: params.Bucket, Key: params.Key, ContentMD5: params.ContentMD5 });
         }
-        return await getSignedUrl(s3_object.client, command, { expiresIn: params.Expiry });
+        return await getSignedUrl(s3_object.client, command, { expiresIn: params.Expires });
     }
 
     return;

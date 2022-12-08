@@ -7,7 +7,7 @@ export const S3Obj = {
     }
 };
 
-function computeHash(contents) {
+export function computeHash(contents) {
     if (typeof contents == "string") {
         let enc = new TextEncoder;
         contents = enc.encode(contents);
