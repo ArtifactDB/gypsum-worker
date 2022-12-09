@@ -112,7 +112,9 @@ utils.testauth("initializeUploadHandler works correctly for simple uploads", asy
     // Check that the issue posting is done.
     let resolved = await Promise.all(nb);
     expect(resolved.length).toBeGreaterThan(0);
-    expect(resolved[resolved.length - 1].title).toEqual("purge project");
+    let last = resolved[resolved.length - 1];
+    let lastbody = await last.json();
+    expect(lastbody.title).toEqual("purge project");
 
     // Check that a lock file was created with the right user name.
     let lckinfo = await BOUND_BUCKET.get("test-upload/test/..LOCK");
@@ -300,15 +302,15 @@ utils.testauth("initializeUploadHandler prohibits invalid links to transient pro
 /******* Create link checks *******/
 
 utils.testauth("createLinkHandler works correctly", async () => {
+    let all_links = [
+        { check: "link", filename: "whee.txt", value: { artifactdb_id: "test-public:whee.txt@base" } },
+        { check: "link", filename: "blah.txt", value: { artifactdb_id: "test-public:blah.txt@base" } },
+        { check: "link", filename: "foo/bar.txt", value: { artifactdb_id: "test-public:foo/bar.txt@base" } },
+    ];
+
     let req = new Request("http://localhost", {
         method: "POST",
-        body: JSON.stringify({ 
-            filenames: [
-                { check: "link", filename: "whee.txt", value: { artifactdb_id: "test-public:whee.txt@base" } },
-                { check: "link", filename: "blah.txt", value: { artifactdb_id: "test-public:blah.txt@base" } },
-                { check: "link", filename: "foo/bar.txt", value: { artifactdb_id: "test-public:foo/bar.txt@base" } },
-            ]
-        })
+        body: JSON.stringify({ filenames: all_links })
     });
     req.params = { project: "test-upload-id-link-create", version: "first" };
     req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
@@ -330,7 +332,8 @@ utils.testauth("createLinkHandler works correctly", async () => {
     }
 
     // Checking that a link file is actually created.
-    for (const x of Object.keys(payload)) {
+    for (const info of all_links) {
+        let x = info.filename;
         let check = await BOUND_BUCKET.get("test-upload-id-link-create/first/" + x);
         let expected_id = "test-public:" + x + "@base";
         expect(check.customMetadata.artifactdb_id).toBe(expected_id);
@@ -348,4 +351,56 @@ utils.testauth("createLinkHandler throws the right errors", async () => {
 
     req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
     await utils.expectError(upload.createLinkHandler(req, nb), "not been previously locked");
+})
+
+/******* Complete uploads checks *******/
+
+utils.testauth("completeUploadHandler works correctly", async () => {
+    // Initializing the upload.
+    {
+        let req = new Request("http://localhost", {
+            method: "POST",
+            body: JSON.stringify({ 
+                filenames: [
+                    { check: "simple", filename: "WHEE", value: { md5sum: "a4caf5afa851da451e2161a4c3ac46bb" } },
+                    { check: "simple", filename: "BAR", value: { md5sum: "4209df9c96263664123450aa48fd1bfa" } }
+                ]
+            })
+        });
+        req.params = { project: "test-upload", version: "test" };
+        req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+
+        let nb = [];
+        await upload.initializeUploadHandler(req, nb);
+        await Promise.all(nb);
+    }
+
+    // Completing the upload.
+    let req = new Request("http://localhost", { method: "POST", body: "{}" });
+    req.params = { project: "test-upload", version: "test" };
+    req.query = {};
+    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+
+    let nb = [];
+    let res = await upload.completeUploadHandler(req, nb);
+    await Promise.all(nb);
+    let body = await res.json();
+    expect(body.job_id).toBe(-1); // placeholder number, used for testing.
+})
+
+utils.testauth("completeUploadHandler throws the right errors", async () => {
+    let req = new Request("http://localhost", { method: "POST", body: '{ "read_access": "FOOABLE" }' });
+    req.params = { project: "test-complete-check", version: "WHEE" };
+
+    // First attempt without identity.
+    let nb = [];
+    await utils.expectError(upload.completeUploadHandler(req, nb), "user identity");
+
+    // Trying again after adding headers.
+    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    await utils.expectError(upload.completeUploadHandler(req, nb), "not been previously locked");
+
+    // Forcing a lock file.
+    await BOUND_BUCKET.put("test-complete-check/WHEE/..LOCK", '{ "user_name": "ArtifactDB-bot" }')
+    await utils.expectError(upload.completeUploadHandler(req, nb), "invalid request body");
 })

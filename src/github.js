@@ -26,7 +26,12 @@ export function getToken() {
 
 export async function postNewIssue(title, body) {
     if (master_token == null) {
-        return { title: title, body: body };
+        // Fallback for testing purposes.
+        return new Response(JSON.stringify({ 
+            number: -1, 
+            title: title, 
+            body: body 
+        }));
     }
 
     let URL = api + "/repos/" + repository + "/issues";
@@ -49,6 +54,14 @@ export async function postNewIssue(title, body) {
 }
 
 export async function getIssue(id) {
+    if (master_token == null) {
+        // Fallback for testing purposes.
+        return new Response(JSON.stringify({ 
+            state: "open",
+            comments: 0
+        }));
+    }
+
     let URL = api + "/repos/" + repository + "/issues/" + id;
 
     let res = await fetch(URL, {
