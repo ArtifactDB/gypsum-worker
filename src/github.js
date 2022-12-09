@@ -3,7 +3,8 @@ import * as utils from "./utils.js";
 const api = "https://api.github.com";
 var repository = "placeholder";
 var user_agent = "placeholder";
-var master_token = null;
+var master_token = "placeholder";
+var test_rigging = null;
 
 export function setRepository(repo) {
     repository = repo;
@@ -24,14 +25,21 @@ export function getToken() {
     return master_token;
 }
 
+export function enableTestRigging(enable = true) {
+    if (enable) {
+        test_rigging = { postNewIssue: [], getIssue: {} };
+    } else {
+        test_rigging = null;
+    }
+    return test_rigging;
+}
+
 export async function postNewIssue(title, body) {
-    if (master_token == null) {
+    if (test_rigging != null) {
         // Fallback for testing purposes.
-        return new Response(JSON.stringify({ 
-            number: -1, 
-            title: title, 
-            body: body 
-        }));
+        let stub = { number: -1, title: title, body: body };
+        test_rigging.postNewIssue.push(stub);
+        return new Response(JSON.stringify(stub));
     }
 
     let URL = api + "/repos/" + repository + "/issues";
@@ -54,12 +62,9 @@ export async function postNewIssue(title, body) {
 }
 
 export async function getIssue(id) {
-    if (master_token == null) {
+    if (test_rigging != null) {
         // Fallback for testing purposes.
-        return new Response(JSON.stringify({ 
-            state: "open",
-            comments: 0
-        }));
+        return new Response(JSON.stringify(test_rigging.getIssue[id]));
     }
 
     let URL = api + "/repos/" + repository + "/issues/" + id;

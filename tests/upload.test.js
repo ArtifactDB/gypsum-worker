@@ -7,8 +7,13 @@ import * as setup from "./setup.js";
 
 beforeAll(async () => {
     await setup.mockPublicProject();
+    gh.enableTestRigging();
     s3.setS3ObjectDirectly(setup.S3Obj);
     gh.setToken(null); // forcibly nullify any token to avoid communication.
+});
+
+afterAll(() => {
+    gh.enableTestRigging(false);
 });
 
 /******* Basic checks *******/
@@ -92,6 +97,7 @@ utils.testauth("initializeUploadHandler works correctly for simple uploads", asy
     req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
 
     let nb = [];
+    let gh_test_rigging = gh.enableTestRigging();
     let init = await upload.initializeUploadHandler(req, nb);
     let body = await init.json();
 
@@ -110,11 +116,9 @@ utils.testauth("initializeUploadHandler works correctly for simple uploads", asy
     expect(body.abort_url).toMatch("test-upload/version/test");
 
     // Check that the issue posting is done.
-    let resolved = await Promise.all(nb);
-    expect(resolved.length).toBeGreaterThan(0);
-    let last = resolved[resolved.length - 1];
-    let lastbody = await last.json();
-    expect(lastbody.title).toEqual("purge project");
+    await Promise.all(nb);
+    let posted = gh_test_rigging.postNewIssue[0];
+    expect(posted.title).toEqual("purge project");
 
     // Check that a lock file was created with the right user name.
     let lckinfo = await BOUND_BUCKET.get("test-upload/test/..LOCK");
@@ -367,7 +371,7 @@ utils.testauth("completeUploadHandler works correctly", async () => {
                 ]
             })
         });
-        req.params = { project: "test-upload", version: "test" };
+        req.params = { project: "test-complete-upload", version: "test" };
         req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
 
         let nb = [];
@@ -377,15 +381,60 @@ utils.testauth("completeUploadHandler works correctly", async () => {
 
     // Completing the upload.
     let req = new Request("http://localhost", { method: "POST", body: "{}" });
-    req.params = { project: "test-upload", version: "test" };
+    req.params = { project: "test-complete-upload", version: "test" };
     req.query = {};
     req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
 
     let nb = [];
+    let gh_test_rigging = gh.enableTestRigging();
     let res = await upload.completeUploadHandler(req, nb);
-    await Promise.all(nb);
+
     let body = await res.json();
     expect(body.job_id).toBe(-1); // placeholder number, used for testing.
+    let postinfo = gh_test_rigging.postNewIssue[0];
+    expect(postinfo.title).toBe("upload complete");
+    let postbody = JSON.parse(postinfo.body);
+    expect(postbody.project).toBe("test-complete-upload");
+    expect(postbody.permissions.read_access).toBe("public");
+    expect(postbody.permissions.owners).toEqual(["ArtifactDB-bot"]);
+})
+
+utils.testauth("completeUploadHandler works correctly with custom permissions", async () => {
+    // Initializing the upload.
+    {
+        let req = new Request("http://localhost", {
+            method: "POST",
+            body: JSON.stringify({ 
+                filenames: [
+                    { check: "simple", filename: "WHEE", value: { md5sum: "a4caf5afa851da451e2161a4c3ac46bb" } },
+                    { check: "simple", filename: "BAR", value: { md5sum: "4209df9c96263664123450aa48fd1bfa" } }
+                ]
+            })
+        });
+        req.params = { project: "test-complete-upload2", version: "test" };
+        req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+
+        let nb = [];
+        await upload.initializeUploadHandler(req, nb);
+        await Promise.all(nb);
+    }
+
+    // Completing the upload.
+    let req = new Request("http://localhost", { method: "POST", body: '{ "read_access": "viewers", "owners": [ "LTLA" ] }' });
+    req.params = { project: "test-complete-upload2", version: "test" };
+    req.query = {};
+    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+
+    let nb = [];
+    let gh_test_rigging = gh.enableTestRigging();
+    let res = await upload.completeUploadHandler(req, nb);
+
+    let postinfo = gh_test_rigging.postNewIssue[0];
+    expect(postinfo.title).toBe("upload complete");
+    let postbody = JSON.parse(postinfo.body);
+    expect(postbody.project).toBe("test-complete-upload2");
+    expect(postbody.permissions.read_access).toBe("viewers");
+    expect(postbody.permissions.owners).toEqual(["LTLA"]);
 })
 
 utils.testauth("completeUploadHandler throws the right errors", async () => {
@@ -403,4 +452,63 @@ utils.testauth("completeUploadHandler throws the right errors", async () => {
     // Forcing a lock file.
     await BOUND_BUCKET.put("test-complete-check/WHEE/..LOCK", '{ "user_name": "ArtifactDB-bot" }')
     await utils.expectError(upload.completeUploadHandler(req, nb), "invalid request body");
+})
+
+utils.testauth("queryJobHandler works correctly", async () => {
+    let req = new Request("http://localhost", { method: "POST", body: '{ "read_access": "FOOABLE" }' });
+    req.params = { jobid: "-1" };
+
+    // PENDING
+    {
+        let gh_test_rigging = gh.enableTestRigging();
+        gh_test_rigging.getIssue["-1"] = { "state": "open", "comments": 0 };
+
+        let nb = [];
+        let res = await upload.queryJobIdHandler(req, nb);
+        expect(res.status).toBe(200);
+        let body = await res.json();
+        expect(body.status).toBe("PENDING");
+    }
+
+    // SUCCESS
+    {
+        let gh_test_rigging = gh.enableTestRigging();
+        gh_test_rigging.getIssue["-1"] = { "state": "closed", "comments": 0 };
+
+        let nb = [];
+        let res = await upload.queryJobIdHandler(req, nb);
+        expect(res.status).toBe(200);
+        let body = await res.json();
+        expect(body.status).toBe("SUCCESS");
+    }
+
+    // FAILURE 
+    {
+        let gh_test_rigging = gh.enableTestRigging();
+        gh_test_rigging.getIssue["-1"] = { "state": "open", "comments": 10 };
+
+        let nb = [];
+        let res = await upload.queryJobIdHandler(req, nb);
+        expect(res.status).toBe(200);
+        let body = await res.json();
+        expect(body.status).toBe("FAILURE");
+    }
+})
+
+utils.testauth("abortUploadHandler works correctly", async () => {
+    let req = new Request("http://localhost");
+    req.params = { project: "test-abort-upload", version: "test" };
+
+    // First attempt without headers.
+    let nb = [];
+    await utils.expectError(upload.abortUploadHandler(req, nb), "user identity");
+
+    // Trying again after adding headers.
+    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    await utils.expectError(upload.abortUploadHandler(req, nb), "not been previously locked");
+
+    // Forcing a lock file.
+    await BOUND_BUCKET.put("test-abort-upload/test/..LOCK", '{ "user_name": "ArtifactDB-bot" }')
+    let res = await upload.abortUploadHandler(req, nb);
+    expect(res.status).toBe(202);
 })
