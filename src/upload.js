@@ -71,6 +71,7 @@ export async function initializeUploadHandler(request, nonblockers) {
 
     let md5able = [];
     let linked = [];
+    let link_dest_exists = {};
     let link_expiry_checks = new Set;
     let link_projects = new Set;
 
@@ -89,13 +90,19 @@ export async function initializeUploadHandler(request, nonblockers) {
         } else if (f.check === "md5") {
             md5able.push(f);
         } else if (f.check == "link") {
-            let upack = utils.unpackId(f.value.artifactdb_id);
+            let id = f.value.artifactdb_id;
+            let upack = utils.unpackId(id);
             if (upack.version == "latest") {
                 throw new utils.HttpError("cannot link to a 'latest' alias in 'filenames'", 400);
             }
+
             link_projects.add(upack.project);
             link_expiry_checks.add(pkeys.expiry(upack.project, upack.version));
-            linked.push({ filename: fname, target: f.value.artifactdb_id });
+            linked.push({ filename: fname, target: id });
+
+            if (!(id in link_dest_exists)) {
+                link_dest_exists[id] = bound_bucket.head(upack.project + "/" + upack.version + "/" + upack.path);
+            }
         } else {
             throw new utils.HttpError("invalid entry in the request 'filenames'", 400);
         }
@@ -149,6 +156,12 @@ export async function initializeUploadHandler(request, nonblockers) {
             } catch (e) {
                 e.message = "failed to create a link; " + e.message;
                 throw e;
+            }
+        }
+
+        for (const [k, v] of Object.entries(link_dest_exists)) {
+            if ((await v) == null) {
+                throw new utils.HttpError("link target '" + k + "' does not exist");
             }
         }
     }

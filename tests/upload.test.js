@@ -123,6 +123,29 @@ utils.testauth("initializeUploadHandler works correctly for simple uploads", asy
     expect(vbody).toEqual(["WHEE", "BAR"]);
 })
 
+utils.testauth("initializeUploadHandler registers transient uploads correctly", async () => {
+    let req = new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ 
+            filenames: [
+                { check: "simple", filename: "WHEE", value: { md5sum: "a4caf5afa851da451e2161a4c3ac46bb" } },
+                { check: "simple", filename: "BAR", value: { md5sum: "4209df9c96263664123450aa48fd1bfa" } }
+            ],
+            expires_in: "in 2 days"
+        })
+    });
+    req.params = { project: "test-upload", version: "transient" };
+    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+
+    let nb = [];
+    await upload.initializeUploadHandler(req, nb);
+    await Promise.all(nb);        
+
+    let expinfo = await BOUND_BUCKET.get("test-upload/transient/..expiry");
+    let expbody = await expinfo.json();
+    expect(expbody.expires_in).toBe(2*24*60*60*1000);
+})
+
 utils.testauth("initializeUploadHandler works correctly for MD5 deduplication", async () => {
     let payload = setup.mockFiles();
     await setup.mockProjectVersion("test-upload-md5sum-link", "test", payload);
@@ -169,18 +192,96 @@ utils.testauth("initializeUploadHandler works correctly for link-based deduplica
             ]
         })
     });
-    req.params = { project: "test-upload-md5sum-link", version: "v2" };
+    req.params = { project: "test-upload-id-link", version: "v2" };
     req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
 
+    // Checking that links are returned.
     let nb = [];
     let init = await upload.initializeUploadHandler(req, nb);
     let body = await init.json();
 
     expect(body.links.length).toBe(3);
     expect(body.links[0].filename).toBe("whee.txt");
-    expect(body.links[0].url).toMatch(btoa("test-upload-md5sum-link:whee.txt@v2"));
+    expect(body.links[0].url).toMatch(btoa("test-upload-id-link:whee.txt@v2"));
     expect(body.links[1].filename).toBe("blah.txt");
-    expect(body.links[1].url).toMatch(btoa("test-upload-md5sum-link:blah.txt@v2"));
+    expect(body.links[1].url).toMatch(btoa("test-upload-id-link:blah.txt@v2"));
     expect(body.links[2].filename).toBe("foo/bar.txt");
-    expect(body.links[2].url).toMatch(btoa("test-upload-md5sum-link:foo/bar.txt@v2"));
+    expect(body.links[2].url).toMatch(btoa("test-upload-id-link:foo/bar.txt@v2"));
+
+    // Checking that a link file is posted.
+    await Promise.all(nb);
+    let linkinfo = await BOUND_BUCKET.get("test-upload-id-link/v2/..links");
+    let linkbody = await linkinfo.json();
+    expect(linkbody["whee.txt"]).toBe("test-upload-id-link:whee.txt@test");
+    expect(linkbody["blah.txt"]).toBe("test-upload-id-link:blah.txt@test");
+    expect(linkbody["foo/bar.txt"]).toBe("test-upload-id-link:foo/bar.txt@test");
 })
+
+utils.testauth("initializeUploadHandler prohibits invalid links to missing files", async () => {
+    let payload = setup.mockFiles();
+    await setup.mockProjectVersion("test-upload-id-link-missing", "v1", payload);
+    await setup.dumpProjectSundries("test-upload-id-link-missing", "v1");
+
+    let req = new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ 
+            filenames: [
+                { check: "link", filename: "whee2.txt", value: { artifactdb_id: "test-upload-id-link-missing:whee2.txt@v1" } }
+            ]
+        })
+    });
+    req.params = { project: "test-upload-id-link-missing", version: "v2" };
+    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+
+    let nb = [];
+    await utils.expectError(upload.initializeUploadHandler(req, nb), "does not exist");
+})
+
+utils.testauth("initializeUploadHandler prohibits links to unauthorized projects", async () => {
+    let payload = setup.mockFiles();
+    await setup.mockProjectVersion("test-upload-id-link-private", "test", payload);
+    await setup.dumpProjectSundries("test-upload-id-link-private", "test", false);
+
+    // Putting some manual permissions in there.
+    let perms = setup.definePermissions(["SomeoneElse"], [], false);
+    await BOUND_BUCKET.put("test-upload-id-link-private/..permissions", JSON.stringify(perms), setup.jsonmeta);
+
+    let req = new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ 
+            filenames: [
+                { check: "link", filename: "whee.txt", value: { artifactdb_id: "test-upload-id-link-private:whee.txt@test" } }
+            ]
+        })
+    });
+    req.params = { project: "test-upload-id-link-private2", version: "v1" };
+    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+
+    // Fails without access to the linked project.
+    let nb = [];
+    await utils.expectError(upload.initializeUploadHandler(req, nb), "'test-upload-id-link-private'");
+})
+
+utils.testauth("initializeUploadHandler prohibits invalid links to transient projects", async () => {
+    let payload = setup.mockFiles();
+    await setup.mockProjectVersion("test-upload-id-link-expiry", "test", payload);
+    await setup.dumpProjectSundries("test-upload-id-link-expiry", "test");
+
+    // Injecting an expiry file.
+    await BOUND_BUCKET.put("test-upload-id-link-expiry/test/..expiry", JSON.stringify({ expires_in: 100 }), setup.jsonmeta);
+
+    let req = new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ 
+            filenames: [
+                { check: "link", filename: "whee.txt", value: { artifactdb_id: "test-upload-id-link-expiry:whee.txt@test" } }
+            ]
+        })
+    });
+    req.params = { project: "test-upload-id-link-expiry", version: "v2" };
+    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+
+    let nb = [];
+    await utils.expectError(upload.initializeUploadHandler(req, nb), "detected links to a transient project");
+})
+

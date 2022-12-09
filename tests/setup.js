@@ -15,7 +15,7 @@ export function computeHash(contents) {
     return crypto.createHash('md5').update(contents).digest('hex');
 }
 
-const jsonmeta = {
+export const jsonmeta = {
     httpMetadata: { contentType: "application/json" }
 };
 
@@ -70,19 +70,23 @@ export function mockFiles() {
     };
 }
 
+export function definePermissions(owners, viewers, isPublic) {
+    return {
+        scope: "project",
+        read_access: (isPublic ? "public" : "viewers"),
+        write_access: "owners",
+        owners: owners,
+        viewers: viewers
+    };
+}
+
 export async function dumpProjectSundries(project, latestVersion, isPublic=true) {
     // Adding project-level sundries.
     let latest = { version: latestVersion, index_time: (new Date).toISOString() };
     await BOUND_BUCKET.put(project + "/..latest", JSON.stringify(latest), jsonmeta);
     await BOUND_BUCKET.put(project + "/..latest_all", JSON.stringify(latest), jsonmeta);
 
-    let perms = {
-        scope: "project",
-        read_access: (isPublic ? "public" : "viewers"),
-        write_access: "owners",
-        owners: ["ArtifactDB-bot"],
-        viewers:[]
-    };
+    let perms = definePermissions(["ArtifactDB-bot"], [], isPublic);
     await BOUND_BUCKET.put(project + "/..permissions", JSON.stringify(perms), jsonmeta);
 
     return;

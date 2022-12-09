@@ -18,7 +18,7 @@ export function expiresInMilliseconds(expiry) {
                 unit = unit.slice(0, unit.length - 1);
             }
             if (unit in acceptable) {
-                return acceptable[unit];
+                return middle * acceptable[unit];
             }
         }
     }
