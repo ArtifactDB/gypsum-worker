@@ -6,9 +6,12 @@ import * as utils from "./utils.js";
 import * as setup from "./setup.js";
 
 beforeAll(async () => {
+    await setup.mockPublicProject();
     s3.setS3ObjectDirectly(setup.S3Obj);
     gh.setToken(null); // forcibly nullify any token to avoid communication.
 });
+
+/******* Basic checks *******/
 
 utils.testauth("initializeUploadHandler throws the right errors", async () => {
     {
@@ -40,7 +43,6 @@ utils.testauth("initializeUploadHandler throws the right errors", async () => {
     }
 
     {
-        await setup.mockPublicProject();
         let req = new Request("http://localhost");
         req.params = { project: "test-public", version: "base" };
         req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
@@ -146,6 +148,8 @@ utils.testauth("initializeUploadHandler registers transient uploads correctly", 
     expect(expbody.expires_in).toBe(2*24*60*60*1000);
 })
 
+/******* Initialize link checks *******/
+
 utils.testauth("initializeUploadHandler works correctly for MD5 deduplication", async () => {
     let payload = setup.mockFiles();
     await setup.mockProjectVersion("test-upload-md5sum-link", "test", payload);
@@ -175,6 +179,14 @@ utils.testauth("initializeUploadHandler works correctly for MD5 deduplication", 
     expect(body.links.length).toBe(1);
     expect(body.links[0].filename).toBe("blah.txt");
     expect(body.links[0].url).toMatch(btoa("test-upload-md5sum-link:blah.txt@v2"));
+
+    // Checking that a link file is posted.
+    await Promise.all(nb);
+    let linkinfo = await BOUND_BUCKET.get("test-upload-md5sum-link/v2/..links");
+    let linkbody = await linkinfo.json();
+    expect(linkbody["blah.txt"]).toBe("test-upload-md5sum-link:blah.txt@test");
+    expect("whee.txt" in linkbody).toBe(false);
+    expect("foo/bar.txt" in linkbody).toBe(false);
 })
 
 utils.testauth("initializeUploadHandler works correctly for link-based deduplication", async () => {
@@ -285,3 +297,55 @@ utils.testauth("initializeUploadHandler prohibits invalid links to transient pro
     await utils.expectError(upload.initializeUploadHandler(req, nb), "detected links to a transient project");
 })
 
+/******* Create link checks *******/
+
+utils.testauth("createLinkHandler works correctly", async () => {
+    let req = new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ 
+            filenames: [
+                { check: "link", filename: "whee.txt", value: { artifactdb_id: "test-public:whee.txt@base" } },
+                { check: "link", filename: "blah.txt", value: { artifactdb_id: "test-public:blah.txt@base" } },
+                { check: "link", filename: "foo/bar.txt", value: { artifactdb_id: "test-public:foo/bar.txt@base" } },
+            ]
+        })
+    });
+    req.params = { project: "test-upload-id-link-create", version: "first" };
+    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+
+    let nb = [];
+    let init = await upload.initializeUploadHandler(req, nb);
+    let body = await init.json();
+    await Promise.all(nb);
+
+    // Hitting all the links.
+    expect(body.links.length).toBe(3);
+    for (const x of body.links) {
+        let paths = x.url.split("/");
+        let req = new Request("http://localhost");
+        req.params = { source: paths[2], target: paths[4] };
+        req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+        let res = await upload.createLinkHandler(req, nb);
+        expect(res.status).toBe(202);
+    }
+
+    // Checking that a link file is actually created.
+    for (const x of Object.keys(payload)) {
+        let check = await BOUND_BUCKET.get("test-upload-id-link-create/first/" + x);
+        let expected_id = "test-public:" + x + "@base";
+        expect(check.customMetadata.artifactdb_id).toBe(expected_id);
+        let body = await check.json();
+        expect(body.artifactdb_id).toBe(expected_id);
+    }
+})
+
+utils.testauth("createLinkHandler throws the right errors", async () => {
+    let req = new Request("http://localhost");
+    req.params = { source: btoa("foo:whee.txt@1"), target: btoa("test-public:whee.txt@base") };
+
+    let nb = [];
+    await utils.expectError(upload.createLinkHandler(req, nb), "user identity");
+
+    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    await utils.expectError(upload.createLinkHandler(req, nb), "not been previously locked");
+})
