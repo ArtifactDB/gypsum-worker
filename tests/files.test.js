@@ -1,6 +1,7 @@
 import * as f_ from "../src/index.js";
 import * as files from "../src/files.js";
 import * as s3 from "../src/s3.js";
+import * as gh from "../src/github.js";
 import * as setup from "./setup.js";
 import * as utils from "./utils.js";
 
@@ -8,7 +9,14 @@ beforeAll(async () => {
     await setup.mockPublicProject();
     await setup.mockPrivateProject();
     s3.setS3ObjectDirectly(setup.S3Obj);
-});
+
+    let rigging = gh.enableTestRigging();
+    utils.mockGitHubIdentities(rigging);
+})
+
+afterAll(() => {
+    gh.enableTestRigging(false);
+})
 
 test("getVersionMetadataOrNull works correctly", async () => {
     let nb = [];
@@ -61,7 +69,7 @@ test("getFileMetadataHandler works correctly for base usage", async () => {
     expect(body._extra.version).toBe("base");
 })
 
-utils.testauth("getFileMetadataHandler succeeds/fails correctly for private datasets", async () => {
+test("getFileMetadataHandler succeeds/fails correctly for private datasets", async () => {
     let req = new Request("http://localhost");
     req.params = { id: encodeURIComponent("test-private:whee.txt@base") };
     req.query = {};
@@ -71,7 +79,7 @@ utils.testauth("getFileMetadataHandler succeeds/fails correctly for private data
     expect(() => files.getFileMetadataHandler(req, nb)).rejects.toThrow("user credentials not supplied");
 
     // Adding headers to the request object, and doing it again.
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     let meta = await files.getFileMetadataHandler(req, nb);
     expect(meta instanceof Response).toBe(true);
@@ -121,7 +129,7 @@ test("getFileHandler works correctly", async () => {
     }
 })
 
-utils.testauth("getFileHandler succeeds/fails correctly for private datasets", async () => {
+test("getFileHandler succeeds/fails correctly for private datasets", async () => {
     let req = new Request("http://localhost");
     req.params = { id: encodeURIComponent("test-private:whee.txt@base") };
     req.query = {};
@@ -131,7 +139,7 @@ utils.testauth("getFileHandler succeeds/fails correctly for private datasets", a
     expect(() => files.getFileHandler(req, nb)).rejects.toThrow("user credentials not supplied");
 
     // Adding headers to the request object, and doing it again.
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     let meta = await files.getFileHandler(req, nb);
     expect(meta instanceof Response).toBe(true);
@@ -224,7 +232,7 @@ test("getFileMetadataHandler redirects correctly in chains", async () => {
     }
 })
 
-utils.testauth("getFileMetadataHandler refuses to redirect into private projects", async () => {
+test("getFileMetadataHandler refuses to redirect into private projects", async () => {
     await setup.mockProjectVersion("test-redirect-private", "check", {});
     await setup.addRedirection("test-redirect-private", "check", "Alice", "test-private:blah.txt@base", "ArtifactDB")
     await setup.dumpProjectSundries("test-redirect-private", "check");
@@ -238,7 +246,7 @@ utils.testauth("getFileMetadataHandler refuses to redirect into private projects
     await utils.expectError(files.getFileMetadataHandler(req, nb), "user credentials not supplied");
 
     // Adding headers to the request object, and doing it again.
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     {
         let nb = [];
@@ -311,7 +319,7 @@ test("getFileHandler follows links correctly in chains", async () => {
     }
 })
 
-utils.testauth("getFileHandler refuses to follow links into private projects", async () => {
+test("getFileHandler refuses to follow links into private projects", async () => {
     await setup.mockLinkedProjectVersion("test-link-private", "foo", {
         "foo/bar.txt": "test-private:foo/bar.txt@base"
     });
@@ -326,7 +334,7 @@ utils.testauth("getFileHandler refuses to follow links into private projects", a
     await utils.expectError(files.getFileHandler(req, nb), "user credentials not supplied");
 
     // Adding headers to the request object, and doing it again.
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     {
         let nb = [];

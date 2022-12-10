@@ -1,3 +1,14 @@
+export const mockToken = "gh_auth_mock_token_for_ArtifactDB-bot";
+export const mockTokenOther = "gh_auth_mock_token_for_SomeoneElse";
+
+export function mockGitHubIdentities(rigging) {
+    rigging.identifyUser[mockToken] = { login: "ArtifactDB-bot" };
+    rigging.identifyUserOrgs[mockToken] = [];
+    rigging.identifyUser[mockTokenOther] = { login: "SomeoneElse" };
+    rigging.identifyUserOrgs[mockTokenOther] = [ "FOO", "BAR" ];
+    return;
+}
+
 export const testauth = ("BOT_TEST_TOKEN" in process.env ? test : test.skip);
 
 export function fetchTestPAT() {

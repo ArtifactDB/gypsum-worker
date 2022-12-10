@@ -27,7 +27,7 @@ export function getToken() {
 
 export function enableTestRigging(enable = true) {
     if (enable) {
-        test_rigging = { postNewIssue: [], getIssue: {} };
+        test_rigging = { postNewIssue: [], getIssue: {}, identifyUser: {}, identifyUserOrgs: {} };
     } else {
         test_rigging = null;
     }
@@ -84,6 +84,11 @@ export async function getIssue(id) {
 }
 
 export async function identifyUser(token) {
+    if (test_rigging != null) {
+        // Fallback for testing purposes.
+        return new Response(JSON.stringify(test_rigging.identifyUser[token]));
+    }
+
     let URL = api + "/user";
 
     let res = await fetch(URL, { 
@@ -101,6 +106,11 @@ export async function identifyUser(token) {
 }
 
 export async function identifyUserOrgs(token) {
+    if (test_rigging != null) {
+        // Fallback for testing purposes.
+        return new Response(JSON.stringify(test_rigging.identifyUserOrgs[token]));
+    }
+
     let URL = api + "/user/orgs";
 
     let res = await fetch(URL, { 

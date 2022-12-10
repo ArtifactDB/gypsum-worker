@@ -5,11 +5,15 @@ import * as gh from "../src/github.js";
 import * as utils from "./utils.js";
 import * as setup from "./setup.js";
 
+let gh_test_rigging = null;
+
 beforeAll(async () => {
     await setup.mockPublicProject();
-    gh.enableTestRigging();
     s3.setS3ObjectDirectly(setup.S3Obj);
     gh.setToken(null); // forcibly nullify any token to avoid communication.
+
+    gh_test_rigging = gh.enableTestRigging();
+    utils.mockGitHubIdentities(gh_test_rigging);
 });
 
 afterAll(() => {
@@ -18,7 +22,7 @@ afterAll(() => {
 
 /******* Basic checks *******/
 
-utils.testauth("initializeUploadHandler throws the right errors", async () => {
+test("initializeUploadHandler throws the right errors related to formatting", async () => {
     {
         let req = new Request("http://localhost");
         req.params = { project: "test/upload", version: "test" };
@@ -42,15 +46,8 @@ utils.testauth("initializeUploadHandler throws the right errors", async () => {
 
     {
         let req = new Request("http://localhost");
-        req.params = { project: "test-upload", version: "test" };
-        let nb = [];
-        await utils.expectError(upload.initializeUploadHandler(req, nb), "user identity");
-    }
-
-    {
-        let req = new Request("http://localhost");
         req.params = { project: "test-public", version: "base" };
-        req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+        req.headers.append("Authorization", "Bearer " + utils.mockToken);
         let nb = [];
         await utils.expectError(upload.initializeUploadHandler(req, nb), "already exists");
     }
@@ -59,7 +56,7 @@ utils.testauth("initializeUploadHandler throws the right errors", async () => {
         // First request fails input schema validation.
         let req = new Request("http://localhost", { method: "POST", body: '{ "value": "WHEEE" }' });
         req.params = { project: "test-upload", version: "test" };
-        req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+        req.headers.append("Authorization", "Bearer " + utils.mockToken);
         let nb = [];
         await utils.expectError(upload.initializeUploadHandler(req, nb), "invalid request body");
 
@@ -77,13 +74,38 @@ utils.testauth("initializeUploadHandler throws the right errors", async () => {
             })
         });
         req.params = { project: "test-upload", version: "test2" };
-        req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+        req.headers.append("Authorization", "Bearer " + utils.mockToken);
         let nb = [];
         await utils.expectError(upload.initializeUploadHandler(req, nb), "reserved '..' pattern");
     }
 })
 
-utils.testauth("initializeUploadHandler works correctly for simple uploads", async () => {
+test("initializeUploadHandler throws the right errors for permission-related errors", async () => {
+    {
+        let req = new Request("http://localhost");
+        req.params = { project: "test-upload", version: "test" };
+        let nb = [];
+        await utils.expectError(upload.initializeUploadHandler(req, nb), "user identity");
+    }
+
+    {
+        let req = new Request("http://localhost");
+        req.params = { project: "test-upload", version: "test" };
+        req.headers.append("Authorization", "Bearer " + utils.mockTokenOther);
+        let nb = [];
+        await utils.expectError(upload.initializeUploadHandler(req, nb), "upload a new project");
+    }
+
+    {
+        let req = new Request("http://localhost");
+        req.params = { project: "test-public", version: "foo" };
+        req.headers.append("Authorization", "Bearer " + utils.mockTokenOther);
+        let nb = [];
+        await utils.expectError(upload.initializeUploadHandler(req, nb), "write access");
+    }
+})
+
+test("initializeUploadHandler works correctly for simple uploads", async () => {
     let req = new Request("http://localhost", {
         method: "POST",
         body: JSON.stringify({ 
@@ -94,10 +116,10 @@ utils.testauth("initializeUploadHandler works correctly for simple uploads", asy
         })
     });
     req.params = { project: "test-upload", version: "test" };
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     let nb = [];
-    let gh_test_rigging = gh.enableTestRigging();
+    gh_test_rigging.postNewIssue = [];
     let init = await upload.initializeUploadHandler(req, nb);
     let body = await init.json();
 
@@ -131,7 +153,7 @@ utils.testauth("initializeUploadHandler works correctly for simple uploads", asy
     expect(vbody).toEqual(["WHEE", "BAR"]);
 })
 
-utils.testauth("initializeUploadHandler registers transient uploads correctly", async () => {
+test("initializeUploadHandler registers transient uploads correctly", async () => {
     let req = new Request("http://localhost", {
         method: "POST",
         body: JSON.stringify({ 
@@ -143,7 +165,7 @@ utils.testauth("initializeUploadHandler registers transient uploads correctly", 
         })
     });
     req.params = { project: "test-upload", version: "transient" };
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     let nb = [];
     await upload.initializeUploadHandler(req, nb);
@@ -156,7 +178,7 @@ utils.testauth("initializeUploadHandler registers transient uploads correctly", 
 
 /******* Initialize link checks *******/
 
-utils.testauth("initializeUploadHandler works correctly for MD5 deduplication", async () => {
+test("initializeUploadHandler works correctly for MD5 deduplication", async () => {
     let payload = setup.mockFiles();
     await setup.mockProjectVersion("test-upload-md5sum-link", "test", payload);
     await setup.dumpProjectSundries("test-upload-md5sum-link", "test");
@@ -172,7 +194,7 @@ utils.testauth("initializeUploadHandler works correctly for MD5 deduplication", 
         })
     });
     req.params = { project: "test-upload-md5sum-link", version: "v2" };
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     let nb = [];
     let init = await upload.initializeUploadHandler(req, nb);
@@ -195,7 +217,7 @@ utils.testauth("initializeUploadHandler works correctly for MD5 deduplication", 
     expect("foo/bar.txt" in linkbody).toBe(false);
 })
 
-utils.testauth("initializeUploadHandler works correctly for link-based deduplication", async () => {
+test("initializeUploadHandler works correctly for link-based deduplication", async () => {
     let payload = setup.mockFiles();
     await setup.mockProjectVersion("test-upload-id-link", "test", payload);
     await setup.dumpProjectSundries("test-upload-id-link", "test");
@@ -211,7 +233,7 @@ utils.testauth("initializeUploadHandler works correctly for link-based deduplica
         })
     });
     req.params = { project: "test-upload-id-link", version: "v2" };
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     // Checking that links are returned.
     let nb = [];
@@ -235,7 +257,7 @@ utils.testauth("initializeUploadHandler works correctly for link-based deduplica
     expect(linkbody["foo/bar.txt"]).toBe("test-upload-id-link:foo/bar.txt@test");
 })
 
-utils.testauth("initializeUploadHandler prohibits invalid links to missing files", async () => {
+test("initializeUploadHandler prohibits invalid links to missing files", async () => {
     let payload = setup.mockFiles();
     await setup.mockProjectVersion("test-upload-id-link-missing", "v1", payload);
     await setup.dumpProjectSundries("test-upload-id-link-missing", "v1");
@@ -249,13 +271,13 @@ utils.testauth("initializeUploadHandler prohibits invalid links to missing files
         })
     });
     req.params = { project: "test-upload-id-link-missing", version: "v2" };
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     let nb = [];
     await utils.expectError(upload.initializeUploadHandler(req, nb), "does not exist");
 })
 
-utils.testauth("initializeUploadHandler prohibits links to unauthorized projects", async () => {
+test("initializeUploadHandler prohibits links to unauthorized projects", async () => {
     let payload = setup.mockFiles();
     await setup.mockProjectVersion("test-upload-id-link-private", "test", payload);
     await setup.dumpProjectSundries("test-upload-id-link-private", "test", false);
@@ -273,14 +295,14 @@ utils.testauth("initializeUploadHandler prohibits links to unauthorized projects
         })
     });
     req.params = { project: "test-upload-id-link-private2", version: "v1" };
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     // Fails without access to the linked project.
     let nb = [];
     await utils.expectError(upload.initializeUploadHandler(req, nb), "'test-upload-id-link-private'");
 })
 
-utils.testauth("initializeUploadHandler prohibits invalid links to transient projects", async () => {
+test("initializeUploadHandler prohibits invalid links to transient projects", async () => {
     let payload = setup.mockFiles();
     await setup.mockProjectVersion("test-upload-id-link-expiry", "test", payload);
     await setup.dumpProjectSundries("test-upload-id-link-expiry", "test");
@@ -297,7 +319,7 @@ utils.testauth("initializeUploadHandler prohibits invalid links to transient pro
         })
     });
     req.params = { project: "test-upload-id-link-expiry", version: "v2" };
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     let nb = [];
     await utils.expectError(upload.initializeUploadHandler(req, nb), "detected links to a transient project");
@@ -305,7 +327,7 @@ utils.testauth("initializeUploadHandler prohibits invalid links to transient pro
 
 /******* Create link checks *******/
 
-utils.testauth("createLinkHandler works correctly", async () => {
+test("createLinkHandler works correctly", async () => {
     let all_links = [
         { check: "link", filename: "whee.txt", value: { artifactdb_id: "test-public:whee.txt@base" } },
         { check: "link", filename: "blah.txt", value: { artifactdb_id: "test-public:blah.txt@base" } },
@@ -317,7 +339,7 @@ utils.testauth("createLinkHandler works correctly", async () => {
         body: JSON.stringify({ filenames: all_links })
     });
     req.params = { project: "test-upload-id-link-create", version: "first" };
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     let nb = [];
     let init = await upload.initializeUploadHandler(req, nb);
@@ -330,7 +352,7 @@ utils.testauth("createLinkHandler works correctly", async () => {
         let paths = x.url.split("/");
         let req = new Request("http://localhost");
         req.params = { source: paths[2], target: paths[4] };
-        req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+        req.headers.append("Authorization", "Bearer " + utils.mockToken);
         let res = await upload.createLinkHandler(req, nb);
         expect(res.status).toBe(202);
     }
@@ -346,20 +368,20 @@ utils.testauth("createLinkHandler works correctly", async () => {
     }
 })
 
-utils.testauth("createLinkHandler throws the right errors", async () => {
+test("createLinkHandler throws the right errors", async () => {
     let req = new Request("http://localhost");
     req.params = { source: btoa("foo:whee.txt@1"), target: btoa("test-public:whee.txt@base") };
 
     let nb = [];
     await utils.expectError(upload.createLinkHandler(req, nb), "user identity");
 
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
     await utils.expectError(upload.createLinkHandler(req, nb), "not been previously locked");
 })
 
 /******* Complete uploads checks *******/
 
-utils.testauth("completeUploadHandler works correctly", async () => {
+test("completeUploadHandler works correctly", async () => {
     // Initializing the upload.
     {
         let req = new Request("http://localhost", {
@@ -372,7 +394,7 @@ utils.testauth("completeUploadHandler works correctly", async () => {
             })
         });
         req.params = { project: "test-complete-upload", version: "test" };
-        req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+        req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
         let nb = [];
         await upload.initializeUploadHandler(req, nb);
@@ -383,10 +405,10 @@ utils.testauth("completeUploadHandler works correctly", async () => {
     let req = new Request("http://localhost", { method: "POST", body: "{}" });
     req.params = { project: "test-complete-upload", version: "test" };
     req.query = {};
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     let nb = [];
-    let gh_test_rigging = gh.enableTestRigging();
+    gh_test_rigging.postNewIssue = [];
     let res = await upload.completeUploadHandler(req, nb);
 
     let body = await res.json();
@@ -399,7 +421,7 @@ utils.testauth("completeUploadHandler works correctly", async () => {
     expect(postbody.permissions.owners).toEqual(["ArtifactDB-bot"]);
 })
 
-utils.testauth("completeUploadHandler works correctly with custom permissions", async () => {
+test("completeUploadHandler works correctly with custom permissions", async () => {
     // Initializing the upload.
     {
         let req = new Request("http://localhost", {
@@ -412,7 +434,7 @@ utils.testauth("completeUploadHandler works correctly with custom permissions", 
             })
         });
         req.params = { project: "test-complete-upload2", version: "test" };
-        req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+        req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
         let nb = [];
         await upload.initializeUploadHandler(req, nb);
@@ -423,10 +445,10 @@ utils.testauth("completeUploadHandler works correctly with custom permissions", 
     let req = new Request("http://localhost", { method: "POST", body: '{ "read_access": "viewers", "owners": [ "LTLA" ] }' });
     req.params = { project: "test-complete-upload2", version: "test" };
     req.query = {};
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     let nb = [];
-    let gh_test_rigging = gh.enableTestRigging();
+    gh_test_rigging.postNewIssue = [];
     let res = await upload.completeUploadHandler(req, nb);
 
     let postinfo = gh_test_rigging.postNewIssue[0];
@@ -437,7 +459,7 @@ utils.testauth("completeUploadHandler works correctly with custom permissions", 
     expect(postbody.permissions.owners).toEqual(["LTLA"]);
 })
 
-utils.testauth("completeUploadHandler throws the right errors", async () => {
+test("completeUploadHandler throws the right errors", async () => {
     let req = new Request("http://localhost", { method: "POST", body: '{ "read_access": "FOOABLE" }' });
     req.params = { project: "test-complete-check", version: "WHEE" };
 
@@ -446,7 +468,7 @@ utils.testauth("completeUploadHandler throws the right errors", async () => {
     await utils.expectError(upload.completeUploadHandler(req, nb), "user identity");
 
     // Trying again after adding headers.
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
     await utils.expectError(upload.completeUploadHandler(req, nb), "not been previously locked");
 
     // Forcing a lock file.
@@ -454,14 +476,13 @@ utils.testauth("completeUploadHandler throws the right errors", async () => {
     await utils.expectError(upload.completeUploadHandler(req, nb), "invalid request body");
 })
 
-utils.testauth("queryJobHandler works correctly", async () => {
+test("queryJobHandler works correctly", async () => {
     let req = new Request("http://localhost", { method: "POST", body: '{ "read_access": "FOOABLE" }' });
     req.params = { jobid: "-1" };
 
     // PENDING
     {
-        let gh_test_rigging = gh.enableTestRigging();
-        gh_test_rigging.getIssue["-1"] = { "state": "open", "comments": 0 };
+        gh_test_rigging.getIssue = { "-1": { "state": "open", "comments": 0 } };
 
         let nb = [];
         let res = await upload.queryJobIdHandler(req, nb);
@@ -472,8 +493,7 @@ utils.testauth("queryJobHandler works correctly", async () => {
 
     // SUCCESS
     {
-        let gh_test_rigging = gh.enableTestRigging();
-        gh_test_rigging.getIssue["-1"] = { "state": "closed", "comments": 0 };
+        gh_test_rigging.getIssue = { "-1": { "state": "closed", "comments": 0 } };
 
         let nb = [];
         let res = await upload.queryJobIdHandler(req, nb);
@@ -484,8 +504,7 @@ utils.testauth("queryJobHandler works correctly", async () => {
 
     // FAILURE 
     {
-        let gh_test_rigging = gh.enableTestRigging();
-        gh_test_rigging.getIssue["-1"] = { "state": "open", "comments": 10 };
+        gh_test_rigging.getIssue = { "-1": { "state": "open", "comments": 10 } };
 
         let nb = [];
         let res = await upload.queryJobIdHandler(req, nb);
@@ -495,7 +514,7 @@ utils.testauth("queryJobHandler works correctly", async () => {
     }
 })
 
-utils.testauth("abortUploadHandler works correctly", async () => {
+test("abortUploadHandler works correctly", async () => {
     let req = new Request("http://localhost");
     req.params = { project: "test-abort-upload", version: "test" };
 
@@ -504,7 +523,7 @@ utils.testauth("abortUploadHandler works correctly", async () => {
     await utils.expectError(upload.abortUploadHandler(req, nb), "user identity");
 
     // Trying again after adding headers.
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
     await utils.expectError(upload.abortUploadHandler(req, nb), "not been previously locked");
 
     // Forcing a lock file.

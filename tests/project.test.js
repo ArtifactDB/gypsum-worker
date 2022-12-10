@@ -2,12 +2,20 @@ import * as f_ from "../src/index.js";
 import * as proj from "../src/project.js";
 import * as lock from "../src/lock.js";
 import * as setup from "./setup.js";
+import * as gh from "../src/github.js";
 import * as utils from "./utils.js";
 
 beforeAll(async () => {
     await setup.mockPublicProject();
     await setup.mockPrivateProject();
-});
+
+    let rigging = gh.enableTestRigging();
+    utils.mockGitHubIdentities(rigging);
+})
+
+afterAll(() => {
+    gh.enableTestRigging(false);
+})
 
 test("getProjectVersionMetadataHandler works correctly", async () => {
     let req = new Request("http://localhost");
@@ -45,7 +53,7 @@ test("getProjectVersionMetadataHandler works correctly with the latest alias", a
     }
 })
 
-utils.testauth("getProjectVersionMetadataHandler fails correctly without authentication", async () => {
+test("getProjectVersionMetadataHandler fails correctly without authentication", async () => {
     let req = new Request("http://localhost");
     req.params = { project: "test-private", version: "base" };
 
@@ -53,7 +61,7 @@ utils.testauth("getProjectVersionMetadataHandler fails correctly without authent
     await utils.expectError(proj.getProjectVersionMetadataHandler(req, nb), "user credentials");
 
     // Adding headers to the request object, and doing it again.
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     let meta = await proj.getProjectVersionMetadataHandler(req, nb);
     expect(meta.status).toBe(200);
@@ -76,7 +84,7 @@ test("listProjectVersionsHandler works correctly", async () => {
     expect(body.aggs.length).toBe(2);
 })
 
-utils.testauth("listProjectVersionsHandler fails correctly without authentication", async () => {
+test("listProjectVersionsHandler fails correctly without authentication", async () => {
     let req = new Request("http://localhost");
     req.params = { project: "test-private" };
 
@@ -84,7 +92,7 @@ utils.testauth("listProjectVersionsHandler fails correctly without authenticatio
     await utils.expectError(proj.listProjectVersionsHandler(req, nb), "user credentials");
 
     // Adding headers to the request object, and doing it again.
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     let res = await proj.listProjectVersionsHandler(req, nb);
     expect(res.status).toBe(200);
@@ -115,7 +123,7 @@ test("getProjectMetadataHandler works correctly", async () => {
     expect(Array.from(found_versions).sort()).toEqual(["base", "modified"]);
 })
 
-utils.testauth("getProjectMetadataHandler fails correctly without authentication", async () => {
+test("getProjectMetadataHandler fails correctly without authentication", async () => {
     let req = new Request("http://localhost");
     req.params = { project: "test-private" };
 
@@ -123,7 +131,7 @@ utils.testauth("getProjectMetadataHandler fails correctly without authentication
     await utils.expectError(proj.getProjectMetadataHandler(req, nb), "user credentials");
 
     // Adding headers to the request object, and doing it again.
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     let res = await proj.getProjectMetadataHandler(req, nb);
     expect(res.status).toBe(200);
@@ -204,10 +212,10 @@ test("listProjectsHandler ignores locked projects", async () => {
     expect(found_locked.aggs.length).toBe(0);
 })
 
-utils.testauth("listProjectsHandler works correctly with authentication", async () => {
+test("listProjectsHandler works correctly with authentication", async () => {
     let req = new Request("http://localhost");
     req.query = {};
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     let nb = [];
     let res = await proj.listProjectsHandler(req, nb);
@@ -313,7 +321,7 @@ test("getProjectVersionInfoHandler works correctly with the latest alias", async
     expect(body.permissions.read_access).toBe("public");
 })
 
-utils.testauth("getProjectVersionInfoHandler fails correctly when unauthorized", async () => {
+test("getProjectVersionInfoHandler fails correctly when unauthorized", async () => {
     let req = new Request("http://localhost");
     req.params = { project: "test-private", version: "base" };
 
@@ -321,7 +329,7 @@ utils.testauth("getProjectVersionInfoHandler fails correctly when unauthorized",
     await utils.expectError(proj.getProjectVersionInfoHandler(req, nb), "user credentials");
 
     // Adding auth information.
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     let res = await proj.getProjectVersionInfoHandler(req, nb);
     expect(res.status).toBe(200);
