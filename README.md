@@ -61,7 +61,7 @@ Add the following secrets via `wrangler secret put`:
 - `ACCESS_KEY_ID`, for the access key ID (click "manage API tokens" at the top-right corner of the R2 tab on the Cloudflare dashboard).
 - `SECRET_ACCESS_KEY`, for the access secret associated with the access key ID.
 - `GITHUB_PAT`, for the GitHub personal access token of the CI/CD user account. 
-  This should have `repo:public` permissions.
+  This should be capable of writing issues on a public repository; typically, we use a classic token with `repo:public` permissions.
 
 ### Step 5: deployment
 
