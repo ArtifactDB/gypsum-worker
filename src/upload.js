@@ -6,6 +6,7 @@ import * as expiry from "./expiry.js";
 import * as pkeys from "./internal.js";
 import * as latest from "./latest.js";
 import * as s3 from "./s3.js";
+import * as custom from "./custom.js";
 import { complete_project_version, upload_project_version } from "./validators.js";
 
 /**************** Initialize uploads ***************/
@@ -23,6 +24,8 @@ export async function initializeUploadHandler(request, nonblockers) {
     if (project.startsWith("..") || version.startsWith("..")) {
         throw new utils.HttpError("project and version name cannot start with the reserved '..' pattern", 400);
     }
+
+    custom.checkProjectVersionName(project, version); // Applying custom checks in forked deployments.
 
     let bucket = s3.getBucketName();
     let s3obj = s3.getS3Object();
