@@ -67,6 +67,7 @@ test("getFileMetadataHandler works correctly for base usage", async () => {
     expect(body.path).toBe("foo/bar.txt");
     expect(body._extra.project_id).toBe("test-public");
     expect(body._extra.version).toBe("base");
+    expect(typeof body._extra.uploader_name).toBe("string");
 })
 
 test("getFileMetadataHandler succeeds/fails correctly for private datasets", async () => {

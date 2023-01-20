@@ -44,6 +44,7 @@ export function createExtraMetadata(id, unpacked, file_meta, version_meta, permi
         meta_indexed: version_meta.index_time,
         meta_uploaded: version_meta.upload_time,
         uploaded: version_meta.upload_time,
+        uploader_name: version_meta.uploader_name,
         permissions: permissions
     };
 
