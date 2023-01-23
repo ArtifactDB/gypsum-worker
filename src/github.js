@@ -34,6 +34,21 @@ export function enableTestRigging(enable = true) {
     return test_rigging;
 }
 
+async function propagate_github_error(res, base_txt, base_code) {
+    if (res.ok) {
+        return;
+    }
+
+    try {
+        let body = await res.json();
+        if ("message" in body) {
+            base_txt += ": " + body.message;
+        }
+    } catch (e) {}
+
+    throw new utils.HttpError(base_txt, base_code);
+}
+
 export async function postNewIssue(title, body) {
     if (test_rigging != null) {
         // Fallback for testing purposes.
@@ -54,9 +69,7 @@ export async function postNewIssue(title, body) {
         "body": JSON.stringify({ title: title, "body": body })
     });
 
-    if (!res.ok) {
-        throw new utils.HttpError("failed to post a GitHub issue on the CI repository", 500);
-    }
+    propagate_github_error(res, "failed to post a GitHub issue on the CI repository", 500);
 
     return res;
 }
@@ -76,9 +89,7 @@ export async function getIssue(id) {
         }
     });
 
-    if (!res.ok) {
-        throw new utils.HttpError("failed to query GitHub issues on the CI repository", 500);
-    }
+    propagate_github_error(res, "failed to query GitHub issues on the CI repository", 500);
 
     return res;
 }
@@ -98,9 +109,7 @@ export async function identifyUser(token) {
         }
     });
 
-    if (!res.ok) {
-        throw new utils.HttpError("failed to query GitHub for user identity", 401);
-    }
+    propagate_github_error(res, "failed to query GitHub for user identity", 401);
 
     return res;
 }
@@ -120,9 +129,7 @@ export async function identifyUserOrgs(token) {
         }
     });
 
-    if (!res.ok) {
-        throw new utils.HttpError("failed to query GitHub for user organizations", 401);
-    }
+    propagate_github_error(res, "failed to query GitHub for user organizations", 401);
 
     return res;
 }
