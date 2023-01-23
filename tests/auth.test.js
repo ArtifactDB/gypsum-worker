@@ -96,7 +96,7 @@ test("getPermissionsHandler fails correctly without authentication", async () =>
 test("checkReadPermissions works correctly", () => {
     let perms = {
         owners: [ "ArtifactDB-bot" ],
-        viewers: [ "LTLA" ],
+        viewers: [ "chihaya-kisaragi" ],
         read_access: "public"
     };
     expect(auth.checkReadPermissions(perms, null, "FOO")).toBe(null);
@@ -106,11 +106,14 @@ test("checkReadPermissions works correctly", () => {
     expect(() => auth.checkReadPermissions(perms, null, "FOO")).toThrow("user credentials");
     expect(() => auth.checkReadPermissions(perms, { login: "FOO", organizations: [] }, "FOO")).toThrow("does not have read access");
     expect(auth.checkReadPermissions(perms, { login: "ArtifactDB-bot", organizations: [] }, "FOO")).toBe(null);
-    expect(auth.checkReadPermissions(perms, { login: "LTLA", organizations: [] }, "FOO")).toBe(null);
+    expect(auth.checkReadPermissions(perms, { login: "chihaya-kisaragi", organizations: [] }, "FOO")).toBe(null);
 
     // Checking that organizations work.
     perms.viewers.push("foo-org");
     expect(auth.checkReadPermissions(perms, { login: "FOO", organizations: [ "foo-org" ] }, "FOO")).toBe(null);
+
+    // Checking that admins have clearance.
+    expect(auth.checkReadPermissions(perms, { login: ADMIN_ACCOUNTS.split(",")[0], organizations: [] })).toBe(null);
 
     // Throws a nice error.
     expect(() => auth.checkReadPermissions(null, null, "FOO")).toThrow("failed to load permissions");
@@ -123,21 +126,57 @@ test("checkWritePermissions works correctly", () => {
     };
 
     expect(() => auth.checkWritePermissions(perms, null, "FOO")).toThrow("user credentials");
-    expect(() => auth.checkWritePermissions(perms, { login: "LTLA", organizations: [] }, "FOO")).toThrow("does not have write access");
+    expect(() => auth.checkWritePermissions(perms, { login: "chihaya-kisaragi", organizations: [] }, "FOO")).toThrow("does not have write access");
     expect(auth.checkWritePermissions(perms, { login: "ArtifactDB-bot", organizations: [] }, "FOO")).toBe(null);
 
     // Checking that organizations work.
     perms.owners.push("foo-org");
     expect(auth.checkWritePermissions(perms, { login: "FOO", organizations: [ "foo-org" ] }, "FOO")).toBe(null);
 
+    // Checking that admins have clearance.
+    expect(auth.checkWritePermissions(perms, { login: ADMIN_ACCOUNTS.split(",")[0], organizations: [] })).toBe(null);
+
     // Throws a nice error.
     expect(() => auth.checkWritePermissions(null, null, "FOO")).toThrow("failed to load permissions");
 })
 
-test("checkNewUploadPermissions works correctly", () => {
-    expect(() => auth.checkNewUploadPermissions(null)).toThrow("user credentials");
-    expect(() => auth.checkNewUploadPermissions({ login: "FOO", organizations: [] })).toThrow("upload a new project");
-    expect(auth.checkNewUploadPermissions({ login: "ArtifactDB-bot", organizations: [] })).toBe(null);
+test("checkNewUploadPermissions works correctly", async () => {
+    await expect(() => auth.checkNewUploadPermissions(null)).rejects.toThrow("user credentials");
+    await expect(() => auth.checkNewUploadPermissions({ login: "FOO", organizations: [] })).rejects.toThrow("upload a new project");
+
+    // Allowed uploaders and admins have clearance.
+    expect(await auth.checkNewUploadPermissions({ login: "ArtifactDB-bot", organizations: [] })).toBe(null);
+    expect(await auth.checkNewUploadPermissions({ login: "LTLA", organizations: [] })).toBe(null);
+
+    // Uploading the upload override secret.
+    await BOUND_BUCKET.put("..upload_override", '"foobar"');
+    let nonblockers = [];
+    let random = { login: "chihaya-kisaragi", organizations: [] }
+    expect(await auth.checkNewUploadPermissions(random, new Request("https://google.com", { headers: { "ArtifactDB-upload-override-key": "foobar" } }), nonblockers)).toBeNull();
+    await utils.expectError(auth.checkNewUploadPermissions(random, new Request("https://google.com", { headers: { "ArtifactDB-upload-override-key": "foobar2" } }), nonblockers), "upload");
+})
+
+test("setUploadOverrideHandler works correctly", async () => {
+    let req = new Request("http://localhost", {
+        method: "PUT",
+        headers: { "ArtifactDB-upload-override-key": "whoople" }
+    });
+    let nb = [];
+
+    await utils.expectError(auth.setUploadOverrideHandler(req, nb), "user identity");
+
+    // Adding the wrong credentials.
+    req.headers.append("Authorization", "Bearer " + utils.mockTokenOther);
+    await utils.expectError(auth.setUploadOverrideHandler(req, nb), "set the upload override key");
+
+    // Trying again.
+    req.headers.set("Authorization", "Bearer " + utils.mockTokenAaron);
+    let res = await auth.setUploadOverrideHandler(req, nb);
+    expect(res.status).toBe(202);
+
+    await Promise.all(nb);
+    let found = await BOUND_BUCKET.get("..upload_override");
+    expect(await found.json()).toBe("whoople");
 })
 
 test("validateNewPermissions works correctly", () => {

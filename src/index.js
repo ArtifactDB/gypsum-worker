@@ -14,7 +14,13 @@ if (typeof GITHUB_PAT !== "undefined") {
     console.warn("missing the GITHUB_PAT secret");
 }
 
-auth.setUploaders(ALLOWED_UPLOADERS.split(","));
+if (ADMIN_ACCOUNTS !== "") {
+    auth.setAdmins(ADMIN_ACCOUNTS.split(","));
+}
+if (ALLOWED_UPLOADERS !== "") {
+    auth.setUploaders(ALLOWED_UPLOADERS.split(","));
+}
+
 gh.setRepository(GITHUB_CI_REPOSITORY);
 gh.setUserAgent(GITHUB_USER_AGENT);
 s3.setBucketName(R2_BUCKET_NAME);
@@ -85,9 +91,11 @@ router.get("/projects/:project/permissions", auth.getPermissionsHandler);
 
 router.put("/projects/:project/permissions", auth.setPermissionsHandler);
 
-/*** Non-standard endpoints, for testing only ***/
+/*** Non-standard endpoints, for testing and other things***/
 
-router.get("/user", auth.findUserHandler);
+router.get("/custom/user", auth.findUserHandler);
+
+router.put("/custom/upload-secret", auth.setUploadOverrideHandler);
 
 /*** Setting up the listener ***/
 

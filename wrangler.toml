@@ -15,4 +15,5 @@ CF_ACCOUNT_ID = "bfb2e522e0b245720424784fcf7c04c0" # ~> Account ID. Should be th
 R2_BUCKET_NAME = 'gypsum-test' # ~> Name of the bucket. Should be the same as 'r2_buckets.bucket_name'.
 GITHUB_CI_REPOSITORY = 'ArtifactDB/gypsum-actions' # ~> Name of the GitHub repository to use for CI/CD.
 GITHUB_USER_AGENT = 'gypsum-test-worker' # ~> User agent for GitHub API requests.
-ALLOWED_UPLOADERS = 'ArtifactDB-bot,LTLA' # ~> GitHub users or organizations that are allowed to upload new projects.
+ADMIN_ACCOUNTS = 'LTLA' # ~> GitHub users or organizations that can act as administrators.
+ALLOWED_UPLOADERS = 'ArtifactDB-bot' # ~> Other GitHub users or organizations that are allowed to upload new projects.

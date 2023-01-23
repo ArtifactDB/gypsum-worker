@@ -23,7 +23,7 @@ async function dumpVersionSundries(project, version, all_meta) {
     await BOUND_BUCKET.put(project + "/" + version + "/..aggregated", JSON.stringify(all_meta), jsonmeta); 
     await BOUND_BUCKET.put(project + "/" + version + "/..revision",
         JSON.stringify({
-            uploader_name: "LTLA",
+            uploader_name: "chihaya-kisaragi",
             upload_time: (new Date).toISOString(),
             index_time: (new Date).toISOString()
         }),

@@ -40,7 +40,7 @@ export async function initializeUploadHandler(request, nonblockers) {
     if (perms !== null) {
         auth.checkWritePermissions(perms, user, project);
     } else {
-        auth.checkNewUploadPermissions(user);
+        await auth.checkNewUploadPermissions(user, request, nonblockers);
     }
 
     let ver_meta = await bound_bucket.head(pkeys.versionMetadata(project, version));

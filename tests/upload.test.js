@@ -442,7 +442,7 @@ test("completeUploadHandler works correctly with custom permissions", async () =
     }
 
     // Completing the upload.
-    let req = new Request("http://localhost", { method: "POST", body: '{ "read_access": "viewers", "owners": [ "LTLA" ] }' });
+    let req = new Request("http://localhost", { method: "POST", body: '{ "read_access": "viewers", "owners": [ "chihaya-kisaragi" ] }' });
     req.params = { project: "test-complete-upload2", version: "test" };
     req.query = {};
     req.headers.append("Authorization", "Bearer " + utils.mockToken);
@@ -456,7 +456,7 @@ test("completeUploadHandler works correctly with custom permissions", async () =
     let postbody = JSON.parse(postinfo.body);
     expect(postbody.project).toBe("test-complete-upload2");
     expect(postbody.permissions.read_access).toBe("viewers");
-    expect(postbody.permissions.owners).toEqual(["LTLA"]);
+    expect(postbody.permissions.owners).toEqual(["chihaya-kisaragi"]);
 })
 
 test("completeUploadHandler throws the right errors", async () => {

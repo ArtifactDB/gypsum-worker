@@ -78,6 +78,9 @@ export async function findUserHandler(request, nonblockers) {
     return utils.jsonResponse(user, 200);
 }
 
+/******************************************
+ ******************************************/
+
 function permissions_cache() {
     return caches.open("permission:cache");
 }
@@ -133,6 +136,9 @@ export async function getPermissionsHandler(request, nonblockers) {
     return utils.jsonResponse(perms, 200);
 }
 
+/******************************************
+ ******************************************/
+
 function is_member_of(login, orgs, allowed) {
     // TODO: cache the return value to avoid having to recompute
     // this on subsequent requests? Not sure if it's worth it,
@@ -154,6 +160,13 @@ function is_member_of(login, orgs, allowed) {
     }
 
     return false;
+}
+
+var admins = [];
+
+export function setAdmins(x) {
+    admins = x;
+    return;
 }
 
 export function checkReadPermissions(perm, user, project) {
@@ -179,6 +192,11 @@ export function checkReadPermissions(perm, user, project) {
         return null;
     }
 
+    // Admins get total access.
+    if (is_member_of(user.login, user.organizations, admins)) {
+        return null;
+    }
+
     throw new utils.HttpError("user does not have read access to project '" + project + "'", 403);
 }
 
@@ -196,27 +214,16 @@ export function checkWritePermissions(perm, user, project) {
         return null;
     }
 
-    throw new utils.HttpError("user does not have write access to project '" + project + "'", 403);
-}
-
-var uploaders = [];
-
-export function setUploaders(x) {
-    uploaders = x;
-    return;
-}
-
-export function checkNewUploadPermissions(user) {
-    if (user == null) {
-        throw new utils.HttpError("user credentials not supplied to upload new project", 401);
-    }
-
-    if (is_member_of(user.login, user.organizations, uploaders)) {
+    // Admins get total access.
+    if (is_member_of(user.login, user.organizations, admins)) {
         return null;
     }
 
-    throw new utils.HttpError("user is not authorized to upload a new project", 403);
+    throw new utils.HttpError("user does not have write access to project '" + project + "'", 403);
 }
+
+/******************************************
+ ******************************************/
 
 export function validateNewPermissions(perm) {
     let allowed_readers = ["public", "viewers", "owners", "none"];
@@ -283,4 +290,94 @@ export async function setPermissionsHandler(request, nonblockers) {
     nonblockers.push(permCache.delete(permissions_cache_key(project)));
 
     return new Response(null, { status: 202 });
+}
+
+/******************************************
+ ******************************************/
+
+function upload_override_cache() {
+    return caches.open("upload_override:cache");
+}
+
+// Key needs to be a URL.
+var upload_override_cache_key = "https://github.com/ArtifactDB/gypsum-worker/upload_override/"; 
+
+var upload_override_path = "..upload_override";
+
+var upload_override_header = "ArtifactDB-upload-override-key";
+
+async function get_upload_override_key(nonblockers) {
+    const uploadCache = await upload_override_cache();
+    let check = await uploadCache.match(upload_override_cache_key);
+    if (check) {
+        return await check.json();
+    }
+
+    let bound_bucket = s3.getR2Binding();
+    let res = await bound_bucket.get(upload_override_path);
+    if (res == null) {
+        return null;
+    }
+
+    let data = await res.text();
+    nonblockers.push(utils.quickCacheJsonText(uploadCache, upload_override_cache_key, data, utils.hoursFromNow(2)));
+    return JSON.parse(data);
+}
+
+export async function setUploadOverrideHandler(request, nonblockers) {
+    let user = await findUser(request, nonblockers);
+    if (!is_member_of(user.login, user.organizations, admins)) {
+        throw new utils.HttpError("user is not authorized to set the upload override key", 403);
+    }
+
+    // Saving the key.
+    let secret = request.headers.get(upload_override_header);
+    if (secret == null) {
+        throw new utils.HttpError("the 'ArtifactDb-upload-override-key' header has not been set", 400);
+    }
+
+    let bound_bucket = s3.getR2Binding();
+    nonblockers.push(bound_bucket.put(upload_override_path, JSON.stringify(secret)));
+
+    // Clearing the cached secret to trigger a reload on the next getUploadOverrideKey() call.
+    const uploadCache = await upload_override_cache();
+    nonblockers.push(uploadCache.delete(upload_override_cache_key));
+
+    return new Response(null, { status: 202 });
+}
+
+/******************************************
+ ******************************************/
+
+var uploaders = [];
+
+export function setUploaders(x) {
+    uploaders = x;
+    return;
+}
+
+export async function checkNewUploadPermissions(user, request, nonblockers) {
+    if (user == null) {
+        throw new utils.HttpError("user credentials not supplied to upload new project", 401);
+    }
+
+    if (is_member_of(user.login, user.organizations, uploaders)) {
+        return null;
+    }
+
+    // Admins get total access.
+    if (is_member_of(user.login, user.organizations, admins)) {
+        return null;
+    }
+
+    // Checking for the override key.
+    if (request) {
+        let key = await get_upload_override_key(nonblockers); 
+        let supplied = request.headers.get(upload_override_header);
+        if (supplied !== null && key !== null && supplied == key) {
+            return null;
+        }
+    }
+
+    throw new utils.HttpError("user is not authorized to upload a new project", 403);
 }
