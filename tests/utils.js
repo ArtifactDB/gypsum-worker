@@ -6,7 +6,7 @@ export function mockGitHubIdentities(rigging) {
     rigging.identifyUser[mockToken] = { login: "ArtifactDB-bot" };
     rigging.identifyUserOrgs[mockToken] = [];
     rigging.identifyUser[mockTokenOther] = { login: "SomeoneElse" };
-    rigging.identifyUserOrgs[mockTokenOther] = [ "FOO", "BAR" ];
+    rigging.identifyUserOrgs[mockTokenOther] = [ { login: "FOO" }, { login: "BAR" } ];
     rigging.identifyUser[mockTokenAaron] = { login: "LTLA" };
     rigging.identifyUserOrgs[mockTokenAaron] = [];
     return;

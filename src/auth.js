@@ -39,7 +39,12 @@ async function find_user(request, nonblockers) {
     // permissions, so this ends up failing: but let's try to keep going. 
     let orgs = [];
     try {
-        orgs = await (await org_prom).json();
+        let raw_orgs = await (await org_prom).json();
+        for (const x of raw_orgs) {
+            if (typeof x.login == "string") {
+                orgs.push(x.login);
+            }
+        }
     } catch (e) {
         if (e.statusCode == 401) {
             console.warn(e.message);
