@@ -69,7 +69,7 @@ export async function postNewIssue(title, body) {
         "body": JSON.stringify({ title: title, "body": body })
     });
 
-    propagate_github_error(res, "failed to post a GitHub issue on the CI repository", 500);
+    await propagate_github_error(res, "failed to post a GitHub issue on the CI repository", 500);
 
     return res;
 }
@@ -89,7 +89,7 @@ export async function getIssue(id) {
         }
     });
 
-    propagate_github_error(res, "failed to query GitHub issues on the CI repository", 500);
+    await propagate_github_error(res, "failed to query GitHub issues on the CI repository", 500);
 
     return res;
 }
@@ -109,7 +109,7 @@ export async function identifyUser(token) {
         }
     });
 
-    propagate_github_error(res, "failed to query GitHub for user identity", 401);
+    await propagate_github_error(res, "failed to query GitHub for user identity", 401);
 
     return res;
 }
@@ -129,7 +129,7 @@ export async function identifyUserOrgs(token) {
         }
     });
 
-    propagate_github_error(res, "failed to query GitHub for user organizations", 401);
+    await propagate_github_error(res, "failed to query GitHub for user organizations", 401);
 
     return res;
 }
