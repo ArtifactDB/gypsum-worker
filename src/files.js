@@ -61,6 +61,7 @@ export function createExtraMetadata(id, unpacked, file_meta, version_meta, permi
 export async function getFileMetadataHandler(request, nonblockers) {
     let id = decodeURIComponent(request.params.id);
     let follow_link = request.query.follow_link == "true";
+    let use_raw = request.query.raw == "true";
     let bound_bucket = s3.getR2Binding();
 
     let previous = new Set;
@@ -134,24 +135,26 @@ export async function getFileMetadataHandler(request, nonblockers) {
     }
 
     // Adding more information.
-    let more_promises = {
-        version_metadata: getVersionMetadata(unpacked.project, unpacked.version, nonblockers),
-    };
-    if (!pure_meta && !is_redirect) {
-        let ogpath = unpacked.project + "/" + unpacked.version + "/" + original;
-        more_promises.file_header = bound_bucket.head(ogpath);
-    }
-
-    let resolved = await utils.namedResolve(more_promises);
-    file_meta["_extra"] = createExtraMetadata(id, unpacked, file_meta, resolved.version_metadata, allowed[unpacked.project]);
-
-    if (!pure_meta && !is_redirect) {
-        let file_header = resolved.file_header;
-        if (file_header == null) {
-            throw new utils.HttpError("failed to retrieve header for '" + id + "'", 500);
+    if (!use_raw) {
+        let more_promises = {
+            version_metadata: getVersionMetadata(unpacked.project, unpacked.version, nonblockers),
+        };
+        if (!pure_meta && !is_redirect) {
+            let ogpath = unpacked.project + "/" + unpacked.version + "/" + original;
+            more_promises.file_header = bound_bucket.head(ogpath);
         }
-        if ("artifactdb_id" in file_header.customMetadata) {
-            file_meta["_extra"].link = { "artifactdb": file_header.customMetadata.artifactdb_id };
+
+        let resolved = await utils.namedResolve(more_promises);
+        file_meta["_extra"] = createExtraMetadata(id, unpacked, file_meta, resolved.version_metadata, allowed[unpacked.project]);
+
+        if (!pure_meta && !is_redirect) {
+            let file_header = resolved.file_header;
+            if (file_header == null) {
+                throw new utils.HttpError("failed to retrieve header for '" + id + "'", 500);
+            }
+            if ("artifactdb_id" in file_header.customMetadata) {
+                file_meta["_extra"].link = { "artifactdb": file_header.customMetadata.artifactdb_id };
+            }
         }
     }
 

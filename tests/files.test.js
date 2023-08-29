@@ -68,6 +68,16 @@ test("getFileMetadataHandler works correctly for base usage", async () => {
     expect(body._extra.project_id).toBe("test-public");
     expect(body._extra.version).toBe("base");
     expect(typeof body._extra.uploader_name).toBe("string");
+
+    // Setting raw=true. 
+    req.query.raw = "true";
+    meta = await files.getFileMetadataHandler(req, nb);
+    expect(meta instanceof Response).toBe(true);
+    expect(meta.status).toBe(200);
+
+    body = await meta.json();
+    expect(body.path).toBe("foo/bar.txt");
+    expect("_extra" in body).toBe(false);
 })
 
 test("getFileMetadataHandler succeeds/fails correctly for private datasets", async () => {
@@ -105,7 +115,6 @@ test("getFileMetadataHandler resolves the latest alias", async () => {
     expect(body._extra.project_id).toBe("test-public");
     expect(body._extra.version).toBe("modified");
 })
-
 
 test("getFileHandler works correctly", async () => {
     let req = new Request("http://localhost");
