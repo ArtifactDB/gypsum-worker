@@ -2,34 +2,22 @@ export function permissions(project) {
     return project + "/..permissions";
 }
 
-export function versionMetadata(project, version) {
-    return project + "/" + version + "/..revision";
+export function versionSummary(project, asset, version) {
+    return project + "/" + asset + "/" + version + "/..summary";
 }
 
-export function versionManifest(project, version) {
-    return project + "/" + version + "/..manifest";
+export function versionManifest(project, asset, version) {
+    return project + "/" + asset + "/" + version + "/..manifest";
 }
 
-export function latestPersistent(project) {
-    return project + "/..latest";
-}
-
-export function latestAll(project) {
-    return project + "/..latest_all";
-}
-
-export function lock(project, version) {
-    return project + "/" + version + "/..LOCK";
-}
-
-export function aggregated(project, version) {
-    return project + "/" + version + "/..aggregated";
+export function lock(project, asset) {
+    return project + "/" + asset + "/..LOCK";
 }
 
 export function links(project, version) {
-    return project + "/" + version + "/..links";
+    return project + "/" + version + "/..links.json";
 }
 
-export function expiry(project, version) {
-    return project + "/" + version + "/..expiry";
+export function latestVersion(project, asset) {
+    return project + "/" + asset + "/..latest";
 }

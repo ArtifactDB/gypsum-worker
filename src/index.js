@@ -1,8 +1,6 @@
 import { Router } from 'itty-router'
 
 import * as gh from "./github.js";
-import * as files from "./files.js";
-import * as project from "./project.js";
 import * as auth from "./auth.js";
 import * as upload from "./upload.js";
 import * as utils from "./utils.js";
@@ -63,29 +61,13 @@ function handleOptions(request) {
 
 /*** Setting up the routes ***/
 
-router.get("/files/:id/metadata", files.getFileMetadataHandler);
-
-router.get("/files/:id", files.getFileHandler);
-
-router.post("/projects/:project/version/:version/upload", upload.initializeUploadHandler);
+router.post("/projects/:project/asset/:asset/version/:version/upload", upload.initializeUploadHandler);
 
 router.put("/link/:source/to/:target", upload.createLinkHandler);
 
-router.put("/projects/:project/version/:version/complete", upload.completeUploadHandler);
+router.put("/projects/:project/asset/:asset/version/:version/complete", upload.completeUploadHandler);
 
-router.put("/projects/:project/version/:version/abort", upload.abortUploadHandler);
-
-router.get("/jobs/:jobid", upload.queryJobIdHandler);
-
-router.get("/projects", project.listProjectsHandler);
-
-router.get("/projects/:project/metadata", project.getProjectMetadataHandler);
-
-router.get("/projects/:project/version/:version/metadata", project.getProjectVersionMetadataHandler);
-
-router.get("/projects/:project/version/:version/info", project.getProjectVersionInfoHandler);
-
-router.get("/projects/:project/versions", project.listProjectVersionsHandler);
+router.put("/projects/:project/asset/:asset/version/:version/abort", upload.abortUploadHandler);
 
 router.get("/projects/:project/permissions", auth.getPermissionsHandler);
 

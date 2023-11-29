@@ -49,51 +49,6 @@ async function propagate_github_error(res, base_txt, base_code) {
     throw new utils.HttpError(base_txt, base_code);
 }
 
-export async function postNewIssue(title, body) {
-    if (test_rigging != null) {
-        // Fallback for testing purposes.
-        let stub = { number: -1, title: title, body: body };
-        test_rigging.postNewIssue.push(stub);
-        return new Response(JSON.stringify(stub));
-    }
-
-    let URL = api + "/repos/" + repository + "/issues";
-
-    let res = await fetch(URL, {
-        method: "POST",
-        headers: {
-            'Content-Type': 'application/json',
-            "Authorization": "Bearer " + master_token,
-            "User-Agent": user_agent
-        },
-        "body": JSON.stringify({ title: title, "body": body })
-    });
-
-    await propagate_github_error(res, "failed to post a GitHub issue on the CI repository", 500);
-
-    return res;
-}
-
-export async function getIssue(id) {
-    if (test_rigging != null) {
-        // Fallback for testing purposes.
-        return new Response(JSON.stringify(test_rigging.getIssue[id]));
-    }
-
-    let URL = api + "/repos/" + repository + "/issues/" + id;
-
-    let res = await fetch(URL, {
-        headers: {
-            "Authorization": "Bearer " + master_token,
-            "User-Agent": user_agent
-        }
-    });
-
-    await propagate_github_error(res, "failed to query GitHub issues on the CI repository", 500);
-
-    return res;
-}
-
 export async function identifyUser(token) {
     if (test_rigging != null) {
         // Fallback for testing purposes.
@@ -133,8 +88,3 @@ export async function identifyUserOrgs(token) {
 
     return res;
 }
-
-export function createIssueUrl(id) {
-    return "https://github.com/" + repository + "/issues/" + id;
-}
-

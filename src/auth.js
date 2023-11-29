@@ -174,37 +174,6 @@ export function setAdmins(x) {
     return;
 }
 
-export function checkReadPermissions(perm, user, project) {
-    if (perm == null) {
-        throw new utils.HttpError("failed to load permissions for project '" + project + "'", 404);
-    }
-
-    if (perm.read_access == "public") {
-        return null;
-    }
-
-    if (user == null) {
-        throw new utils.HttpError("user credentials not supplied to access project '" + project + "'", 401);
-    }
-
-    let in_owners = is_member_of(user.login, user.organizations, perm.owners);
-    if (perm.read_access == "owners" && in_owners) {
-        return null;
-    }
-
-    let in_viewers = is_member_of(user.login, user.organizations, perm.viewers);
-    if (perm.read_access == "viewers" && (in_owners || in_viewers)) {
-        return null;
-    }
-
-    // Admins get total access.
-    if (is_member_of(user.login, user.organizations, admins)) {
-        return null;
-    }
-
-    throw new utils.HttpError("user does not have read access to project '" + project + "'", 403);
-}
-
 export function checkWritePermissions(perm, user, project) {
     if (perm == null) {
         throw new utils.HttpError("failed to load permissions for project '" + project + "'", 404);

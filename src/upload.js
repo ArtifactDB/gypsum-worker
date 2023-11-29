@@ -2,30 +2,46 @@ import * as auth from "./auth.js";
 import * as utils from "./utils.js";
 import * as gh from "./github.js";
 import * as lock from "./lock.js";
-import * as expiry from "./expiry.js";
 import * as pkeys from "./internal.js";
-import * as latest from "./latest.js";
 import * as s3 from "./s3.js";
-import * as custom from "./custom.js";
-import { complete_project_version, upload_project_version } from "./validators.js";
+
+/**************** Initialize uploads ***************/
+
+    function add_presigned_url(f, md5) {
+        // Convert hex to base64 to keep S3 happy.
+        let hits = md5.match(/\w{2}/g);
+        let converted = hits.map(a => String.fromCharCode(parseInt(a, 16)));
+        let md5_64 = btoa(converted.join(""));
+
+        let params = { Bucket: bucket, Key: project + "/" + asset + "/" + version + "/" + f, Expires: 3600, ContentMD5: md5_64 };
+        if (f.endsWith(".json")) {
+            params.ContentType = "application/json";
+        }
+        precollected.push(s3obj.getSignedUrlPromise('putObject', params));
+        prenames.push(f);
+        premd5.push(md5_64);
+    }
+
 
 /**************** Initialize uploads ***************/
 
 export async function initializeUploadHandler(request, nonblockers) {
-    let project = decodeURIComponent(request.params.project);
+    let project = decodeURIComponent(request.params.package);
+    let asset = decodeURIComponent(request.params.asset);
     let version = decodeURIComponent(request.params.version);
 
-    if (project.indexOf("/") >= 0 || project.indexOf(":") >= 0) {
-        throw new utils.HttpError("project name cannot contain '/' or ':'", 400);
+    if (project.indexOf("/") >= 0) {
+        throw new utils.HttpError("project name cannot contain '/'", 400);
     }
-    if (version.indexOf("/") >= 0 || version.indexOf("@") >= 0) {
-        throw new utils.HttpError("version name cannot contain '/' or 'a'", 400);
+    if (asset.indexOf("/") >= 0) {
+        throw new utils.HttpError("asset name cannot contain '/'", 400);
     }
-    if (project.startsWith("..") || version.startsWith("..")) {
-        throw new utils.HttpError("project and version name cannot start with the reserved '..' pattern", 400);
+    if (version.indexOf("/") >= 0) {
+        throw new utils.HttpError("version name cannot contain '/'", 400);
     }
-
-    custom.checkProjectVersionName(project, version); // Applying custom checks in forked deployments.
+    if (project.startsWith("..") || asset.startsWith("..") || version.startsWith("..")) {
+        throw new utils.HttpError("project, asset and version names cannot start with the reserved '..'", 400);
+    }
 
     let bucket = s3.getBucketName();
     let s3obj = s3.getS3Object();
@@ -43,15 +59,17 @@ export async function initializeUploadHandler(request, nonblockers) {
         await auth.checkNewUploadPermissions(user, request, nonblockers);
     }
 
-    let ver_meta = await bound_bucket.head(pkeys.versionMetadata(project, version));
+    let ver_meta = await bound_bucket.head(pkeys.versionSummary(project, assset, version));
     if (ver_meta != null) {
-        throw new utils.HttpError("version '" + version + "' already exists for project '" + project + "'", 400);
+        throw new utils.HttpError("version '" + version + "' already exists for asset '" + asset + "' in project '" + project + "'", 400);
     }
 
-    await lock.lockProject(project, version, user.login);
-    let body = await request.json();
-    if (!upload_project_version(body)) {
-        throw new utils.HttpError("invalid request body: " + upload_project_version.errors[0].message + " (" + upload_project_version.errors[0].schemaPath + ")", 400);
+    await lock.lockProject(project, asset, user.login);
+    let body;
+    try {
+        body = await request.json();
+    } catch (e) {
+        throw new utils.HttpError("failed to parse JSON body; " + String(err), 400);
     }
 
     let precollected = [];
@@ -63,7 +81,7 @@ export async function initializeUploadHandler(request, nonblockers) {
         let converted = hits.map(a => String.fromCharCode(parseInt(a, 16)));
         let md5_64 = btoa(converted.join(""));
 
-        let params = { Bucket: bucket, Key: project + "/" + version + "/" + f, Expires: 3600, ContentMD5: md5_64 };
+        let params = { Bucket: bucket, Key: project + "/" + asset + "/" + version + "/" + f, Expires: 3600, ContentMD5: md5_64 };
         if (f.endsWith(".json")) {
             params.ContentType = "application/json";
         }
@@ -75,51 +93,68 @@ export async function initializeUploadHandler(request, nonblockers) {
     let md5able = [];
     let linked = [];
     let link_dest_exists = {};
-    let link_expiry_checks = new Set;
-    let link_projects = new Set;
 
-    for (const f of body.filenames) {
+    if (!("files" in body) || !(body.files instanceof Array)) {
+        throw new utils.HttpError("expected 'files' to be an array");
+    }
+
+    for (const f of body.files) {
         if (typeof f != "object") {
-            throw new utils.HttpError("invalid entry in the request 'filenames'", 400);
+            throw new utils.HttpError("each entry of 'files' should be an object", 400);
         }
 
-        let fname = f.filename;
+        if (!("path" in f) || typeof f.path != "string") {
+            throw new utils.HttpError("'path' property in entries of 'files' should be a string", 400);
+        }
+        let fname = f.path;
         if (fname.startsWith("..") || fname.includes("/..")) {
-            throw new utils.HttpError("'filenames' path elements cannot start with the reserved '..' pattern", 400);
+            throw new utils.HttpError("'path' property in entries of 'files' cannot start with the reserved '..' pattern", 400);
+        }
+
+        if (!("check" in f) || typeof f.check != "string") {
+            throw new utils.HttpError("'check' property in entries of 'files' should be a string", 400);
         }
 
         if (f.check === "simple") {
-            add_presigned_url(fname, f.value.md5sum);
+            if (!("md5sum" in f) || typeof f.md5sum != "string") {
+                throw new utils.HttpError("'md5sum' property in entries of 'files' should be a string", 400);
+            }
+            add_presigned_url(fname, f.md5sum);
         } else if (f.check === "md5") {
+            if (!("md5sum" in f) || typeof f.md5sum != "string") {
+                throw new utils.HttpError("'md5sum' property in entries of 'files' should be a string", 400);
+            }
             md5able.push(f);
         } else if (f.check == "link") {
-            let id = f.value.artifactdb_id;
-            let upack = utils.unpackId(id);
-            if (upack.version == "latest") {
-                throw new utils.HttpError("cannot link to a 'latest' alias in 'filenames'", 400);
+            if (!("project" in f) || typeof f.project != "string") {
+                throw new utils.HttpError("'project' property in entries of 'files' should be a string", 400);
             }
-
-            link_projects.add(upack.project);
-            link_expiry_checks.add(pkeys.expiry(upack.project, upack.version));
-            linked.push({ filename: fname, target: id });
-
+            if (!("asset" in f) || typeof f.asset != "string") {
+                throw new utils.HttpError("'asset' property in entries of 'files' should be a string", 400);
+            }
+            if (!("version" in f) || typeof f.version != "string") {
+                throw new utils.HttpError("'version' property in entries of 'files' should be a string", 400);
+            }
+            linked.push(f);
+            let id = project + "/" + asset + "/" + version + "/" + path;
             if (!(id in link_dest_exists)) {
-                link_dest_exists[id] = bound_bucket.head(upack.project + "/" + upack.version + "/" + upack.path);
+                link_dest_exists[id] = bound_bucket.head(id);
             }
         } else {
-            throw new utils.HttpError("invalid entry in the request 'filenames'", 400);
+            throw new utils.HttpError("invalid 'check' in the entries of 'files'", 400);
         }
     }
 
     // Resolving the MD5sums against the current latest version. 
     if (md5able.length) {
-        let lres = await latest.getLatestPersistentVersionOrNull(project);
-        if (lres == null || lres.index_time < 0) {
+        let lres = await bound_bucket.get(pkeys.latestVersion(project, asset));
+        if (lres == null) {
             for (const f of md5able) {
                 add_presigned_url(f.filename, f.value.md5sum);
             }
         } else {
             let last = lres.version;
+            let manifest = await bound_bucket.get(pkeys.versionManifest(project, asset));
             async function check_md5(filename, field, md5sum) {
                 let res = await bound_bucket.get(project + "/" + last + "/" + filename + ".json");
                 if (res !== null) {
@@ -223,25 +258,6 @@ export async function initializeUploadHandler(request, nonblockers) {
         completion_url: "/projects/" + project + "/version/" + version + "/complete",
         abort_url: "/projects/" + project + "/version/" + version + "/abort"
     }, 200);
-}
-
-/**************** Create links ***************/
-
-export async function createLinkHandler(request, nonblockers) {
-    let from = atob(request.params.source);
-    let to = atob(request.params.target);
-    let unpacked = utils.unpackId(from);
-
-    let user = await auth.findUser(request, nonblockers);
-    await lock.checkLock(unpacked.project, unpacked.version, user.login);
-
-    let path = unpacked.project + "/" + unpacked.version + "/" + unpacked.path;
-    let details = { "artifactdb_id": to };
-
-    // Store the details both inside the file and as the metadata.
-    nonblockers.push(utils.quickUploadJson(path, details, details));
-
-    return new Response(null, { status: 202 });
 }
 
 /**************** Complete uploads ***************/
