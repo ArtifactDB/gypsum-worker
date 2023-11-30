@@ -3,23 +3,13 @@ import { Router } from 'itty-router'
 import * as gh from "./github.js";
 import * as auth from "./auth.js";
 import * as upload from "./upload.js";
+import * as manage from "./manage.js";
 import * as utils from "./utils.js";
 import * as s3 from "./s3.js";
-
-if (typeof GITHUB_PAT !== "undefined") {
-    gh.setToken(GITHUB_PAT);
-} else {
-    console.warn("missing the GITHUB_PAT secret");
-}
 
 if (ADMIN_ACCOUNTS !== "") {
     auth.setAdmins(ADMIN_ACCOUNTS.split(","));
 }
-if (ALLOWED_UPLOADERS !== "") {
-    auth.setUploaders(ALLOWED_UPLOADERS.split(","));
-}
-
-gh.setRepository(GITHUB_CI_REPOSITORY);
 gh.setUserAgent(GITHUB_USER_AGENT);
 s3.setBucketName(R2_BUCKET_NAME);
 
@@ -60,6 +50,14 @@ function handleOptions(request) {
 }
 
 /*** Setting up the routes ***/
+
+router.post("/project/:project/create", manage.createProjectHandler);
+
+router.delete("/project/:project/delete", manage.deleteProjectHandler);
+
+router.delete("/project/:project/asset/:asset/delete", manage.deleteProjectAssetHandler);
+
+router.delete("/project/:project/asset/:asset/version/:version/delete", manage.deleteProjectAssetVersionHandler);
 
 router.post("/project/:project/asset/:asset/version/:version/upload/start", upload.initializeUploadHandler);
 

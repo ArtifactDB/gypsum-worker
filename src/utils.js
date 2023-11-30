@@ -52,3 +52,28 @@ export async function namedResolve(x) {
 
     return output;
 }
+
+export async function quickRecursiveDelete(prefix) {
+    let bound_bucket = s3.getR2Binding();
+    let list_options = { prefix: prefix };
+    let truncated = true;
+    let deletions = [];
+
+    while (true) {
+        let listing = await bound_bucket.list(list_options);
+        for (const f of listing.objects) {
+            deletions.push(f.key);
+        }
+        truncated = listing.truncated;
+        if (truncated) {
+            list_options.cursor = listing.cursor;
+        } else {
+            break;
+        }
+    }
+
+    for (var i = 0; i < deletions.length; i++) {
+        deletions[i] = bound_bucket.delete(deletions[i]); 
+    }
+    await Promise.all(deletions);
+}

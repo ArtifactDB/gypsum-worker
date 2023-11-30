@@ -149,8 +149,6 @@ async function checkLinks(linked, project, asset, version, bound_bucket, manifes
     return linked_details;
 }
 
-/**************** Initialize uploads ***************/
-
 export async function initializeUploadHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
     let asset = decodeURIComponent(request.params.asset);
@@ -169,25 +167,36 @@ export async function initializeUploadHandler(request, nonblockers) {
         throw new utils.HttpError("project, asset and version names cannot start with the reserved '..'", 400);
     }
 
-    let resolved = await utils.namedResolve({
-        user: auth.findUser(request, nonblockers),
-        permissions: auth.getPermissions(project, nonblockers)
-    });
-    let user = resolved.user;
-    let perms = resolved.permissions;
-    if (perms !== null) {
-        auth.checkWritePermissions(perms, user, project);
+    let token = auth.extractBearerToken(request);
+    let uploading_user;
+    if (token.startsWith("gypsum_")) {
+        // TODO: something with the special tokens here.
     } else {
-        await auth.checkNewUploadPermissions(user, request, nonblockers);
+        let resolved = await utils.namedResolve({
+            user: auth.findUser(request, nonblockers),
+            permissions: auth.getPermissions(project, nonblockers),
+        });
+        let user = resolved.user;
+        let perms = resolved.permissions;
+        if (!auth.isOneOf(user, perms.owners) && !auth.isOneOf(user, auth.getAdmins())) {
+            throw new utils.HttpError("user does not have upload access to project '" + project + "'", 403);
+        }
+        uploading_user = user.login;
     }
 
     let bound_bucket = s3.getR2Binding();
-    let ver_meta = await bound_bucket.head(pkeys.versionSummary(project, assset, version));
-    if (ver_meta != null) {
-        throw new utils.HttpError("version '" + version + "' already exists for asset '" + asset + "' in project '" + project + "'", 400);
+    let preparation = [];
+    {
+        let sumpath = pkeys.versionSummary(project, assset, version);
+        let ver_meta = await bound_bucket.head(sumpath);
+        if (ver_meta != null) {
+            throw new utils.HttpError("version '" + version + "' already exists for asset '" + asset + "' in project '" + project + "'", 400);
+        }
+        preparation.push(utils.quickUploadJson(sumpath, { "upload_user_id": uploading_user, "upload_started": (new Date).toISOString() }));
     }
 
-    await lock.lockProject(project, asset, version, user.login);
+    let session_key = crypto.randomUUID();
+    await lock.lockProject(project, asset, version, session_key);
     let body;
     try {
         body = await request.json();
@@ -217,7 +226,6 @@ export async function initializeUploadHandler(request, nonblockers) {
     for (const l of link_details) {
         manifest[l.path] = { size: l.size, md5sum: l.md5sum };
     }
-    let preparation = [];
     preparation.push(utils.quickUploadJson(pkeys.versionManifest(project, asset, version), manifest));
 
     // Create link structures within each subdirectory for bulk consumers.
@@ -260,6 +268,7 @@ export async function initializeUploadHandler(request, nonblockers) {
         upload_urls: upload_urls,
         completion_url: "/project/" + project + "/asset/" + asset + "/version/" + version + "/upload/complete",
         abort_url: "/project/" + project + "/asset/" + asset + "/version/" + version + "/upload/abort",
+        session_key: session_key,
     }, 200);
 }
 
@@ -269,10 +278,13 @@ export async function uploadPresignedFileHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
     let asset = decodeURIComponent(request.params.project);
     let version = decodeURIComponent(request.params.version);
-    let [path, md5sum ] = JSON.parse(atob(request.params.parameters));
+    await lock.checkLock(project, asset, version, auth.extractBearerToken(request));
 
-    let user = await auth.findUser(request, nonblockers),
-    await lock.checkLock(project, asset, version, user.login);
+    try {
+        var [ path, md5sum ] = JSON.parse(atob(request.params.parameters));
+    } catch (e) {
+        throw new utils.HttpError("invalid parameters ('" + request.params.parameters + "') for the presigned URL endpoint; " + String(e), 400);
+    }
 
     // Convert hex to base64 to keep S3 happy.
     let hits = md5sum.match(/\w{2}/g);
@@ -290,8 +302,8 @@ export async function uploadPresignedFileHandler(request, nonblockers) {
     let s3obj = s3.getS3Object();
     return utils.jsonResponse({
         url: await s3obj.getSignedUrlPromise('putObject', params),
-        hash: md5_64
-    };
+        md5sum_base64: md5_64
+    }, 200);
 }
 
 /**************** Complete uploads ***************/
@@ -300,31 +312,42 @@ export async function completeUploadHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
     let asset = decodeURIComponent(request.params.project);
     let version = decodeURIComponent(request.params.version);
-
-    let user = await auth.findUser(request, nonblockers),
-    await lock.checkLock(project, asset, version, user.login);
+    await lock.checkLock(project, asset, version, auth.extractBearerToken(request));
 
     let bound_bucket = s3.getR2Binding();
-    let out = await utils.quickUploadJson(pkeys.latestVersion(project, asset), { "version": version });
-    if (out === null) {
+    let latest_update = utils.quickUploadJson(pkeys.latestVersion(project, asset), { "version": version });
+
+    let sumpath = pkeys.versionSummary(project, asset, version);
+    let raw_info = await bound_bucket.get(sumpath);
+    let info = JSON.parse(raw_info);
+    info.upload_finished = (new Date).toISOString();
+    if ((await utils.quickUploadJson(sumpath, info)) == null) {
+        throw new utils.HttpError("failed to update version summary", 500);
+    }
+
+    // Await this later so that we can the prior async'ness concurrently.
+    if ((await latest_update) === null) {
         throw new utils.HttpError("failed to update latest version of project's assets", 500);
     }
-    await bound_bucket.delete(pkeys.lock(project, asset));
 
-    return new Response(null, 200);
+    // Release lock once we're clear.
+    await bound_bucket.delete(pkeys.lock(project, asset));
+    return new Response(null, { status: 200 });
 }
 
 /**************** Abort upload ***************/
 
 export async function abortUploadHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
+    let asset = decodeURIComponent(request.params.asset);
     let version = decodeURIComponent(request.params.version);
+    await lock.checkLock(project, asset, version, auth.extractBearerToken(request));
 
-    let user = await auth.findUser(request, nonblockers);
-    await lock.checkLock(project, asset, version, user.login);
+    // Loop through all resources and delete them all. Make sure to add the trailing
+    // slash to ensure that we don't delete a version that starts with 'version'.
+    await utils.quickRecursiveDelete(project + "/" + asset + "/" + version + "/");
 
-    // Doesn't actually do anything, as we already have an purge job running as
-    // soon as the upload is started; this endpoint is just for compliance with
-    // the reference API.
-    return new Response(null, { status: 202 });
+    // Release lock once we're clear.
+    await bound_bucket.delete(pkeys.lock(project, asset));
+    return new Response(null, { status: 200 });
 }
