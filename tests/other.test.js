@@ -2,24 +2,6 @@ import * as f_ from "../src/index.js";
 import * as other from "../src/utils.js";
 import * as utils from "./utils.js";
 
-test("ID packing and unpacking works correctly", () => {
-    let packed = other.packId("test-public", "whee.txt", "base");
-    expect(packed).toBe("test-public:whee.txt@base");
-
-    let unpacked = other.unpackId(packed);
-    expect(unpacked.project).toBe("test-public");
-    expect(unpacked.path).toBe("whee.txt");
-    expect(unpacked.version).toBe("base");
-
-    expect(() => other.unpackId("test-public@base")).toThrow("could not identify project");
-    expect(() => other.unpackId(":whee.txt@base")).toThrow("empty project");
-    expect(() => other.unpackId("test-public:base")).toThrow("could not identify version");
-    expect(() => other.unpackId("test-public:whee.txt@")).toThrow("empty version");
-
-    expect(() => other.unpackId("test-public@whee.txt:base")).toThrow("could not identify path");
-    expect(() => other.unpackId("test-public:@base")).toThrow("empty path");
-})
-
 test("JSON responses are correctly constructed", async () => {
     {
         let basic = other.jsonResponse({ "foo": "BAR" }, 202)
@@ -46,11 +28,6 @@ test("error responses are correctly constructed", async () => {
     let body = await err.json();
     expect(body.reason).toBe("u suck");
     expect(body.status).toBe("error");
-})
-
-test("time conversions are performed properly", () => {
-    expect(other.minutesFromNow(10)).toBe(10 * 60);
-    expect(other.hoursFromNow(5)).toBe(5 * 3600);
 })
 
 test("caching of JSON payloads works correctly", async () => {

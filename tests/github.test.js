@@ -20,16 +20,3 @@ utils.testauth("user identity checks work correctly with a real token", async ()
     expect(body.organizations).toEqual([]);
     expect(nb.length).toBeGreaterThan(0);
 })
-
-utils.testauth("issue getter works correctly", async () => {
-    gh.setRepository("ArtifactDB/gypsum-worker");
-    gh.setUserAgent("your-mom");
-    gh.setToken(utils.fetchTestPAT());
-
-    let info = await gh.getIssue("6");
-    let body = await info.json();
-    expect(body.number).toBe(6);
-    expect(typeof body.state).toBe("string");
-    expect(typeof body.comments).toBe("number");
-})
-

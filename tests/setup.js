@@ -71,23 +71,13 @@ export function mockFiles() {
     };
 }
 
-export function definePermissions(owners, viewers, isPublic) {
-    return {
-        scope: "project",
-        read_access: (isPublic ? "public" : "viewers"),
-        write_access: "owners",
-        owners: owners,
-        viewers: viewers
-    };
-}
 
 export async function dumpProjectSundries(project, latestVersion, isPublic=true) {
     // Adding project-level sundries.
-    let latest = { version: latestVersion, index_time: (new Date).toISOString() };
+    let latest = { version: latestVersion }
     await BOUND_BUCKET.put(project + "/..latest", JSON.stringify(latest), jsonmeta);
-    await BOUND_BUCKET.put(project + "/..latest_all", JSON.stringify(latest), jsonmeta);
 
-    let perms = definePermissions(["ArtifactDB-bot"], [], isPublic);
+    let perms = ["ArtifactDB-bot"];
     await BOUND_BUCKET.put(project + "/..permissions", JSON.stringify(perms), jsonmeta);
 
     return;
@@ -102,30 +92,6 @@ export async function mockPublicProject() {
 
     await dumpProjectSundries("test-public", "modified");
     return null;
-}
-
-export async function mockPrivateProject() {
-    let payload = mockFiles();
-    await mockProjectVersion("test-private", "base", payload);
-    await dumpProjectSundries("test-private", "base", false);
-    return null;
-}
-
-export async function addRedirection(project, version, from, to, type="local") {
-    let meta = {
-        path: from,
-        "$schema": "redirection/v1.json",
-        redirection: {
-            targets: [
-                {
-                    type: type,
-                    location: to
-                }
-            ]
-        }
-    };
-    await BOUND_BUCKET.put(project + "/" + version + "/" + from + ".json", JSON.stringify(meta), jsonmeta);
-    return;
 }
 
 export async function mockLinkedProjectVersion(project, version, links) {
@@ -154,5 +120,3 @@ export async function mockLinkedProjectVersion(project, version, links) {
     await dumpVersionSundries(project, version, all_meta);
     return all_meta;
 }
-
-
