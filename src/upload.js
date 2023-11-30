@@ -7,9 +7,116 @@ import * as s3 from "./s3.js";
 
 /**************** Initialize uploads ***************/
 
-    function add_presigned_url(f, md5) {
+function splitByUploadType(files) {
+    let simple = [];
+    let md5able = [];
+    let linked = [];
+
+    for (const f of files) {
+        if (typeof f != "object") {
+            throw new utils.HttpError("each entry of 'files' should be an object", 400);
+        }
+
+        if (!("path" in f) || typeof f.path != "string") {
+            throw new utils.HttpError("'path' property in entries of 'files' should be a string", 400);
+        }
+        let fname = f.path;
+        if (fname.startsWith("..") || fname.includes("/..")) {
+            throw new utils.HttpError("'path' property in entries of 'files' cannot contain the reserved '..' pattern", 400);
+        }
+
+        if (!("check" in f) || typeof f.check != "string") {
+            throw new utils.HttpError("'check' property in entries of 'files' should be a string", 400);
+        }
+
+        if (f.check === "simple" || f.check == "md5") {
+            if (!("md5sum" in f) || typeof f.md5sum != "string") {
+                throw new utils.HttpError("'md5sum' property in entries of 'files' should be a string", 400);
+            }
+            if (!("size" in f) || typeof f.size != "number" || f.size <= 0) {
+                throw new utils.HttpError("'size' property in entries of 'files' should be a positive integer", 400);
+            }
+            if (f.check === "simple") {
+                simple.push(f);
+            } else {
+                md5able.push(f);
+            }
+
+        } else if (f.check == "link") {
+            if (!("target" in f) || !(f.target instanceof Object)) {
+                throw new utils.HttpError("'target' property in entries of 'files' should be an object", 400);
+            }
+            let target = f.target;
+            if (!("project" in target) || typeof target.project != "string") {
+                throw new utils.HttpError("'target.project' property in entries of 'files' should be a string", 400);
+            }
+            if (!("asset" in target) || typeof target.asset != "string") {
+                throw new utils.HttpError("'target.asset' property in entries of 'files' should be a string", 400);
+            }
+            if (!("version" in target) || typeof target.version != "string") {
+                throw new utils.HttpError("'target.version' property in entries of 'files' should be a string", 400);
+            }
+            if (!("path" in target) || typeof target.path != "string") {
+                throw new utils.HttpError("'target.path' property in entries of 'files' should be a string", 400);
+            }
+            linked.push(f);
+
+        } else {
+            throw new utils.HttpError("invalid 'check' in the entries of 'files'", 400);
+        }
+    }
+
+    return { 
+        simple: simple, 
+        md5: md5able, 
+        link: linked 
+    };
+}
+
+async function attemptMd5Deduplication(project, asset, md5able, simple, linked) {
+    let lres = await bound_bucket.get(pkeys.latestVersion(project, asset));
+    if (lres == null) {
+        for (const f of md5able) {
+            simple.push(f);
+        }
+    } else {
+        let last = JSON.parse(lres).version;
+        let manifest = await bound_bucket.get(pkeys.versionManifest(project, asset, lres));
+
+        let by_sum_and_size = {};
+        for (const x of manifest) {
+            let key = x.md5sum + "_" + String(x.size);
+            by_sum_and_size[key] = x.path;
+        }
+
+        let promises = [];
+        for (const f of md5able) {
+            let key = f.md5sum + "_" + String(f.size);
+            if (key in by_sum_and_size) {
+                linked.append({ 
+                    path: f.path, 
+                    target: { 
+                        project: project, 
+                        asset: asset, 
+                        version: last,
+                        path: by_sum_and_size[key]
+                    } 
+                });
+            } else {
+                simple.push(f);
+            }
+        }
+    }
+}
+
+function preparePresignedUrls(simple, project, asset, version, bucket, s3obj) {
+    let precollected = [];
+    let prenames = [];
+    let premd5 = [];
+
+    for (const f of simple) {
         // Convert hex to base64 to keep S3 happy.
-        let hits = md5.match(/\w{2}/g);
+        let hits = f.md5sum.match(/\w{2}/g);
         let converted = hits.map(a => String.fromCharCode(parseInt(a, 16)));
         let md5_64 = btoa(converted.join(""));
 
@@ -17,11 +124,38 @@ import * as s3 from "./s3.js";
         if (f.endsWith(".json")) {
             params.ContentType = "application/json";
         }
+
         precollected.push(s3obj.getSignedUrlPromise('putObject', params));
         prenames.push(f);
         premd5.push(md5_64);
     }
 
+    return {
+        paths: prenames,
+        hashes: premd5,
+        presigned_urls: precollected,
+    };
+}
+
+async function createLinks(linked, project, asset, version, bucket) {
+    let is_present = [];
+    for (const f of linked) {
+        let res = bucket.head(f.target.project + "/" + f.target.asset + "/" + f.target.version + "/" + f.target.path);
+        is_present.push(res);
+    }
+
+    let resolved = await Promise.all(is_present);
+    for (var i = 0; i < resolved.length; i++) {
+        if (resolved[i] == null) {
+            let f = linked[i];
+            let target = f.target.project + "/" + f.target.asset + "/" + f.target.version + "/" + f.target.path;
+            throw new utils.HttpError("failed to link to '" + target + "'", 400);
+        }
+    }
+
+    // TODO: add linking structures.
+    return;
+}
 
 /**************** Initialize uploads ***************/
 
@@ -71,138 +205,24 @@ export async function initializeUploadHandler(request, nonblockers) {
     } catch (e) {
         throw new utils.HttpError("failed to parse JSON body; " + String(err), 400);
     }
-
-    let precollected = [];
-    let prenames = [];
-    let premd5 = [];
-    function add_presigned_url(f, md5) {
-        // Convert hex to base64 to keep S3 happy.
-        let hits = md5.match(/\w{2}/g);
-        let converted = hits.map(a => String.fromCharCode(parseInt(a, 16)));
-        let md5_64 = btoa(converted.join(""));
-
-        let params = { Bucket: bucket, Key: project + "/" + asset + "/" + version + "/" + f, Expires: 3600, ContentMD5: md5_64 };
-        if (f.endsWith(".json")) {
-            params.ContentType = "application/json";
-        }
-        precollected.push(s3obj.getSignedUrlPromise('putObject', params));
-        prenames.push(f);
-        premd5.push(md5_64);
+    if (!(body instanceof Object)) {
+        throw new utils.HttpError("expected request body to be a JSON object");
     }
-
-    let md5able = [];
-    let linked = [];
-    let link_dest_exists = {};
 
     if (!("files" in body) || !(body.files instanceof Array)) {
         throw new utils.HttpError("expected 'files' to be an array");
     }
+    let split = splitByUploadType(body.files);
 
-    for (const f of body.files) {
-        if (typeof f != "object") {
-            throw new utils.HttpError("each entry of 'files' should be an object", 400);
-        }
-
-        if (!("path" in f) || typeof f.path != "string") {
-            throw new utils.HttpError("'path' property in entries of 'files' should be a string", 400);
-        }
-        let fname = f.path;
-        if (fname.startsWith("..") || fname.includes("/..")) {
-            throw new utils.HttpError("'path' property in entries of 'files' cannot start with the reserved '..' pattern", 400);
-        }
-
-        if (!("check" in f) || typeof f.check != "string") {
-            throw new utils.HttpError("'check' property in entries of 'files' should be a string", 400);
-        }
-
-        if (f.check === "simple") {
-            if (!("md5sum" in f) || typeof f.md5sum != "string") {
-                throw new utils.HttpError("'md5sum' property in entries of 'files' should be a string", 400);
-            }
-            add_presigned_url(fname, f.md5sum);
-        } else if (f.check === "md5") {
-            if (!("md5sum" in f) || typeof f.md5sum != "string") {
-                throw new utils.HttpError("'md5sum' property in entries of 'files' should be a string", 400);
-            }
-            md5able.push(f);
-        } else if (f.check == "link") {
-            if (!("project" in f) || typeof f.project != "string") {
-                throw new utils.HttpError("'project' property in entries of 'files' should be a string", 400);
-            }
-            if (!("asset" in f) || typeof f.asset != "string") {
-                throw new utils.HttpError("'asset' property in entries of 'files' should be a string", 400);
-            }
-            if (!("version" in f) || typeof f.version != "string") {
-                throw new utils.HttpError("'version' property in entries of 'files' should be a string", 400);
-            }
-            linked.push(f);
-            let id = project + "/" + asset + "/" + version + "/" + path;
-            if (!(id in link_dest_exists)) {
-                link_dest_exists[id] = bound_bucket.head(id);
-            }
-        } else {
-            throw new utils.HttpError("invalid 'check' in the entries of 'files'", 400);
-        }
+    if (split.md5.length) {
+        await attemptMd5Deduplication(project, asset, split.md5, split.simple, split.linked);
     }
 
-    // Resolving the MD5sums against the current latest version. 
-    if (md5able.length) {
-        let lres = await bound_bucket.get(pkeys.latestVersion(project, asset));
-        if (lres == null) {
-            for (const f of md5able) {
-                add_presigned_url(f.filename, f.value.md5sum);
-            }
-        } else {
-            let last = lres.version;
-            let manifest = await bound_bucket.get(pkeys.versionManifest(project, asset));
-            async function check_md5(filename, field, md5sum) {
-                let res = await bound_bucket.get(project + "/" + last + "/" + filename + ".json");
-                if (res !== null) {
-                    let meta = await res.json();
-                    if (meta[field] == md5sum) {
-                        linked.push({ filename: filename, target: utils.packId(project, filename, last) });
-                        return;
-                    }
-                } 
-                add_presigned_url(filename, md5sum);
-            }
+    let prepped = preparePresignedUrls(split.simple, project, asset, version, bucket, s3obj);
+    await createLinks(split.linked, project, asset, version, bucket);
 
-            let promises = [];
-            for (const f of md5able) {
-                promises.push(check_md5(f.filename, f.value.field, f.value.md5sum));
-            }
-            await Promise.all(promises);
-        }
-    }
-    
-    // Checking if the linked versions have appropriate permissions, and any expiry date.
-    {
-        let links = Array.from(link_expiry_checks);
-        let bad_links = await Promise.all(links.map(k => bound_bucket.head(k)));
-        for (var i = 0; i < bad_links.length; i++) {
-            if (bad_links[i] !== null) {
-                let details = links[i].split("/");
-                throw new utils.HttpError("detected links to a transient project '" + details[0] + "' (version '" + details[1] + "')", 400);
-            }
-        }
 
-        let projects = Array.from(link_projects);
-        let project_perms = await Promise.all(projects.map(p => auth.getPermissions(p, nonblockers)));
-        for (var i = 0; i < project_perms.length; i++) {
-            try {
-                auth.checkReadPermissions(project_perms[i], user, projects[i]);
-            } catch (e) {
-                e.message = "failed to create a link; " + e.message;
-                throw e;
-            }
-        }
 
-        for (const [k, v] of Object.entries(link_dest_exists)) {
-            if ((await v) == null) {
-                throw new utils.HttpError("link target '" + k + "' does not exist");
-            }
-        }
-    }
 
     // If there are any links, save them for later use.
     if (linked.length) {
@@ -220,43 +240,21 @@ export async function initializeUploadHandler(request, nonblockers) {
         delete current.target;
     }
 
-    // Saving expiry information. We used to store this in the lock file, but
-    // that gets deleted on completion, and we want to make sure that indexing
-    // is idempotent; so we make sure it survives until expiration.
-    if ("expires_in" in body) {
-        let exp = expiry.expiresInMilliseconds(body.expires_in);
-        nonblockers.push(utils.quickUploadJson(pkeys.expiry(project, version), { "expires_in": exp }));
-    }
-
-    let presigned_vec = await Promise.all(precollected);
     let presigned = [];
-    for (var i = 0; i < presigned_vec.length; i++) {
-        presigned.push({ filename: prenames[i], url: presigned_vec[i], md5sum: premd5[i] });
+    {
+        let resolved_urls = await prepped.presigned_urls;
+        for (var i = 0; i < prepped.urls.length; i++) {
+            presigned.push({ path: prepped.paths[i], url: resolved_urls[i], hash: prepped.hashes[i] });
+        }
     }
 
-    let all_files = [];
-    for (const p of presigned) {
-        all_files.push(p.filename);
-    }
-    for (const l of linked) {
-        all_files.push(l.filename);
-    }
+    // Build a manifest.
     nonblockers.push(utils.quickUploadJson(pkeys.versionManifest(project, version), all_files));
-
-    nonblockers.push(gh.postNewIssue("purge project",
-        JSON.stringify({ 
-            project: project,
-            version: version,
-            mode: "incomplete",
-            delete_after: Date.now() + 2 * 3600 * 1000 
-        })
-    ));
 
     return utils.jsonResponse({ 
         presigned_urls: presigned, 
-        links: linked, 
-        completion_url: "/projects/" + project + "/version/" + version + "/complete",
-        abort_url: "/projects/" + project + "/version/" + version + "/abort"
+        completion_url: "/projects/" + project + "/asset/" + asset + "/version/" + version + "/complete",
+        abort_url: "/projects/" + project + "/asset/" + asset + "/version/" + version + "/abort",
     }, 200);
 }
 
