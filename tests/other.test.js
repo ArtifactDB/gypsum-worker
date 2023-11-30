@@ -78,3 +78,42 @@ test("named resolve works as expected", async () => {
     let eres = await other.namedResolve({});
     expect(eres).toEqual({});
 });
+
+test("quick recursive delete works as expected", async () => {
+    var it = 0;
+    while (true) {
+        await other.quickUploadJson("alpha/foo.txt", [ "Yuka Nakano", "Yukino Aihara" ]);
+        await other.quickUploadJson("alpha/bravo/bar.txt", [ "Kanako Mimura" ]);
+        await other.quickUploadJson("alpha/bravo/stuff.txt", [ "Miria Akagi" ]);
+        await other.quickUploadJson("alpha/bravo-foo/whee.txt", [ "Yumi Aiba" ]);
+
+        if (it == 0) {
+            await other.quickRecursiveDelete("alpha/bravo/");
+            expect(await BOUND_BUCKET.head("alpha/foo.txt")).not.toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo/bar.txt")).toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo/stuff.txt")).toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo-foo/whee.txt")).not.toBeNull();
+        } else if (it == 1) {
+            await other.quickRecursiveDelete("alpha/bravo-foo/whee.txt");
+            expect(await BOUND_BUCKET.head("alpha/foo.txt")).not.toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo/bar.txt")).not.toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo/stuff.txt")).not.toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo-foo/whee.txt")).toBeNull();
+        } else if (it == 2) {
+            await other.quickRecursiveDelete("alpha/");
+            expect(await BOUND_BUCKET.head("alpha/foo.txt")).toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo/bar.txt")).toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo/stuff.txt")).toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo-foo/whee.txt")).toBeNull();
+        } else if (it == 3) {
+            await other.quickRecursiveDelete("alpha/", 1); // setting a list limit of 1 to force iteration.
+            expect(await BOUND_BUCKET.head("alpha/foo.txt")).toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo/bar.txt")).toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo/stuff.txt")).toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo-foo/whee.txt")).toBeNull();
+        } else {
+            break;
+        }
+        it++;
+    }
+})

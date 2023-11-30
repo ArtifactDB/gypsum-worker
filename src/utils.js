@@ -53,9 +53,9 @@ export async function namedResolve(x) {
     return output;
 }
 
-export async function quickRecursiveDelete(prefix) {
+export async function quickRecursiveDelete(prefix, list_limit = 1000) {
     let bound_bucket = s3.getR2Binding();
-    let list_options = { prefix: prefix };
+    let list_options = { prefix: prefix, limit: list_limit };
     let truncated = true;
     let deletions = [];
 
