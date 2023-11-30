@@ -16,7 +16,7 @@ export function setGlobalEncryptKey(x) {
 /******************************************
  ******************************************/
 
-export async function extractBearerToken(token, nonblockers) {
+export function extractBearerToken(request, nonblockers) {
     let auth = request.headers.get("Authorization");
     if (auth == null || !auth.startsWith("Bearer ")) {
         throw new utils.HttpError("no user identity supplied", 401);
@@ -69,7 +69,7 @@ export async function findUser(token, nonblockers) {
         login: (await (await user_prom).json()).login,
         organizations: orgs 
     };
-    nonblockers.push(utils.quickCacheJson(userCache, key, val, utils.hoursFromNow(2)));
+    nonblockers.push(utils.quickCacheJson(userCache, key, val, 2 * 3600));
     return val;
 }
 
@@ -108,7 +108,7 @@ export async function getPermissions(project, nonblockers) {
     }
 
     let data = await res.text();
-    nonblockers.push(utils.quickCacheJsonText(permCache, key, data, utils.minutesFromNow(5)));
+    nonblockers.push(utils.quickCacheJsonText(permCache, key, data, 5 * 60));
     return JSON.parse(data);
 }
 
