@@ -4,6 +4,7 @@ import * as gh from "./github.js";
 import * as auth from "./auth.js";
 import * as upload from "./upload.js";
 import * as manage from "./manage.js";
+import * as probation from "./probation.js";
 import * as utils from "./utils.js";
 import * as s3 from "./s3.js";
 

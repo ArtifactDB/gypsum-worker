@@ -1,4 +1,4 @@
-import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 var r2_bucket_name = "placeholder";
@@ -27,12 +27,7 @@ export function setS3Object(account_id, access_key, secret_key) {
     };
 
     s3_object.getSignedUrlPromise = async (mode, params) => {
-        let command;
-        if (mode == 'getObject') {
-            command = new GetObjectCommand({ Bucket: params.Bucket, Key: params.Key });
-        } else {
-            command = new PutObjectCommand({ Bucket: params.Bucket, Key: params.Key, ContentMD5: params.ContentMD5 });
-        }
+        let command = new PutObjectCommand({ Bucket: params.Bucket, Key: params.Key, ContentMD5: params.ContentMD5 });
         return await getSignedUrl(s3_object.client, command, { expiresIn: params.Expires });
     }
 

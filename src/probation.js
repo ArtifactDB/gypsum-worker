@@ -25,14 +25,14 @@ export async function requestTokenHandler(request, nonblockers) {
     }
 
     let payload = { project };
-    if (!("user_id" in body) || typeof body.user_id != "string")) {
+    if (!("user_id" in body) || typeof body.user_id != "string") {
         throw new utils.HttpError("expected 'user_id' property to be a string");
     }
     payload.user_id = body.user_id;
 
     // TODO: Check that this is a valid GitHub ID.
 
-    if (!("expires_in" in body) || typeof body.user_id != "number")) {
+    if (!("expires_in" in body) || typeof body.user_id != "number") {
         throw new utils.HttpError("expected 'expires_in' property to be a number");
     }
     payload.expires_in = Date.now() + body.expires_in * 60 * 60 * 1000;
@@ -114,7 +114,13 @@ export async function rejectProbationHandler(request, nonblockers) {
     let version = decodeURIComponent(request.params.version);
 
     let token = auth.extractBearerToken(request);
-    await auth.checkProjectManagementPermissions(project, token, nonblockers);
+    let probational_user = null;
+    if (token.startsWith("gypsum.")) {
+        let scope = probation.extractTokenScope(token);
+        probational_user = scope.user_id;
+    } else {
+        await auth.checkProjectManagementPermissions(project, token, nonblockers);
+    }
 
     let bound_bucket = s3.getR2Binding();
     let session_key = crypto.randomUUID();
@@ -130,6 +136,10 @@ export async function rejectProbationHandler(request, nonblockers) {
         let info = JSON.parse(raw_info);
         if (!("on_probation" in info) || !info.on_probation) {
             throw new utils.HttpError("cannot reject probation for non-probational version", 400);
+        }
+
+        if (!owner && probational_user !== info.upload_user_id) {
+            throw new utils.HttpError("cannot reject probation for different user", 400);
         }
 
         await utils.quickRecursiveDelete(project + "/" + asset + "/" + version + "/");
