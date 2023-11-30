@@ -25,19 +25,18 @@ export async function extractBearerToken(token, nonblockers) {
 }
 
 export async function findUser(token, nonblockers) {
-    // Hashing the token with HMAC to avoid problems if the cache leaks. The
-    // identity now depends on two unknowns - the user-supplied token, and the
-    // server-side secret, which should be good enough.
-    let key;
+    // Some cursory hashing of the token to avoid problems if the cache leaks.
+    // Github's tokens should have high enough entropy that we don't need
+    // salting or iterations, see commentary at:
+    // https://security.stackexchange.com/questions/151257/what-kind-of-hashing-to-use-for-storing-rest-api-tokens-in-the-database
+    let hash;
     {
-        let master = getGlobalEncryptKey();
-        let enc = new TextEncoder();
-        let ckey = await crypto.subtle.importKey("raw", enc.encode(master), { name: "HMAC", hash: "SHA-256" }, false, [ "sign" ]);
-        let secured = await crypto.subtle.sign({ name: "HMAC" }, ckey, enc.encode(token));
-
-        // Creating a pretend URL for caching purposes: this should not get called.
-        key = "https://github.com/ArtifactDB/gypsum-actions/user/" + btoa(String.fromCharCode(...new Uint8Array(secured))); 
+        const encoder = new TextEncoder();
+        const data = encoder.encode(token);
+        let digest = await crypto.subtle.digest("SHA-256", data);
+        hash = btoa(String.fromCharCode(...new Uint8Array(digest)));
     }
+    let key = "https://github.com/ArtifactDB/gypsum-actions/user/" + hash;
 
     const userCache = await caches.open("user:cache");
     let check = await userCache.match(key);
