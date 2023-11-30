@@ -67,7 +67,7 @@ router.put("/project/:project/asset/:asset/version/:version/upload/complete", up
 
 router.put("/project/:project/asset/:asset/version/:version/upload/abort", upload.abortUploadHandler);
 
-router.put("/project/:project/permissions", auth.setPermissionsHandler);
+router.put("/project/:project/permissions", manage.setPermissionsHandler);
 
 /*** Non-standard endpoints, for testing and other things ***/
 
