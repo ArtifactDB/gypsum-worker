@@ -124,13 +124,14 @@ async function attemptMd5Deduplication(simple, md5able, linked, project, asset, 
 async function checkLinks(linked, project, asset, version, bound_bucket, manifest_cache) {
     let all_manifests = {};
     let all_targets = [];
+
     for (const f of linked) {
         let key = f.target.project + "/" + f.target.asset + "/" + f.target.version;
         if (!(key in all_manifests)) {
             all_manifests[key] = getVersionManifest(project, asset, version, bound_bucket, manifest_cache);
             all_targets[key] = [];
         }
-        all_targets[key].push({ from: f.path, to: f.target.path });
+        all_targets[key].push({ from: f.path, to: f.target });
     }
 
     let resolved_manifests = await utils.namedResolve(all_manifests);
@@ -138,11 +139,11 @@ async function checkLinks(linked, project, asset, version, bound_bucket, manifes
     for (const [k, v] of Object.entries(all_targets)) {
         let target_manifest = resolved_manifest[k];
         for (const { from, to } of v) {
-            if (!(to in target_manifest)) {
-                throw new utils.HttpError("failed to link from '" + from + "' to '" + k + "/" + to + "'", 400);
+            if (!(to.path in target_manifest)) {
+                throw new utils.HttpError("failed to link from '" + from + "' to '" + k + "/" + to.path + "'", 400);
             }
-            let details = target_manifest[to];
-            linked_details.push({ path: from, size: details.size, md5sum: details.md5sum });
+            let details = target_manifest[to.path];
+            linked_details.push({ path: from, size: details.size, md5sum: details.md5sum, target: to });
         }
     }
 
@@ -238,7 +239,7 @@ export async function initializeUploadHandler(request, nonblockers) {
         manifest[s.path] = { size: s.size, md5sum: s.md5sum };
     }
     for (const l of link_details) {
-        manifest[l.path] = { size: l.size, md5sum: l.md5sum };
+        manifest[l.path] = { size: l.size, md5sum: l.md5sum, link: l.target };
     }
     preparation.push(utils.quickUploadJson(pkeys.versionManifest(project, asset, version), manifest));
 
