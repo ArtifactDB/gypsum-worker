@@ -1,9 +1,7 @@
 import * as utils from "./utils.js";
 
 const api = "https://api.github.com";
-var repository = "placeholder";
 var user_agent = "placeholder";
-var master_token = "placeholder";
 var test_rigging = null;
 
 export function setRepository(repo) {
@@ -16,18 +14,9 @@ export function setUserAgent(agent) {
     return;
 }
 
-export function setToken(token) {
-    master_token = token;
-    return;
-}
-
-export function getToken() {
-    return master_token;
-}
-
 export function enableTestRigging(enable = true) {
     if (enable) {
-        test_rigging = { postNewIssue: [], getIssue: {}, identifyUser: {}, identifyUserOrgs: {} };
+        test_rigging = { identifyUser: {}, identifyUserOrgs: {} };
     } else {
         test_rigging = null;
     }

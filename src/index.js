@@ -7,19 +7,26 @@ import * as manage from "./manage.js";
 import * as utils from "./utils.js";
 import * as s3 from "./s3.js";
 
+// Variables in the wrangler.toml.
 if (ADMIN_ACCOUNTS !== "") {
     auth.setAdmins(ADMIN_ACCOUNTS.split(","));
 }
 gh.setUserAgent(GITHUB_USER_AGENT);
 s3.setBucketName(R2_BUCKET_NAME);
 
+s3.setR2Binding(BOUND_BUCKET);
+
+// Secret variables.
 if (typeof ACCESS_KEY_ID !== "undefined" && typeof SECRET_ACCESS_KEY != "undefined") {
     s3.setS3Object(CF_ACCOUNT_ID, ACCESS_KEY_ID, SECRET_ACCESS_KEY);
 } else {
     console.warn("missing the ACCESS_KEY_ID or SECRET_ACCESS_KEY secrets");
 }
-
-s3.setR2Binding(BOUND_BUCKET);
+if (typeof ENCRYPT_SECRET !== "undefined") {
+    auth.setGlobalEncryptKey(ENCRYPT_SECRET);
+} else {
+    console.warn("missing the ENCRYPT_SECRET secret");
+}
 
 const router = Router();
 
@@ -68,6 +75,12 @@ router.put("/project/:project/asset/:asset/version/:version/upload/complete", up
 router.put("/project/:project/asset/:asset/version/:version/upload/abort", upload.abortUploadHandler);
 
 router.put("/project/:project/permissions", manage.setPermissionsHandler);
+
+router.post("/project/:project/probation/request-token", probation.requestTokenHandler);
+
+router.post("/project/:project/probation/approve", probation.approveProbationHandler);
+
+router.post("/project/:project/probation/reject", probation.rejectProbationHandler);
 
 /*** Non-standard endpoints, for testing and other things ***/
 

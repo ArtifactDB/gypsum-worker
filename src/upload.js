@@ -167,21 +167,29 @@ export async function initializeUploadHandler(request, nonblockers) {
         throw new utils.HttpError("project, asset and version names cannot start with the reserved '..'", 400);
     }
 
-    let token = auth.extractBearerToken(request);
     let uploading_user;
-    if (token.startsWith("gypsum_")) {
-        // TODO: something with the special tokens here.
-    } else {
-        let resolved = await utils.namedResolve({
-            user: auth.findUser(request, nonblockers),
-            permissions: auth.getPermissions(project, nonblockers),
-        });
-        let user = resolved.user;
-        let perms = resolved.permissions;
-        if (!auth.isOneOf(user, perms.owners) && !auth.isOneOf(user, auth.getAdmins())) {
-            throw new utils.HttpError("user does not have upload access to project '" + project + "'", 403);
+    let probation;
+    let token = auth.extractBearerToken(request);
+    if (token.startsWith("gypsum.")) {
+        let scope = probation.extractTokenScope(token);
+        if (scope.expires_in > Date.now()) {
+            throw new utils.HttpError("probational token has expired", 403);
         }
+        if (scope.project !== project) {
+            throw new utils.HttpError("probational token was generated for a different project '" + scope.project + "'", 403);
+        }
+        if ("asset" in scope && scope.asset !== asset) {
+            throw new utils.HttpError("probational token was generated for a different asset '" + scope.asset + "'", 403);
+        }
+        if ("version" in scope && scope.version !== version) {
+            throw new utils.HttpError("probational token was generated for a different version '" + scope.version + "'", 403);
+        }
+        uploading_user = scope.user_id;
+        probation = true;
+    } else {
+        let user = await auth.checkProjectManagementPermissions(project, token, nonblockers);
         uploading_user = user.login;
+        probation = false;
     }
 
     let bound_bucket = s3.getR2Binding();
@@ -192,11 +200,17 @@ export async function initializeUploadHandler(request, nonblockers) {
         if (ver_meta != null) {
             throw new utils.HttpError("version '" + version + "' already exists for asset '" + asset + "' in project '" + project + "'", 400);
         }
-        preparation.push(utils.quickUploadJson(sumpath, { "upload_user_id": uploading_user, "upload_started": (new Date).toISOString() }));
+        preparation.push(utils.quickUploadJson(sumpath, { 
+            "upload_user_id": uploading_user, 
+            "upload_started": (new Date).toISOString(), 
+            "on_probation": probation
+        }));
     }
 
     let session_key = crypto.randomUUID();
     await lock.lockProject(project, asset, version, session_key);
+
+    // Now scanning through the files.
     let body;
     try {
         body = await request.json();
@@ -234,7 +248,7 @@ export async function initializeUploadHandler(request, nonblockers) {
         let i = l.path.lastIndexOf("/");
         let hostdir = "";
         if (i >= 0) {
-            hostdir = l.path.slice(0, i + 1); // get the trailing slash.
+            hostdir = l.path.slice(0, i + 1); // include the trailing slash, see below.
         }
         if (!(hostdir in linkable)) {
             linkable[hostdir] = {};
@@ -242,7 +256,8 @@ export async function initializeUploadHandler(request, nonblockers) {
         linkable[hostdir][l.path.slice(i)] = l.target;
     }
     for (const [k, v] of Object.entries(linkable)) {
-        preparation.push(utils.quickUploadJson(project + "/" + asset + "/" + version + k + "..links", v));
+        // Either 'k' already has a trailing slash or is an empty string, so we can just add it to the file name.
+        preparation.push(utils.quickUploadJson(project + "/" + asset + "/" + version + "/" + k + "..links", v));
     }
 
     // Creating the upload URLs; this could, in theory, switch logic depending on size.
@@ -314,18 +329,24 @@ export async function completeUploadHandler(request, nonblockers) {
     let version = decodeURIComponent(request.params.version);
     await lock.checkLock(project, asset, version, auth.extractBearerToken(request));
 
-    let bound_bucket = s3.getR2Binding();
-    let latest_update = utils.quickUploadJson(pkeys.latestVersion(project, asset), { "version": version });
-
     let sumpath = pkeys.versionSummary(project, asset, version);
     let raw_info = await bound_bucket.get(sumpath);
     let info = JSON.parse(raw_info);
-    info.upload_finished = (new Date).toISOString();
-    if ((await utils.quickUploadJson(sumpath, info)) == null) {
-        throw new utils.HttpError("failed to update version summary", 500);
+
+    let bound_bucket = s3.getR2Binding();
+    let latest_update = true;
+    if (!info.on_probation) {
+        latest_update = utils.quickUploadJson(pkeys.latestVersion(project, asset), { "version": version });
+        delete info.on_probation; 
     }
 
-    // Await this later so that we can the prior async'ness concurrently.
+    info.upload_finished = (new Date).toISOString();
+    let summary_update = utils.quickUploadJson(sumpath, info);
+
+    // Await these so that we can handle the prior async'ness concurrently.
+    if ((await summary_update) == null) {
+        throw new utils.HttpError("failed to update version summary", 500);
+    }
     if ((await latest_update) === null) {
         throw new utils.HttpError("failed to update latest version of project's assets", 500);
     }

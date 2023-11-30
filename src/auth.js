@@ -3,6 +3,19 @@ import * as gh from "./github.js";
 import * as pkeys from "./internal.js";
 import * as s3 from "./s3.js";
 
+var encrypt_key = null;
+
+export function getGlobalEncryptKey() {
+    return encrypt_key;
+}
+
+export function setGlobalEncryptKey(x) {
+    encrypt_key = x;
+}
+
+/******************************************
+ ******************************************/
+
 export async function extractBearerToken(token, nonblockers) {
     let auth = request.headers.get("Authorization");
     if (auth == null || !auth.startsWith("Bearer ")) {
@@ -17,7 +30,7 @@ export async function findUser(token, nonblockers) {
     // server-side secret, which should be good enough.
     let key;
     {
-        let master = gh.getToken();
+        let master = getGlobalEncryptKey();
         let enc = new TextEncoder();
         let ckey = await crypto.subtle.importKey("raw", enc.encode(master), { name: "HMAC", hash: "SHA-256" }, false, [ "sign" ]);
         let secured = await crypto.subtle.sign({ name: "HMAC" }, ckey, enc.encode(token));
@@ -137,6 +150,9 @@ export function getAdmins() {
     return admins;
 }
 
+/******************************************
+ ******************************************/
+
 export function validatePermissions(body) {
     if (!(body instanceof Object)) {
         throw new utils.HttpError("expected permissions to be a JSON object", 400);
@@ -149,4 +165,17 @@ export function validatePermissions(body) {
             throw new utils.HttpError("expected 'owners' to be an array of strings", 400);
         }
     }
+}
+
+export async function checkProjectManagementPermissions(project, token, nonblockers) {
+    let resolved = await utils.namedResolve({
+        user: findUser(token, nonblockers),
+        permissions: getPermissions(project, nonblockers),
+    });
+    let user = resolved.user;
+    let perms = resolved.permissions;
+    if (!isOneOf(user, perms.owners) && !isOneOf(user, getAdmins())) {
+        throw new utils.HttpError("user is not an owner of project '" + project + "'", 403);
+    }
+    return user;
 }
