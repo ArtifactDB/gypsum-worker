@@ -269,60 +269,6 @@ export async function setPermissionsHandler(request, nonblockers) {
 /******************************************
  ******************************************/
 
-function upload_override_cache() {
-    return caches.open("upload_override:cache");
-}
-
-// Key needs to be a URL.
-var upload_override_cache_key = "https://github.com/ArtifactDB/gypsum-worker/upload_override/"; 
-
-var upload_override_path = "..upload_override";
-
-var upload_override_header = "ArtifactDB-upload-override-key";
-
-async function get_upload_override_key(nonblockers) {
-    const uploadCache = await upload_override_cache();
-    let check = await uploadCache.match(upload_override_cache_key);
-    if (check) {
-        return await check.json();
-    }
-
-    let bound_bucket = s3.getR2Binding();
-    let res = await bound_bucket.get(upload_override_path);
-    if (res == null) {
-        return null;
-    }
-
-    let data = await res.text();
-    nonblockers.push(utils.quickCacheJsonText(uploadCache, upload_override_cache_key, data, utils.hoursFromNow(2)));
-    return JSON.parse(data);
-}
-
-export async function setUploadOverrideHandler(request, nonblockers) {
-    let user = await findUser(request, nonblockers);
-    if (!is_member_of(user.login, user.organizations, admins)) {
-        throw new utils.HttpError("user is not authorized to set the upload override key", 403);
-    }
-
-    // Saving the key.
-    let secret = request.headers.get(upload_override_header);
-    if (secret == null) {
-        throw new utils.HttpError("the 'ArtifactDb-upload-override-key' header has not been set", 400);
-    }
-
-    let bound_bucket = s3.getR2Binding();
-    nonblockers.push(bound_bucket.put(upload_override_path, JSON.stringify(secret)));
-
-    // Clearing the cached secret to trigger a reload on the next getUploadOverrideKey() call.
-    const uploadCache = await upload_override_cache();
-    nonblockers.push(uploadCache.delete(upload_override_cache_key));
-
-    return new Response(null, { status: 202 });
-}
-
-/******************************************
- ******************************************/
-
 var uploaders = [];
 
 export function setUploaders(x) {

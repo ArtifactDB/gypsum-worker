@@ -61,23 +61,19 @@ function handleOptions(request) {
 
 /*** Setting up the routes ***/
 
-router.post("/projects/:project/asset/:asset/version/:version/upload", upload.initializeUploadHandler);
+router.post("/project/:project/asset/:asset/version/:version/upload/start", upload.initializeUploadHandler);
 
-router.put("/link/:source/to/:target", upload.createLinkHandler);
+router.post("/project/:project/asset/:asset/version/:version/upload/presigned-file/:parameters", upload.uploadPresignedFileHandler);
 
-router.put("/projects/:project/asset/:asset/version/:version/complete", upload.completeUploadHandler);
+router.put("/project/:project/asset/:asset/version/:version/upload/complete", upload.completeUploadHandler);
 
-router.put("/projects/:project/asset/:asset/version/:version/abort", upload.abortUploadHandler);
+router.put("/project/:project/asset/:asset/version/:version/upload/abort", upload.abortUploadHandler);
 
-router.get("/projects/:project/permissions", auth.getPermissionsHandler);
+router.put("/project/:project/permissions", auth.setPermissionsHandler);
 
-router.put("/projects/:project/permissions", auth.setPermissionsHandler);
-
-/*** Non-standard endpoints, for testing and other things***/
+/*** Non-standard endpoints, for testing and other things ***/
 
 router.get("/custom/user", auth.findUserHandler);
-
-router.put("/custom/upload-secret", auth.setUploadOverrideHandler);
 
 /*** Setting up the listener ***/
 

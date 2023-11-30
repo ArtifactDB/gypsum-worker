@@ -73,7 +73,19 @@ function splitByUploadType(files) {
     };
 }
 
-async function attemptMd5Deduplication(project, asset, md5able, simple, linked) {
+async function getVersionManifest(project, asset, version, bound_bucket, manifest_cache) {
+    let key = project + "/" + asset + "/" + version;
+    if (key in manifest_cache) {
+        return manifest_cache[key];
+    }
+
+    let raw_manifest = await bound_bucket.get(pkeys.versionManifest(project, asset, lres));
+    let manifest = JSON.parse(raw_manifest);
+    manifest_cache[key] = manifest;
+    return manifest;
+}
+
+async function attemptMd5Deduplication(simple, md5able, linked, project, asset, bound_bucket, manifest_cache) {
     let lres = await bound_bucket.get(pkeys.latestVersion(project, asset));
     if (lres == null) {
         for (const f of md5able) {
@@ -81,12 +93,12 @@ async function attemptMd5Deduplication(project, asset, md5able, simple, linked) 
         }
     } else {
         let last = JSON.parse(lres).version;
-        let manifest = await bound_bucket.get(pkeys.versionManifest(project, asset, lres));
+        let manifest = await getVersionManifest(project, asset, last, bound_bucket, manifest_cache);
 
         let by_sum_and_size = {};
-        for (const x of manifest) {
-            let key = x.md5sum + "_" + String(x.size);
-            by_sum_and_size[key] = x.path;
+        for (const [k, v] of Object.entries(manifest)) {
+            let new_key = v.md5sum + "_" + String(v.size);
+            by_sum_and_size[new_key] = k;
         }
 
         let promises = [];
@@ -109,58 +121,38 @@ async function attemptMd5Deduplication(project, asset, md5able, simple, linked) 
     }
 }
 
-function preparePresignedUrls(simple, project, asset, version, bucket, s3obj) {
-    let precollected = [];
-    let prenames = [];
-    let premd5 = [];
-
-    for (const f of simple) {
-        // Convert hex to base64 to keep S3 happy.
-        let hits = f.md5sum.match(/\w{2}/g);
-        let converted = hits.map(a => String.fromCharCode(parseInt(a, 16)));
-        let md5_64 = btoa(converted.join(""));
-
-        let params = { Bucket: bucket, Key: project + "/" + asset + "/" + version + "/" + f, Expires: 3600, ContentMD5: md5_64 };
-        if (f.endsWith(".json")) {
-            params.ContentType = "application/json";
-        }
-
-        precollected.push(s3obj.getSignedUrlPromise('putObject', params));
-        prenames.push(f);
-        premd5.push(md5_64);
-    }
-
-    return {
-        paths: prenames,
-        hashes: premd5,
-        presigned_urls: precollected,
-    };
-}
-
-async function createLinks(linked, project, asset, version, bucket) {
-    let is_present = [];
+async function checkLinks(linked, project, asset, version, bound_bucket, manifest_cache) {
+    let all_manifests = {};
+    let all_targets = [];
     for (const f of linked) {
-        let res = bucket.head(f.target.project + "/" + f.target.asset + "/" + f.target.version + "/" + f.target.path);
-        is_present.push(res);
+        let key = f.target.project + "/" + f.target.asset + "/" + f.target.version;
+        if (!(key in all_manifests)) {
+            all_manifests[key] = getVersionManifest(project, asset, version, bound_bucket, manifest_cache);
+            all_targets[key] = [];
+        }
+        all_targets[key].push({ from: f.path, to: f.target.path });
     }
 
-    let resolved = await Promise.all(is_present);
-    for (var i = 0; i < resolved.length; i++) {
-        if (resolved[i] == null) {
-            let f = linked[i];
-            let target = f.target.project + "/" + f.target.asset + "/" + f.target.version + "/" + f.target.path;
-            throw new utils.HttpError("failed to link to '" + target + "'", 400);
+    let resolved_manifests = await utils.namedResolve(all_manifests);
+    let linked_details = [];
+    for (const [k, v] of Object.entries(all_targets)) {
+        let target_manifest = resolved_manifest[k];
+        for (const { from, to } of v) {
+            if (!(to in target_manifest)) {
+                throw new utils.HttpError("failed to link from '" + from + "' to '" + k + "/" + to + "'", 400);
+            }
+            let details = target_manifest[to];
+            linked_details.push({ path: from, size: details.size, md5sum: details.md5sum });
         }
     }
 
-    // TODO: add linking structures.
-    return;
+    return linked_details;
 }
 
 /**************** Initialize uploads ***************/
 
 export async function initializeUploadHandler(request, nonblockers) {
-    let project = decodeURIComponent(request.params.package);
+    let project = decodeURIComponent(request.params.project);
     let asset = decodeURIComponent(request.params.asset);
     let version = decodeURIComponent(request.params.version);
 
@@ -177,10 +169,6 @@ export async function initializeUploadHandler(request, nonblockers) {
         throw new utils.HttpError("project, asset and version names cannot start with the reserved '..'", 400);
     }
 
-    let bucket = s3.getBucketName();
-    let s3obj = s3.getS3Object();
-    let bound_bucket = s3.getR2Binding();
-
     let resolved = await utils.namedResolve({
         user: auth.findUser(request, nonblockers),
         permissions: auth.getPermissions(project, nonblockers)
@@ -193,12 +181,13 @@ export async function initializeUploadHandler(request, nonblockers) {
         await auth.checkNewUploadPermissions(user, request, nonblockers);
     }
 
+    let bound_bucket = s3.getR2Binding();
     let ver_meta = await bound_bucket.head(pkeys.versionSummary(project, assset, version));
     if (ver_meta != null) {
         throw new utils.HttpError("version '" + version + "' already exists for asset '" + asset + "' in project '" + project + "'", 400);
     }
 
-    await lock.lockProject(project, asset, user.login);
+    await lock.lockProject(project, asset, version, user.login);
     let body;
     try {
         body = await request.json();
@@ -214,118 +203,115 @@ export async function initializeUploadHandler(request, nonblockers) {
     }
     let split = splitByUploadType(body.files);
 
+    let manifest_cache = {};
     if (split.md5.length) {
-        await attemptMd5Deduplication(project, asset, split.md5, split.simple, split.linked);
+        await attemptMd5Deduplication(split.md5, split.simple, split.linked, project, asset, bound_bucket, manifest_cache);
     }
+    let link_details = await checkLinks(split.linked, project, asset, version, bound_bucket, manifest_cache);
 
-    let prepped = preparePresignedUrls(split.simple, project, asset, version, bucket, s3obj);
-    await createLinks(split.linked, project, asset, version, bucket);
+    // Build a manifest for inspection.
+    let manifest = {};
+    for (const s of split.simple) {
+        manifest[s.path] = { size: s.size, md5sum: s.md5sum };
+    }
+    for (const l of link_details) {
+        manifest[l.path] = { size: l.size, md5sum: l.md5sum };
+    }
+    let preparation = [];
+    preparation.push(utils.quickUploadJson(pkeys.versionManifest(project, asset, version), manifest));
 
-
-
-
-    // If there are any links, save them for later use.
-    if (linked.length) {
-        let link_targets = {};
-        for (const l of linked) {
-            link_targets[l.filename] = l.target;
+    // Create link structures within each subdirectory for bulk consumers.
+    let linkable = {};
+    for (const l of split.linked) {
+        let i = l.path.lastIndexOf("/");
+        let hostdir = "";
+        if (i >= 0) {
+            hostdir = l.path.slice(0, i + 1); // get the trailing slash.
         }
-        nonblockers.push(utils.quickUploadJson(pkeys.links(project, version), link_targets));
+        if (!(hostdir in linkable)) {
+            linkable[hostdir] = {};
+        }
+        linkable[hostdir][l.path.slice(i)] = l.target;
+    }
+    for (const [k, v] of Object.entries(linkable)) {
+        preparation.push(utils.quickUploadJson(project + "/" + asset + "/" + version + k + "..links", v));
     }
 
-    for (var i = 0; i < linked.length; i++) {
-        let current = linked[i];
-        let src = utils.packId(project, current.filename, version);
-        current.url = "/link/" + btoa(src) + "/to/" + btoa(current.target);
-        delete current.target;
+    // Creating the upload URLs; this could, in theory, switch logic depending on size.
+    let upload_urls = [];
+    for (const s of split.simple) {
+        let dump = btoa(JSON.stringify([s.path, s.md5sum]));
+        upload_urls.push({ 
+            path: s.path, 
+            url: "/project/" + project + "/asset/" + asset + "/version/" + version + "/upload/presigned-file/" + dump, 
+            method: "presigned" 
+        });
     }
 
-    let presigned = [];
-    {
-        let resolved_urls = await prepped.presigned_urls;
-        for (var i = 0; i < prepped.urls.length; i++) {
-            presigned.push({ path: prepped.paths[i], url: resolved_urls[i], hash: prepped.hashes[i] });
+    // Checking that everything was uploaded correctly.
+    let resolved = await Promise.all(preparation);
+    for (const r of resolved) {
+        if (r == null) {
+            throw new utils.HttpError("failed to upload manifest and/or link files to the bucket", 500);
         }
     }
-
-    // Build a manifest.
-    nonblockers.push(utils.quickUploadJson(pkeys.versionManifest(project, version), all_files));
 
     return utils.jsonResponse({ 
-        presigned_urls: presigned, 
-        completion_url: "/projects/" + project + "/asset/" + asset + "/version/" + version + "/complete",
-        abort_url: "/projects/" + project + "/asset/" + asset + "/version/" + version + "/abort",
+        upload_urls: upload_urls,
+        completion_url: "/project/" + project + "/asset/" + asset + "/version/" + version + "/upload/complete",
+        abort_url: "/project/" + project + "/asset/" + asset + "/version/" + version + "/upload/abort",
     }, 200);
+}
+
+/**************** Per-file upload ***************/
+
+export async function uploadPresignedFileHandler(request, nonblockers) {
+    let project = decodeURIComponent(request.params.project);
+    let asset = decodeURIComponent(request.params.project);
+    let version = decodeURIComponent(request.params.version);
+    let [path, md5sum ] = JSON.parse(atob(request.params.parameters));
+
+    let user = await auth.findUser(request, nonblockers),
+    await lock.checkLock(project, asset, version, user.login);
+
+    // Convert hex to base64 to keep S3 happy.
+    let hits = md5sum.match(/\w{2}/g);
+    let converted = hits.map(a => String.fromCharCode(parseInt(a, 16)));
+    let md5_64 = btoa(converted.join(""));
+
+    let bucket_name = s3.getBucketName();
+    let params = { Bucket: bucket_name, Key: project + "/" + asset + "/" + version + "/" + path, Expires: 3600, ContentMD5: md5_64 };
+    if (path.endsWith(".json")) {
+        params.ContentType = "application/json";
+    } else if (path.endsWith(".html")) {
+        params.ContentType = "text/html";
+    }
+
+    let s3obj = s3.getS3Object();
+    return utils.jsonResponse({
+        url: await s3obj.getSignedUrlPromise('putObject', params),
+        hash: md5_64
+    };
 }
 
 /**************** Complete uploads ***************/
 
 export async function completeUploadHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
+    let asset = decodeURIComponent(request.params.project);
     let version = decodeURIComponent(request.params.version);
 
-    let user = await auth.findUser(request, nonblockers);
-    await lock.checkLock(project, version, user.login);
+    let user = await auth.findUser(request, nonblockers),
+    await lock.checkLock(project, asset, version, user.login);
 
-    let body = await request.json();
-    if (!complete_project_version(body)) {
-        throw new utils.HttpError("invalid request body: " + complete_project_version.errors[0].message + " (" + complete_project_version.errors[0].schemaPath + ")", 400);
+    let bound_bucket = s3.getR2Binding();
+    let out = await utils.quickUploadJson(pkeys.latestVersion(project, asset), { "version": version });
+    if (out === null) {
+        throw new utils.HttpError("failed to update latest version of project's assets", 500);
     }
+    await bound_bucket.delete(pkeys.lock(project, asset));
 
-    if (!("read_access" in body)) {
-        body.read_access = "public";
-    }
-    if (!("write_access" in body)) {
-        body.write_access = "owners";
-    }
-    if (!("owners" in body)) {
-        body.owners = [user.login];
-    }
-    if (!("viewers" in body)) {
-        body.viewers = [];
-    }
-    body.scope = "project";
-    auth.validateNewPermissions(body);
-
-    let overwrite = request.query.overwrite_permissions === "true";
-    let info = await gh.postNewIssue(
-        "upload complete",
-        JSON.stringify({ 
-            project: project,
-            version: version,
-            timestamp: Date.now(),
-            permissions: { 
-                scope: "project",
-                read_access: body.read_access, 
-                write_access: body.write_access,
-                owners: body.owners,
-                viewers: body.viewers
-            },
-            overwrite_permissions: overwrite
-        })
-    );
-    let payload = await info.json();
-
-    return utils.jsonResponse({ job_id: payload.number }, 202);
-}
-
-export async function queryJobIdHandler(request, nonblockers) {
-    let jid = request.params.jobid;
-
-    let info = await gh.getIssue(jid);
-    let payload = await info.json();
-
-    let state = "PENDING";
-    if (payload.state == "closed") {
-        state = "SUCCESS";
-    } else if (payload.comments > 0) {
-        state = "FAILURE"; // any comments indicates failure, otherwise it would just be closed.
-    }
-
-    return utils.jsonResponse({ 
-        status: state,
-        job_url: gh.createIssueUrl(jid)
-    }, 200);
+    return new Response(null, 200);
 }
 
 /**************** Abort upload ***************/
@@ -335,7 +321,7 @@ export async function abortUploadHandler(request, nonblockers) {
     let version = decodeURIComponent(request.params.version);
 
     let user = await auth.findUser(request, nonblockers);
-    await lock.checkLock(project, version, user.login);
+    await lock.checkLock(project, asset, version, user.login);
 
     // Doesn't actually do anything, as we already have an purge job running as
     // soon as the upload is started; this endpoint is just for compliance with

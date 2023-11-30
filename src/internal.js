@@ -14,10 +14,6 @@ export function lock(project, asset) {
     return project + "/" + asset + "/..LOCK";
 }
 
-export function links(project, version) {
-    return project + "/" + version + "/..links.json";
-}
-
 export function latestVersion(project, asset) {
     return project + "/" + asset + "/..latest";
 }
