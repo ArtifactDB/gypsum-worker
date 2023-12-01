@@ -1,5 +1,6 @@
 import * as auth from "../src/auth.js";
 import * as gh from "../src/github.js";
+import * as setup from "./setup.js";
 
 beforeAll(async () => {
     gh.enableTestRigging(false);
