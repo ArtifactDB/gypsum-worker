@@ -1,6 +1,5 @@
 import * as f_ from "../src/index.js";
 import * as other from "../src/utils.js";
-import * as utils from "./utils.js";
 
 test("JSON responses are correctly constructed", async () => {
     {

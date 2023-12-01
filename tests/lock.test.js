@@ -1,6 +1,6 @@
 import * as f_ from "../src/index.js";
 import * as lock from "../src/lock.js";
-import * as utils from "./utils.js";
+import * as setup from "./setup.js";
 
 test("project locking works as expected", async () => {
     await lock.lockProject("test-lock-test", "locker", "v1", "chihaya-kisaragi");
@@ -10,9 +10,9 @@ test("project locking works as expected", async () => {
     expect(lckbody.user_name).toBe("chihaya-kisaragi");
 
     await lock.checkLock("test-lock-test", "locker", "v1", "chihaya-kisaragi"); // OK
-    utils.expectError(lock.checkLock("test-lock-test", "locker", "v1", "allisonvuong"), "different user");
-    utils.expectError(lock.checkLock("test-lock-test", "locker", "v2", "chihaya-kisaragi"), "different version");
-    utils.expectError(lock.checkLock("test-lock-test2", "locker", "v1", "chihaya-kisaragi"), "not been previously locked");
+    setup.expectError(lock.checkLock("test-lock-test", "locker", "v1", "allisonvuong"), "different user");
+    setup.expectError(lock.checkLock("test-lock-test", "locker", "v2", "chihaya-kisaragi"), "different version");
+    setup.expectError(lock.checkLock("test-lock-test2", "locker", "v1", "chihaya-kisaragi"), "not been previously locked");
 
     expect(await lock.isLocked("test-lock-test", "locker")).toBe(true);
     expect(await lock.isLocked("test-lock-test", "other")).toBe(false);

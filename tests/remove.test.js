@@ -3,11 +3,10 @@ import * as remove from "../src/remove.js";
 import * as s3 from "../src/s3.js";
 import * as gh from "../src/github.js";
 import * as setup from "./setup.js";
-import * as utils from "./utils.js";
 
 beforeAll(async () => {
     let rigging = gh.enableTestRigging();
-    utils.mockGitHubIdentities(rigging);
+    setup.mockGitHubIdentities(rigging);
 })
 
 test("removeProjectHandler works correctly", async () => {
@@ -17,14 +16,14 @@ test("removeProjectHandler works correctly", async () => {
     let req = new Request("http://localhost", { method: "DELETE" });
     req.params = { project: "test" };
     req.query = {};
-    req.headers.set("Authorization", "Bearer " + utils.mockToken);
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenUser);
 
     // Not authorized.
     let nb = [];
-    await utils.expectError(remove.removeProjectHandler(req, nb), "does not have the right to delete");
+    await setup.expectError(remove.removeProjectHandler(req, nb), "does not have the right to delete");
 
     // Now it works.
-    req.headers.set("Authorization", "Bearer " + utils.mockTokenAaron);
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
     await remove.removeProjectHandler(req, nb); 
     expect(await BOUND_BUCKET.head("test/..permissions")).toBeNull();
 
@@ -39,14 +38,14 @@ test("removeProjectAssetHandler works correctly", async () => {
     let req = new Request("http://localhost", { method: "DELETE" });
     req.params = { project: "test", asset: "blob" };
     req.query = {};
-    req.headers.set("Authorization", "Bearer " + utils.mockToken);
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenUser);
 
     // Not authorized.
     let nb = [];
-    await utils.expectError(remove.removeProjectAssetHandler(req, nb), "does not have the right to delete");
+    await setup.expectError(remove.removeProjectAssetHandler(req, nb), "does not have the right to delete");
 
     // Now it works.
-    req.headers.set("Authorization", "Bearer " + utils.mockTokenAaron);
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
     await remove.removeProjectAssetHandler(req, nb); 
     expect(await BOUND_BUCKET.head("test/blob/v1/..summary")).toBeNull();
 
@@ -62,14 +61,14 @@ test("removeProjectAssetVersionHandler works correctly in the simple case", asyn
     let req = new Request("http://localhost", { method: "DELETE" });
     req.params = { project: "test", asset: "blob", version: "v1" };
     req.query = {};
-    req.headers.set("Authorization", "Bearer " + utils.mockToken);
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenUser);
 
     // Not authorized.
     let nb = [];
-    await utils.expectError(remove.removeProjectAssetVersionHandler(req, nb), "does not have the right to delete");
+    await setup.expectError(remove.removeProjectAssetVersionHandler(req, nb), "does not have the right to delete");
 
     // Now it works.
-    req.headers.set("Authorization", "Bearer " + utils.mockTokenAaron);
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
     await remove.removeProjectAssetVersionHandler(req, nb); 
     expect(await BOUND_BUCKET.head("test/blob/v1/..summary")).toBeNull();
 
@@ -87,7 +86,7 @@ test("removeProjectAssetVersionHandler handles version updates correctly", async
 
     let req = new Request("http://localhost", { method: "DELETE" });
     req.query = {};
-    req.headers.set("Authorization", "Bearer " + utils.mockTokenAaron);
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
     let nb = [];
 
     // Updates the latest back to the previous version.
@@ -110,14 +109,14 @@ test("removeProjectAssetVersionHandler handles version updates with probational 
     let sumpath = "test/blob/v1/..summary";
     let existing = await (await BOUND_BUCKET.get(sumpath)).json();
     existing.on_probation = true;
-    await BOUND_BUCKET.put(sumpath, JSON.stringify(existing), utils.jsonmeta);
+    await BOUND_BUCKET.put(sumpath, JSON.stringify(existing), setup.jsonmeta);
 
     await new Promise(r => setTimeout(r, 100));
     await setup.mockProjectRaw("test", "blob", "v2");
 
     let req = new Request("http://localhost", { method: "DELETE" });
     req.query = {};
-    req.headers.set("Authorization", "Bearer " + utils.mockTokenAaron);
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
     let nb = [];
 
     // Deleting the latest non-probational version wipes the latest, but not the actual contents.

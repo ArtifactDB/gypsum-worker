@@ -3,12 +3,11 @@ import * as create from "../src/create.js";
 import * as s3 from "../src/s3.js";
 import * as gh from "../src/github.js";
 import * as setup from "./setup.js";
-import * as utils from "./utils.js";
 
 beforeAll(async () => {
     await setup.mockProject();
     let rigging = gh.enableTestRigging();
-    utils.mockGitHubIdentities(rigging);
+    setup.mockGitHubIdentities(rigging);
 })
 
 test("createHandler works correctly", async () => {
@@ -22,7 +21,7 @@ test("createHandler works correctly", async () => {
         req.query = {};
 
         let nb = [];
-        req.headers.set("Authorization", "Bearer " + utils.mockTokenAaron);
+        req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
         let res = await create.createProjectHandler(req, nb);
         expect(res.status).toBe(200);
     }
@@ -43,10 +42,10 @@ test("createHandler breaks correctly if project already exists", async () => {
         headers: { "Content-Type": "application/json" }
     });
     req.params = { project: "test" };
-    req.headers.set("Authorization", "Bearer " + utils.mockTokenAaron);
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
 
     let nb = [];
-    await utils.expectError(create.createProjectHandler(req, nb), "already exists");
+    await setup.expectError(create.createProjectHandler(req, nb), "already exists");
 })
 
 test("setPermissionsHandler breaks correctly if the request is invalid", async () => {
@@ -58,10 +57,10 @@ test("setPermissionsHandler breaks correctly if the request is invalid", async (
         });
         req.params = { project: "tes/foo" };
         req.query = {};
-        req.headers.set("Authorization", "Bearer " + utils.mockTokenAaron);
+        req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
 
         let nb = [];
-        await utils.expectError(create.createProjectHandler(req, nb), "cannot contain");
+        await setup.expectError(create.createProjectHandler(req, nb), "cannot contain");
     }
 
     {
@@ -72,10 +71,10 @@ test("setPermissionsHandler breaks correctly if the request is invalid", async (
         });
         req.params = { project: "tesfoo" };
         req.query = {};
-        req.headers.set("Authorization", "Bearer " + utils.mockTokenAaron);
+        req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
 
         let nb = [];
-        await utils.expectError(create.createProjectHandler(req, nb), "to be an array");
+        await setup.expectError(create.createProjectHandler(req, nb), "to be an array");
     }
 });
 
@@ -89,9 +88,9 @@ test("createProjectHandler fails correctly if user is not authorized", async () 
     req.query = {};
 
     let nb = [];
-    await utils.expectError(create.createProjectHandler(req, nb), "user identity");
+    await setup.expectError(create.createProjectHandler(req, nb), "user identity");
 
     // Adding the wrong credentials.
-    req.headers.set("Authorization", "Bearer " + utils.mockTokenOther);
-    await utils.expectError(create.createProjectHandler(req, nb), "not have the right to create projects");
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenUser);
+    await setup.expectError(create.createProjectHandler(req, nb), "not have the right to create projects");
 })

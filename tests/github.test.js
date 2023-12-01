@@ -1,15 +1,14 @@
 import * as auth from "../src/auth.js";
 import * as gh from "../src/github.js";
-import * as utils from "./utils.js";
 
 beforeAll(async () => {
     gh.enableTestRigging(false);
 })
 
-utils.testauth("user identity checks work correctly with a real token", async () => {
+setup.testauth("user identity checks work correctly with a real token", async () => {
     let req = new Request("http://localhost");
     req.query = {};
-    req.headers.append("Authorization", "Bearer " + utils.fetchTestPAT());
+    req.headers.append("Authorization", "Bearer " + setup.fetchTestPAT());
 
     let nb = [];
     let res = await auth.findUserHandler(req, nb);

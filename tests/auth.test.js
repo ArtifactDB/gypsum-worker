@@ -1,5 +1,4 @@
 import * as f_ from "../src/index.js"; // need this to set the bucket bindings.
-import * as utils from "./utils.js";
 import * as gh from "../src/github.js";
 import * as auth from "../src/auth.js";
 import * as setup from "./setup.js";
@@ -7,7 +6,7 @@ import * as setup from "./setup.js";
 beforeAll(async () => {
     await setup.mockProject();
     let rigging = gh.enableTestRigging();
-    utils.mockGitHubIdentities(rigging);
+    setup.mockGitHubIdentities(rigging);
 })
 
 afterAll(() => {
@@ -26,44 +25,49 @@ test("extractBearerToken works correctly", async () => {
     expect(() => auth.extractBearerToken(req)).toThrow("user identity");
 
     // Finally works.
-    req.headers.set("Authorization", "Bearer " + utils.mockToken);
-    expect(auth.extractBearerToken(req)).toEqual(utils.mockToken);
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenUser);
+    expect(auth.extractBearerToken(req)).toEqual(setup.mockTokenUser);
 })
 
 test("findUser works correctly", async () => {
     let nb = [];
-    let res = await auth.findUser(utils.mockToken, nb);
-    expect(res.login).toEqual("ArtifactDB-bot");
-    expect(res.organizations).toEqual([]);
+    let res = await auth.findUser(setup.mockTokenOwner, nb);
+    expect(res.login).toEqual("ProjectOwner");
+    expect(res.organizations).toEqual(["STUFF"]);
     expect(nb.length).toBeGreaterThan(0);
 
     // Just fetches it from cache, so no cache insertion is performed.
     let nb2 = [];
-    let res2 = await auth.findUser(utils.mockToken, nb2);
-    expect(res2.login).toEqual("ArtifactDB-bot");
+    let res2 = await auth.findUser(setup.mockTokenOwner, nb2);
+    expect(res2.login).toEqual("ProjectOwner");
     expect(nb2.length).toBe(0);
+
+    // Works with no organizations:
+    res2 = await auth.findUser(setup.mockTokenAdmin, nb2);
+    expect(res2.login).toEqual("LTLA");
+    expect(res2.organizations).toEqual([]);
 
     // Checking that the organizations are returned properly...
     // also check that the caching doesn't just return the same result.
-    let res3 = await auth.findUser(utils.mockTokenOther, nb);
-    expect(res3.login).toEqual("SomeoneElse");
+    let res3 = await auth.findUser(setup.mockTokenUser, nb);
+    expect(res3.login).toEqual("RandomDude");
     expect(res3.organizations).toEqual(["FOO", "BAR"]);
 })
 
 test("getPermissions works correctly", async () => {
     let nb = [];
     let out = await auth.getPermissions("test", nb);
-    expect(out.owners).toEqual(["ArtifactDB-bot"]);
+    expect(out.owners).toEqual(["ProjectOwner"]);
     expect(nb.length).toBeGreaterThan(0);
     await Promise.all(nb);
 
     // Fails correctly.
-    await utils.expectError(auth.getPermissions("nonexistent", nb), "no existing permissions");
+    await setup.expectError(auth.getPermissions("nonexistent", nb), "no existing permissions");
 
     // Fetches from cache.
     let nb2 = [];
     let out2 = await auth.getPermissions("test", nb2);
-    expect(out2.owners).toEqual(["ArtifactDB-bot"]);
+    expect(out2.owners).toEqual(["ProjectOwner"]);
     expect(nb2.length).toBe(0);
 
     // Flushes the cache.
@@ -79,8 +83,12 @@ test("isOneOf works correctly", () => {
     expect(auth.isOneOf({login:"luna", organizations:["foo", "bar"]}, ["akari", "foo", "kaori"])).toBe(true)
 })
 
-test("setting admins works correctly", () => {
+test("setting admins works correctly", async () => {
     let old = auth.getAdmins();
+
+    // Check that our admin token is actually in the set of admins.
+    expect(old.indexOf((await auth.findUser(setup.mockTokenAdmin, [])).login)).toBeGreaterThanOrEqual(0);
+
     try {
         auth.setAdmins(["a", "b", "c"]);
         expect(auth.getAdmins()).toEqual(["a", "b", "c"]);
@@ -121,63 +129,63 @@ test("validatePermissions works correctly", () => {
 
 test("checkProjectManagementPermissions works correctly", async () => {
     let nb = [];
-    await auth.checkProjectManagementPermissions("test", utils.mockToken, nb);
-    await utils.expectError(auth.checkProjectManagementPermissions("test", utils.mockTokenOther, nb), "not an owner");
-    await auth.checkProjectManagementPermissions("test", utils.mockTokenAaron, nb);
+    await auth.checkProjectManagementPermissions("test", setup.mockTokenOwner, nb);
+    await setup.expectError(auth.checkProjectManagementPermissions("test", setup.mockTokenUser, nb), "not an owner");
+    await auth.checkProjectManagementPermissions("test", setup.mockTokenAdmin, nb);
 })
 
 test("checkProjectUploadPermissions works correctly", async () => {
     let nb = [];
-    let out = await auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockToken, nb);
+    let out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenOwner, nb);
     expect(out.can_manage).toBe(true);
     expect(out.is_trusted).toBe(true);
 
-    await utils.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockTokenOther, nb), "not authorized to upload");
+    await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb), "not authorized to upload");
 
-    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockTokenAaron, nb);
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenAdmin, nb);
     expect(out.can_manage).toBe(true);
     expect(out.is_trusted).toBe(true);
 
     // Alright time to get wild.
-    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ArtifactDB-bot" ], "uploaders": [ { "id": "SomeoneElse" } ] }');
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude" } ] }');
     await auth.flushCachedPermissions("test", nb);
-    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockTokenOther, nb);
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb);
     expect(out.can_manage).toBe(false);
     expect(out.is_trusted).toBe(true);
 
-    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ArtifactDB-bot" ], "uploaders": [ { "id": "SomeoneElse", "asset": "foo" } ] }');
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "asset": "foo" } ] }');
     await auth.flushCachedPermissions("test", nb);
-    await utils.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockTokenOther, nb), "not authorized to upload");
-    out = await auth.checkProjectUploadPermissions("test", "foo", "v1", utils.mockTokenOther, nb);
+    await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb), "not authorized to upload");
+    out = await auth.checkProjectUploadPermissions("test", "foo", "v1", setup.mockTokenUser, nb);
     expect(out.can_manage).toBe(false);
     expect(out.is_trusted).toBe(true);
 
-    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ArtifactDB-bot" ], "uploaders": [ { "id": "SomeoneElse", "version": "foo" } ] }');
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "version": "foo" } ] }');
     await auth.flushCachedPermissions("test", nb);
-    await utils.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockTokenOther, nb), "not authorized to upload");
-    out = await auth.checkProjectUploadPermissions("test", "blob", "foo", utils.mockTokenOther, nb);
+    await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb), "not authorized to upload");
+    out = await auth.checkProjectUploadPermissions("test", "blob", "foo", setup.mockTokenUser, nb);
     expect(out.can_manage).toBe(false);
     expect(out.is_trusted).toBe(true);
 
-    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ArtifactDB-bot" ], "uploaders": [ { "id": "SomeoneElse", "until": "1989-11-09" } ] }');
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "until": "1989-11-09" } ] }');
     await auth.flushCachedPermissions("test", nb);
-    await utils.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockTokenOther, nb), "not authorized to upload");
+    await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb), "not authorized to upload");
 
-    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ArtifactDB-bot" ], "uploaders": [ { "id": "SomeoneElse", "until": "' + (new Date(Date.now() + 10000)).toISOString() + '" } ] }');
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "until": "' + (new Date(Date.now() + 10000)).toISOString() + '" } ] }');
     await auth.flushCachedPermissions("test", nb);
-    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockTokenOther, nb);
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb);
     expect(out.can_manage).toBe(false);
     expect(out.is_trusted).toBe(true);
 
-    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ArtifactDB-bot" ], "uploaders": [ { "id": "SomeoneElse", "trusted": false } ] }');
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "trusted": false } ] }');
     await auth.flushCachedPermissions("test", nb);
-    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockTokenOther, nb);
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb);
     expect(out.can_manage).toBe(false);
     expect(out.is_trusted).toBe(false);
 
-    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ArtifactDB-bot" ], "uploaders": [ { "id": "SomeoneElse", "trusted": true } ] }');
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "trusted": true } ] }');
     await auth.flushCachedPermissions("test", nb);
-    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockTokenOther, nb);
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb);
     expect(out.can_manage).toBe(false);
     expect(out.is_trusted).toBe(true);
 })

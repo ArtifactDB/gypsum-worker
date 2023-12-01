@@ -3,12 +3,11 @@ import * as perm from "../src/permissions.js";
 import * as s3 from "../src/s3.js";
 import * as gh from "../src/github.js";
 import * as setup from "./setup.js";
-import * as utils from "./utils.js";
 
 beforeAll(async () => {
     await setup.mockProject();
     let rigging = gh.enableTestRigging();
-    utils.mockGitHubIdentities(rigging);
+    setup.mockGitHubIdentities(rigging);
 })
 
 test("setPermissionsHandler works correctly", async () => {
@@ -22,7 +21,7 @@ test("setPermissionsHandler works correctly", async () => {
         req.query = {};
 
         let nb = [];
-        req.headers.set("Authorization", "Bearer " + utils.mockToken);
+        req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
         let res = await perm.setPermissionsHandler(req, nb);
         expect(res.status).toBe(200);
         expect(nb.length).toBeGreaterThan(0);
@@ -41,10 +40,10 @@ test("setPermissionsHandler breaks correctly if project doesn't exist", async ()
     let req = new Request("http://localhost");
     req.params = { project: "test-foo" };
     req.query = { "owners": [] };
-    req.headers.append("Authorization", "Bearer " + utils.mockToken);
+    req.headers.append("Authorization", "Bearer " + setup.mockTokenOwner);
 
     let nb = [];
-    await utils.expectError(perm.setPermissionsHandler(req, nb), "does not exist");
+    await setup.expectError(perm.setPermissionsHandler(req, nb), "does not exist");
 })
 
 test("setPermissionsHandler breaks correctly if the request body is invalid", async () => {
@@ -55,10 +54,10 @@ test("setPermissionsHandler breaks correctly if the request body is invalid", as
     });
     req.params = { project: "test" };
     req.query = {};
-    req.headers.append("Authorization", "Bearer " + utils.mockToken);
+    req.headers.append("Authorization", "Bearer " + setup.mockTokenOwner);
 
     let nb = [];
-    await utils.expectError(perm.setPermissionsHandler(req, nb), "'owners' to be an array");
+    await setup.expectError(perm.setPermissionsHandler(req, nb), "'owners' to be an array");
 });
 
 test("setPermissionsHandler fails correctly if user is not authorized", async () => {
@@ -71,18 +70,18 @@ test("setPermissionsHandler fails correctly if user is not authorized", async ()
     req.query = {};
 
     let nb = [];
-    await utils.expectError(perm.setPermissionsHandler(req, nb), "user identity");
+    await setup.expectError(perm.setPermissionsHandler(req, nb), "user identity");
 
     // Adding the wrong credentials.
-    req.headers.set("Authorization", "Bearer " + utils.mockTokenOther);
-    await utils.expectError(perm.setPermissionsHandler(req, nb), "does not own");
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenUser);
+    await setup.expectError(perm.setPermissionsHandler(req, nb), "does not own");
 
     // Fixing the credentials, so now it works...
-    req.headers.set("Authorization", "Bearer " + utils.mockToken);
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
     let res = await perm.setPermissionsHandler(req, nb); 
     expect(res.status).toBe(200);
 
     // but second request fais as ArtifactDB-bot is no longer authorized.
-    await utils.expectError(perm.setPermissionsHandler(req, nb), "does not own");
+    await setup.expectError(perm.setPermissionsHandler(req, nb), "does not own");
 })
 

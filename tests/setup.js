@@ -1,6 +1,40 @@
 import * as fs from "fs";
 import * as crypto from "crypto";
 
+export const mockTokenOwner = "gh_auth_mock_token_for_ProjectOwner";
+export const mockTokenUser = "gh_auth_mock_token_for_RandomDude";
+export const mockTokenAdmin = "gh_auth_mock_token_for_LTLA";
+
+export function mockGitHubIdentities(rigging) {
+    rigging.identifyUser[mockTokenOwner] = { login: "ProjectOwner" };
+    rigging.identifyUserOrgs[mockTokenOwner] = [ { login: "STUFF" } ];
+    rigging.identifyUser[mockTokenUser] = { login: "RandomDude" };
+    rigging.identifyUserOrgs[mockTokenUser] = [ { login: "FOO" }, { login: "BAR" } ];
+    rigging.identifyUser[mockTokenAdmin] = { login: "LTLA" };
+    rigging.identifyUserOrgs[mockTokenAdmin] = [];
+    return;
+}
+
+export const testauth = ("BOT_TEST_TOKEN" in process.env ? test : test.skip);
+
+export function fetchTestPAT() {
+    return process.env.BOT_TEST_TOKEN;
+}
+
+// Providing our own checks for errors, as sometimes toThrow doesn't work. It
+// seems like the mocked-up R2 bucket somehow gets reset by Jest, and any extra
+// files that were added will not show up in the test. So we force it to run in
+// the same thread and context by using a simple try/catch block.
+export async function expectError(promise, message) {
+    try {
+        await promise;
+        throw new Error("didn't throw");
+    } catch (e){
+        expect(e.message).toMatch(message);
+    }
+}
+
+
 export const S3Obj = {
     getSignedUrlPromise: async (operation, details) => {
         return "https://pretend-presigned-url/" + details.Key + "?expires_in=" + details.Expires;
@@ -54,7 +88,7 @@ export async function mockProjectRaw(project, asset, version) {
 
     let permpath = project + "/..permissions";
     if ((await BOUND_BUCKET.head(permpath)) == null) {
-        let perms = { owners: ["ArtifactDB-bot"], uploaders: [] };
+        let perms = { owners: ["ProjectOwner"], uploaders: [] };
         await BOUND_BUCKET.put(permpath, JSON.stringify(perms), jsonmeta);
     }
     return null;
