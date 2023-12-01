@@ -3,7 +3,8 @@ import { Router } from 'itty-router'
 import * as gh from "./github.js";
 import * as auth from "./auth.js";
 import * as upload from "./upload.js";
-import * as manage from "./manage.js";
+import * as create from "./create.js";
+import * as remove from "./remove.js";
 import * as probation from "./probation.js";
 import * as utils from "./utils.js";
 import * as s3 from "./s3.js";
@@ -57,35 +58,37 @@ function handleOptions(request) {
     }
 }
 
-/*** Setting up the routes ***/
+/*** Setting up admin routes ***/
 
-router.post("/project/:project/create", manage.createProjectHandler);
+router.post("/create/:project", create.createProjectHandler);
 
-router.delete("/project/:project/delete", manage.deleteProjectHandler);
+router.delete("/remove/:project", remove.removeProjectHandler);
 
-router.delete("/project/:project/asset/:asset/delete", manage.deleteProjectAssetHandler);
+router.delete("/remove/:project/:asset", remove.removeProjectAssetHandler);
 
-router.delete("/project/:project/asset/:asset/version/:version/delete", manage.deleteProjectAssetVersionHandler);
+router.delete("/remove/:project/:asset/:version", remove.removeProjectAssetVersionHandler);
 
-router.post("/project/:project/asset/:asset/version/:version/upload/start", upload.initializeUploadHandler);
+/*** Project upload ***/
 
-router.post("/project/:project/asset/:asset/version/:version/upload/presigned-file/:parameters", upload.uploadPresignedFileHandler);
+router.post("/upload/start/:project/:asset/:version", upload.initializeUploadHandler);
 
-router.put("/project/:project/asset/:asset/version/:version/upload/complete", upload.completeUploadHandler);
+router.post("/upload/presigned-file/:slug", upload.uploadPresignedFileHandler);
 
-router.put("/project/:project/asset/:asset/version/:version/upload/abort", upload.abortUploadHandler);
+router.put("/upload/complete/:project/:asset/:version", upload.completeUploadHandler);
 
-router.put("/project/:project/permissions", manage.setPermissionsHandler);
+router.put("/upload/abort/:project/:asset/:version", upload.abortUploadHandler);
 
-router.post("/project/:project/probation/request-token", probation.requestTokenHandler);
+/*** Permission handling ***/
 
-router.post("/project/:project/probation/approve", probation.approveProbationHandler);
+router.put("/permissions/:project", manage.setPermissionsHandler);
 
-router.post("/project/:project/probation/reject", probation.rejectProbationHandler);
+/*** Probation ***/
 
-/*** Non-standard endpoints, for testing and other things ***/
+router.post("/probation/request-token/:project", probation.requestTokenHandler);
 
-router.get("/custom/user", auth.findUserHandler);
+router.post("/probation/approve/:project", probation.approveProbationHandler);
+
+router.post("/probation/reject/:project", probation.rejectProbationHandler);
 
 /*** Setting up the listener ***/
 

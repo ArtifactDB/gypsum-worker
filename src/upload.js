@@ -264,10 +264,10 @@ export async function initializeUploadHandler(request, nonblockers) {
     // Creating the upload URLs; this could, in theory, switch logic depending on size.
     let upload_urls = [];
     for (const s of split.simple) {
-        let dump = btoa(JSON.stringify([s.path, s.md5sum]));
+        let dump = btoa(JSON.stringify([project, asset, version, s.path, s.md5sum]));
         upload_urls.push({ 
             path: s.path, 
-            url: "/project/" + project + "/asset/" + asset + "/version/" + version + "/upload/presigned-file/" + dump, 
+            url: "/upload/presigned-file/" + dump,
             method: "presigned" 
         });
     }
@@ -282,8 +282,8 @@ export async function initializeUploadHandler(request, nonblockers) {
 
     return utils.jsonResponse({ 
         upload_urls: upload_urls,
-        completion_url: "/project/" + project + "/asset/" + asset + "/version/" + version + "/upload/complete",
-        abort_url: "/project/" + project + "/asset/" + asset + "/version/" + version + "/upload/abort",
+        completion_url: "/upload/complete/" + project + "/" + asset + "/" + version,
+        abort_url: "/upload/abort/" + project + "/" + asset + "/" + version,
         session_key: session_key,
     }, 200);
 }
@@ -291,16 +291,12 @@ export async function initializeUploadHandler(request, nonblockers) {
 /**************** Per-file upload ***************/
 
 export async function uploadPresignedFileHandler(request, nonblockers) {
-    let project = decodeURIComponent(request.params.project);
-    let asset = decodeURIComponent(request.params.project);
-    let version = decodeURIComponent(request.params.version);
-    await lock.checkLock(project, asset, version, auth.extractBearerToken(request));
-
     try {
-        var [ path, md5sum ] = JSON.parse(atob(request.params.parameters));
+        var [ project, asset, version, path, md5sum ] = JSON.parse(atob(request.params.slug));
     } catch (e) {
-        throw new utils.HttpError("invalid parameters ('" + request.params.parameters + "') for the presigned URL endpoint; " + String(e), 400);
+        throw new utils.HttpError("invalid slug ('" + request.params.slug + "') for the presigned URL endpoint; " + String(e), 400);
     }
+    await lock.checkLock(project, asset, version, auth.extractBearerToken(request));
 
     // Convert hex to base64 to keep S3 happy.
     let hits = md5sum.match(/\w{2}/g);

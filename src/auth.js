@@ -73,12 +73,6 @@ export async function findUser(token, nonblockers) {
     return val;
 }
 
-export async function findUserHandler(request, nonblockers) {
-    let token = extractBearerToken(request);
-    let user = await findUser(token, nonblockers);
-    return utils.jsonResponse(user, 200);
-}
-
 /******************************************
  ******************************************/
 
