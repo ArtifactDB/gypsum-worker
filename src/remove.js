@@ -5,7 +5,9 @@ import * as s3 from "./s3.js";
 
 export async function removeProjectHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
+
     let token = auth.extractBearerToken(request);
+    let user = await auth.findUser(token, nonblockers);
     if (!auth.isOneOf(user, auth.getAdmins())) {
         throw new utils.HttpError("user does not have the right to delete", 403);
     }
@@ -19,7 +21,9 @@ export async function removeProjectHandler(request, nonblockers) {
 export async function removeProjectAssetHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
     let asset = decodeURIComponent(request.params.asset);
+
     let token = auth.extractBearerToken(request);
+    let user = await auth.findUser(token, nonblockers);
     if (!auth.isOneOf(user, auth.getAdmins())) {
         throw new utils.HttpError("user does not have the right to delete", 403);
     }
@@ -34,7 +38,9 @@ export async function removeProjectAssetVersionHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
     let asset = decodeURIComponent(request.params.asset);
     let version = decodeURIComponent(request.params.version);
+
     let token = auth.extractBearerToken(request);
+    let user = await auth.findUser(token, nonblockers);
     if (!auth.isOneOf(user, auth.getAdmins())) {
         throw new utils.HttpError("user does not have the right to delete", 403);
     }
@@ -48,19 +54,22 @@ export async function removeProjectAssetVersionHandler(request, nonblockers) {
     let bound_bucket = s3.getR2Binding();
     let lpath = pkeys.latestVersion(project, asset);
     let lres = await bound_bucket.get(lpath);
-    if (lres.version == version) {
-        let list_options = { prefix: project + "/" + asset + "/", delimiter: "/" };
+    let linfo = await lres.json();
+
+    if (linfo.version == version) {
+        let prefix = project + "/" + asset + "/";
+        let list_options = { prefix: prefix, delimiter: "/" };
         let truncated = true;
         let summaries = [];
         let versions = [];
 
         while (true) {
             let listing = await bound_bucket.list(list_options);
-            for (const f of listing.objects) {
-                if (!f.key.startsWith("..")) {
-                    let version = f.key.slice(0, f.key.length - 1);
-                    info.push(bound_bucket.get(pkeys.versionSummary(project, asset, version)));
-                    versions.push(version);
+            for (const f of listing.delimitedPrefixes) {
+                let basename = f.slice(prefix.length, f.length - 1); 
+                if (!basename.startsWith("..")) {
+                    summaries.push(bound_bucket.get(pkeys.versionSummary(project, asset, basename)));
+                    versions.push(basename);
                 }
             }
             truncated = listing.truncated;
@@ -71,25 +80,29 @@ export async function removeProjectAssetVersionHandler(request, nonblockers) {
             }
         }
 
-        let resolved = await Promise.all(info);
+        let resolved = await Promise.all(summaries);
         let best_version = null, best_time = null;
         for (var i = 0; i < resolved.length; i++) {
-            let current = Date.parse(resolved[i].upload_finished);
-            if (best_time == null || current > best_time) {
-                best_time = current;
-                best_version = versions[i];
+            let contents = await resolved[i].json();
+            if (!("on_probation" in contents) || !contents.on_probation) {
+                let current = Date.parse(contents.upload_finished);
+                if (best_time == null || current > best_time) {
+                    best_time = current;
+                    best_version = versions[i];
+                }
             }
         }
 
         if (best_version == null) {
-            // We just deleted the last version, so we'll just clear out everything related to this asset.
-            await utils.quickRecursiveDelete(project + "/" + asset + "/");
-        } else if ((await utils.quickUploadJson(lpath, { "version": best_version })) == null) {
-            throw new utils.HttpError("failed to update the latest version", 500);
+            // We just deleted the last (non-probational) version, so we'll
+            // just clear out the latest specifier.
+            await bound_bucket.delete(lpath);
+        } else {
+            if ((await utils.quickUploadJson(lpath, { "version": best_version })) == null) {
+                throw new utils.HttpError("failed to update the latest version", 500);
+            }
         }
     }
 
     return new Response(null, { status: 200 });
 }
-
-

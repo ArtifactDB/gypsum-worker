@@ -19,11 +19,7 @@ export const jsonmeta = {
     httpMetadata: { contentType: "application/json" }
 };
 
-export async function mockProject() {
-    let project = "test";
-    let asset = "donkeyet";
-    let version = "v1";
-
+export async function mockProjectRaw(project, asset, version) {
     let contents = "";
     for (var i = 1; i <= 100; i++) {
         contents += String(i) + "\n";
@@ -53,10 +49,17 @@ export async function mockProject() {
     );
     await BOUND_BUCKET.put(base + "/..manifest", JSON.stringify(manifest), jsonmeta);
 
-    let latest = { version: "v1" }
+    let latest = { version: version };
     await BOUND_BUCKET.put(project + "/" + asset + "/..latest", JSON.stringify(latest), jsonmeta);
 
-    let perms = { owners: ["ArtifactDB-bot"] };
-    await BOUND_BUCKET.put(project + "/..permissions", JSON.stringify(perms), jsonmeta);
+    let permpath = project + "/..permissions";
+    if ((await BOUND_BUCKET.head(permpath)) == null) {
+        let perms = { owners: ["ArtifactDB-bot"] };
+        await BOUND_BUCKET.put(permpath, JSON.stringify(perms), jsonmeta);
+    }
     return null;
+}
+
+export async function mockProject() {
+    return mockProjectRaw("test", "blob", "v1");
 }
