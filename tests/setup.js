@@ -91,7 +91,7 @@ export async function mockProjectRaw(project, asset, version) {
         let perms = { owners: ["ProjectOwner"], uploaders: [] };
         await BOUND_BUCKET.put(permpath, JSON.stringify(perms), jsonmeta);
     }
-    return null;
+    return files;
 }
 
 export async function mockProject() {

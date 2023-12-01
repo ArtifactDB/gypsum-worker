@@ -9,66 +9,66 @@ import * as s3 from "./s3.js";
 
 function splitByUploadType(files) {
     let simple = [];
-    let md5able = [];
+    let dedup = [];
     let linked = [];
 
     for (const f of files) {
         if (typeof f != "object") {
-            throw new utils.HttpError("each entry of 'files' should be an object", 400);
+            throw new utils.HttpError("'files' should be an array of objects", 400);
         }
 
         if (!("path" in f) || typeof f.path != "string") {
-            throw new utils.HttpError("'path' property in entries of 'files' should be a string", 400);
+            throw new utils.HttpError("'files.path' should be a string", 400);
         }
         let fname = f.path;
         if (fname.startsWith("..") || fname.includes("/..")) {
-            throw new utils.HttpError("'path' property in entries of 'files' cannot contain the reserved '..' pattern", 400);
+            throw new utils.HttpError("components of 'files.path' cannot start with '..'", 400);
         }
 
-        if (!("check" in f) || typeof f.check != "string") {
-            throw new utils.HttpError("'check' property in entries of 'files' should be a string", 400);
+        if (!("type" in f) || typeof f.type != "string") {
+            throw new utils.HttpError("'files.type' should be a string", 400);
         }
 
-        if (f.check === "simple" || f.check == "md5") {
+        if (f.type === "simple" || f.type == "dedup") {
             if (!("md5sum" in f) || typeof f.md5sum != "string") {
-                throw new utils.HttpError("'md5sum' property in entries of 'files' should be a string", 400);
+                throw new utils.HttpError("'files.md5sum' should be a string", 400);
             }
-            if (!("size" in f) || typeof f.size != "number" || f.size <= 0) {
-                throw new utils.HttpError("'size' property in entries of 'files' should be a positive integer", 400);
+            if (!("size" in f) || typeof f.size != "number" || f.size < 0 || !Number.isInteger(f.size)) {
+                throw new utils.HttpError("'files.size' should be a non-negative integer", 400);
             }
-            if (f.check === "simple") {
+            if (f.type === "simple") {
                 simple.push(f);
             } else {
-                md5able.push(f);
+                dedup.push(f);
             }
 
-        } else if (f.check == "link") {
-            if (!("target" in f) || !(f.target instanceof Object)) {
-                throw new utils.HttpError("'target' property in entries of 'files' should be an object", 400);
+        } else if (f.type == "link") {
+            if (!("link" in f) || !(f.link instanceof Object)) {
+                throw new utils.HttpError("'files.link' should be an object", 400);
             }
-            let target = f.target;
+            let target = f.link;
             if (!("project" in target) || typeof target.project != "string") {
-                throw new utils.HttpError("'target.project' property in entries of 'files' should be a string", 400);
+                throw new utils.HttpError("'files.link.project' should be a string", 400);
             }
             if (!("asset" in target) || typeof target.asset != "string") {
-                throw new utils.HttpError("'target.asset' property in entries of 'files' should be a string", 400);
+                throw new utils.HttpError("'files.link.asset' should be a string", 400);
             }
             if (!("version" in target) || typeof target.version != "string") {
-                throw new utils.HttpError("'target.version' property in entries of 'files' should be a string", 400);
+                throw new utils.HttpError("'files.link.version' should be a string", 400);
             }
             if (!("path" in target) || typeof target.path != "string") {
-                throw new utils.HttpError("'target.path' property in entries of 'files' should be a string", 400);
+                throw new utils.HttpError("'files.link.path' should be a string", 400);
             }
             linked.push(f);
 
         } else {
-            throw new utils.HttpError("invalid 'check' in the entries of 'files'", 400);
+            throw new utils.HttpError("invalid 'files.type'", 400);
         }
     }
 
     return { 
         simple: simple, 
-        md5: md5able, 
+        dedup: dedup, 
         link: linked 
     };
 }
@@ -79,20 +79,24 @@ async function getVersionManifest(project, asset, version, bound_bucket, manifes
         return manifest_cache[key];
     }
 
-    let raw_manifest = await bound_bucket.get(pkeys.versionManifest(project, asset, lres));
-    let manifest = JSON.parse(raw_manifest);
+    let raw_manifest = await bound_bucket.get(pkeys.versionManifest(project, asset, version));
+    if (raw_manifest == null) {
+        throw new utils.HttpError("no manifest available for link target inside '" + key + "'", 400);
+    }
+
+    let manifest = await raw_manifest.json();
     manifest_cache[key] = manifest;
     return manifest;
 }
 
-async function attemptMd5Deduplication(simple, md5able, linked, project, asset, bound_bucket, manifest_cache) {
+async function attemptMd5Deduplication(simple, dedup, linked, project, asset, bound_bucket, manifest_cache) {
     let lres = await bound_bucket.get(pkeys.latestVersion(project, asset));
     if (lres == null) {
-        for (const f of md5able) {
+        for (const f of dedup) {
             simple.push(f);
         }
     } else {
-        let last = JSON.parse(lres).version;
+        let last = (await lres.json()).version;
         let manifest = await getVersionManifest(project, asset, last, bound_bucket, manifest_cache);
 
         let by_sum_and_size = {};
@@ -102,12 +106,12 @@ async function attemptMd5Deduplication(simple, md5able, linked, project, asset, 
         }
 
         let promises = [];
-        for (const f of md5able) {
+        for (const f of dedup) {
             let key = f.md5sum + "_" + String(f.size);
             if (key in by_sum_and_size) {
-                linked.append({ 
+                linked.push({ 
                     path: f.path, 
-                    target: { 
+                    link: { 
                         project: project, 
                         asset: asset, 
                         version: last,
@@ -126,24 +130,24 @@ async function checkLinks(linked, project, asset, version, bound_bucket, manifes
     let all_targets = [];
 
     for (const f of linked) {
-        let key = f.target.project + "/" + f.target.asset + "/" + f.target.version;
+        let key = f.link.project + "/" + f.link.asset + "/" + f.link.version;
         if (!(key in all_manifests)) {
-            all_manifests[key] = getVersionManifest(project, asset, version, bound_bucket, manifest_cache);
+            all_manifests[key] = getVersionManifest(f.link.project, f.link.asset, f.link.version, bound_bucket, manifest_cache);
             all_targets[key] = [];
         }
-        all_targets[key].push({ from: f.path, to: f.target });
+        all_targets[key].push({ from: f.path, to: f.link });
     }
 
     let resolved_manifests = await utils.namedResolve(all_manifests);
     let linked_details = [];
     for (const [k, v] of Object.entries(all_targets)) {
-        let target_manifest = resolved_manifest[k];
+        let target_manifest = resolved_manifests[k];
         for (const { from, to } of v) {
             if (!(to.path in target_manifest)) {
                 throw new utils.HttpError("failed to link from '" + from + "' to '" + k + "/" + to.path + "'", 400);
             }
             let details = target_manifest[to.path];
-            linked_details.push({ path: from, size: details.size, md5sum: details.md5sum, target: to });
+            linked_details.push({ path: from, size: details.size, md5sum: details.md5sum, link: to });
         }
     }
 
@@ -170,87 +174,108 @@ export async function initializeUploadHandler(request, nonblockers) {
 
     let body = await utils.bodyToJson(request);
     if (!(body instanceof Object)) {
-        throw new utils.HttpError("expected request body to be a JSON object");
+        throw new utils.HttpError("expected request body to be a JSON object", 400);
     }
     let probation = false;
-    if ("on_probation" in body && body.on_probation) {
-        probation = true;
+    if ("on_probation" in body) {
+        if (typeof body.on_probation != "boolean") {
+            throw new utils.HttpError("expected the 'on_probation' property to be a boolean", 400);
+        }
+        probation = body.on_probation;
     }
 
     let token = auth.extractBearerToken(request);
-    let { status, user } = await checkProjectUploadPermissions(project, asset, version, token, nonblockers);
+    let { can_manage, is_trusted, user } = await auth.checkProjectUploadPermissions(project, asset, version, token, nonblockers);
     let uploading_user = user.login;
-    if (status == "untrusted") {
+    if (!is_trusted) {
         probation = true;
-    }
-
-    let bound_bucket = s3.getR2Binding();
-    let preparation = [];
-    {
-        let sumpath = pkeys.versionSummary(project, assset, version);
-        let ver_meta = await bound_bucket.head(sumpath);
-        if (ver_meta != null) {
-            throw new utils.HttpError("version '" + version + "' already exists for asset '" + asset + "' in project '" + project + "'", 400);
-        }
-        preparation.push(utils.quickUploadJson(sumpath, { 
-            "upload_user_id": uploading_user, 
-            "upload_started": (new Date).toISOString(), 
-            "on_probation": probation
-        }));
     }
 
     let session_key = crypto.randomUUID();
     await lock.lockProject(project, asset, version, session_key);
 
-    // Now scanning through the files.
-    if (!("files" in body) || !(body.files instanceof Array)) {
-        throw new utils.HttpError("expected 'files' to be an array");
-    }
-    let split = splitByUploadType(body.files);
+    let bound_bucket = s3.getR2Binding();
+    let preparation = [];
+    let output;
 
-    let manifest_cache = {};
-    if (split.md5.length) {
-        await attemptMd5Deduplication(split.md5, split.simple, split.linked, project, asset, bound_bucket, manifest_cache);
-    }
-    let link_details = await checkLinks(split.linked, project, asset, version, bound_bucket, manifest_cache);
-
-    // Build a manifest for inspection.
-    let manifest = {};
-    for (const s of split.simple) {
-        manifest[s.path] = { size: s.size, md5sum: s.md5sum };
-    }
-    for (const l of link_details) {
-        manifest[l.path] = { size: l.size, md5sum: l.md5sum, link: l.target };
-    }
-    preparation.push(utils.quickUploadJson(pkeys.versionManifest(project, asset, version), manifest));
-
-    // Create link structures within each subdirectory for bulk consumers.
-    let linkable = {};
-    for (const l of split.linked) {
-        let i = l.path.lastIndexOf("/");
-        let hostdir = "";
-        if (i >= 0) {
-            hostdir = l.path.slice(0, i + 1); // include the trailing slash, see below.
+    try {
+        let sumpath = pkeys.versionSummary(project, asset, version);
+        let ver_meta = await bound_bucket.head(sumpath);
+        if (ver_meta != null) {
+            throw new utils.HttpError("project-asset-version already exists", 400);
         }
-        if (!(hostdir in linkable)) {
-            linkable[hostdir] = {};
-        }
-        linkable[hostdir][l.path.slice(i)] = l.target;
-    }
-    for (const [k, v] of Object.entries(linkable)) {
-        // Either 'k' already has a trailing slash or is an empty string, so we can just add it to the file name.
-        preparation.push(utils.quickUploadJson(project + "/" + asset + "/" + version + "/" + k + "..links", v));
-    }
+        preparation.push(utils.quickUploadJson(sumpath, { 
+            "upload_user_id": uploading_user, 
+            "upload_start": (new Date).toISOString(), 
+            "on_probation": probation
+        }));
 
-    // Creating the upload URLs; this could, in theory, switch logic depending on size.
-    let upload_urls = [];
-    for (const s of split.simple) {
-        let dump = btoa(JSON.stringify([project, asset, version, s.path, s.md5sum]));
-        upload_urls.push({ 
-            path: s.path, 
-            url: "/upload/presigned-file/" + dump,
-            method: "presigned" 
-        });
+        // Now scanning through the files.
+        if (!("files" in body) || !(body.files instanceof Array)) {
+            throw new utils.HttpError("expected the 'files' property to be an array", 400);
+        }
+        let split = splitByUploadType(body.files);
+
+        let manifest_cache = {};
+        if (split.dedup.length) {
+            await attemptMd5Deduplication(split.simple, split.dedup, split.link, project, asset, bound_bucket, manifest_cache);
+        }
+        let link_details = await checkLinks(split.link, project, asset, version, bound_bucket, manifest_cache);
+
+        // Build a manifest for inspection.
+        let manifest = {};
+        for (const s of split.simple) {
+            manifest[s.path] = { size: s.size, md5sum: s.md5sum };
+        }
+        for (const l of link_details) {
+            manifest[l.path] = { size: l.size, md5sum: l.md5sum, link: l.link };
+        }
+        preparation.push(utils.quickUploadJson(pkeys.versionManifest(project, asset, version), manifest));
+
+//        // Create link structures within each subdirectory for bulk consumers.
+//        let linkable = {};
+//        for (const l of split.link) {
+//            let i = l.path.lastIndexOf("/");
+//            let hostdir = "";
+//            if (i >= 0) {
+//                hostdir = l.path.slice(0, i + 1); // include the trailing slash, see below.
+//            }
+//            if (!(hostdir in linkable)) {
+//                linkable[hostdir] = {};
+//            }
+//            linkable[hostdir][l.path.slice(i)] = l.link;
+//        }
+//        for (const [k, v] of Object.entries(linkable)) {
+//            // Either 'k' already has a trailing slash or is an empty string, so we can just add it to the file name.
+//            preparation.push(utils.quickUploadJson(project + "/" + asset + "/" + version + "/" + k + "..links", v));
+//        }
+
+        // Creating the upload URLs; this could, in theory, switch logic depending on size.
+        let upload_urls = [];
+        for (const s of split.simple) {
+            let dump = btoa(JSON.stringify([project, asset, version, s.path, s.md5sum]));
+            upload_urls.push({ 
+                path: s.path, 
+                url: "/upload/presigned-file/" + dump,
+                method: "presigned" 
+            });
+        }
+
+        output = utils.jsonResponse({ 
+            upload_urls: upload_urls,
+            completion_url: "/upload/complete/" + project + "/" + asset + "/" + version,
+            abort_url: "/upload/abort/" + project + "/" + asset + "/" + version,
+            session_key: session_key,
+        }, 200);
+
+    } catch (e) {
+        // Wait for everything to finish so that deletion catches everything.
+        await Promise.all(preparation);
+
+        // Unlocking the project if the upload init failed, then users can try again without penalty.
+        await utils.quickRecursiveDelete(project + "/" + asset + "/" + version + "/");
+        await lock.unlockProject(project, asset, version);
+        throw e;
     }
 
     // Checking that everything was uploaded correctly.
@@ -261,12 +286,7 @@ export async function initializeUploadHandler(request, nonblockers) {
         }
     }
 
-    return utils.jsonResponse({ 
-        upload_urls: upload_urls,
-        completion_url: "/upload/complete/" + project + "/" + asset + "/" + version,
-        abort_url: "/upload/abort/" + project + "/" + asset + "/" + version,
-        session_key: session_key,
-    }, 200);
+    return output;
 }
 
 /**************** Per-file upload ***************/
@@ -309,7 +329,7 @@ export async function completeUploadHandler(request, nonblockers) {
 
     let sumpath = pkeys.versionSummary(project, asset, version);
     let raw_info = await bound_bucket.get(sumpath);
-    let info = JSON.parse(raw_info);
+    let info = await raw_info.json();
 
     let bound_bucket = s3.getR2Binding();
     let latest_update = true;
@@ -318,7 +338,7 @@ export async function completeUploadHandler(request, nonblockers) {
         delete info.on_probation; 
     }
 
-    info.upload_finished = (new Date).toISOString();
+    info.upload_finish = (new Date).toISOString();
     let summary_update = utils.quickUploadJson(sumpath, info);
 
     // Await these so that we can handle the prior async'ness concurrently.
@@ -330,7 +350,7 @@ export async function completeUploadHandler(request, nonblockers) {
     }
 
     // Release lock once we're clear.
-    await bound_bucket.delete(pkeys.lock(project, asset));
+    await lck.unlockProject(project, asset);
     return new Response(null, { status: 200 });
 }
 
@@ -347,6 +367,6 @@ export async function abortUploadHandler(request, nonblockers) {
     await utils.quickRecursiveDelete(project + "/" + asset + "/" + version + "/");
 
     // Release lock once we're clear.
-    await bound_bucket.delete(pkeys.lock(project, asset));
+    await lock.unlockProject(project, asset);
     return new Response(null, { status: 200 });
 }
