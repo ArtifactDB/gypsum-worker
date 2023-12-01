@@ -56,7 +56,7 @@ export async function mockProject() {
     let latest = { version: "v1" }
     await BOUND_BUCKET.put(project + "/" + asset + "/..latest", JSON.stringify(latest), jsonmeta);
 
-    let perms = ["ArtifactDB-bot"];
+    let perms = { owners: ["ArtifactDB-bot"] };
     await BOUND_BUCKET.put(project + "/..permissions", JSON.stringify(perms), jsonmeta);
     return null;
 }

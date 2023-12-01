@@ -51,8 +51,53 @@ test("findUserHandler works correctly", async () => {
     }
 })
 
+test("getPermissions works correctly", async () => {
+    let nb = [];
+    let out = await auth.getPermissions("test", nb);
+    expect(out.owners).toEqual(["ArtifactDB-bot"]);
+    expect(nb.length).toBeGreaterThan(0);
+
+    // Fails correctly.
+    await utils.expectError(auth.getPermissions("nonexistent", nb), "no existing permissions");
+
+    // Fetches from cache.
+    let nb2 = [];
+    let out2 = await auth.getPermissions("test", nb2);
+    expect(out2.owners).toEqual(["ArtifactDB-bot"]);
+    expect(nb2.length).toBe(0);
+})
+
+test("isOneOf works correctly", () => {
+    expect(auth.isOneOf({login:"luna", organizations:["foo", "bar"]}, ["akari", "luna", "kaori"])).toBe(true)
+    expect(auth.isOneOf({login:"luna", organizations:["foo", "bar"]}, ["akari", "kaori"])).toBe(false)
+    expect(auth.isOneOf({login:"luna", organizations:["foo", "bar"]}, ["akari", "foo", "kaori"])).toBe(true)
+})
+
+test("setting admins works correctly", () => {
+    let old = auth.getAdmins();
+    try {
+        auth.setAdmins(["a", "b", "c"]);
+        expect(auth.getAdmins()).toEqual(["a", "b", "c"]);
+    } finally {
+        auth.setAdmins(old);
+    }
+})
+
 test("validatePermissions works correctly", () => {
     expect(auth.validatePermissions({ owners: ["b"] })).toBeUndefined();
     expect(() => auth.validatePermissions({ owners: "b" })).toThrow("to be an array");
     expect(() => auth.validatePermissions({ owners: [1,2,3] })).toThrow("array of strings");
+})
+
+test("checkProjectManagementPermissions works correctly", async () => {
+    let nb = [];
+    await auth.checkProjectManagementPermissions("test", utils.mockToken, nb);
+    await utils.expectError(auth.checkProjectManagementPermissions("test", utils.mockTokenOther, nb), "not an owner");
+
+    try {
+        auth.setAdmins(["SomeoneElse"]);
+        await auth.checkProjectManagementPermissions("test", utils.mockTokenOther, nb);
+    } finally {
+        auth.setAdmins([]);
+    }
 })

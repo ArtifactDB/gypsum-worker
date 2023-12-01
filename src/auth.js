@@ -104,7 +104,7 @@ export async function getPermissions(project, nonblockers) {
     let path = pkeys.permissions(project);
     let res = await bound_bucket.get(path);
     if (res == null) {
-        return null;
+        throw new utils.HttpError("no existing permissions for project '" + project + "'", 400);
     }
 
     let data = await res.text();
