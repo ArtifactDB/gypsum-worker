@@ -212,12 +212,7 @@ export async function initializeUploadHandler(request, nonblockers) {
     await lock.lockProject(project, asset, version, session_key);
 
     // Now scanning through the files.
-    let body;
-    try {
-        body = await request.json();
-    } catch (e) {
-        throw new utils.HttpError("failed to parse JSON body; " + String(err), 400);
-    }
+    let body = await utils.bodyToJson(request);
     if (!(body instanceof Object)) {
         throw new utils.HttpError("expected request body to be a JSON object");
     }

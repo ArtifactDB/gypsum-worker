@@ -14,12 +14,7 @@ export async function requestTokenHandler(request, nonblockers) {
     let token = auth.extractBearerToken(request);
     await auth.checkProjectManagementPermissions(project, token, nonblockers);
 
-    let body;
-    try {
-        body = await request.json();
-    } catch (e) {
-        throw new utils.HttpError("failed to parse JSON body; " + String(err), 400);
-    }
+    let body = await utils.bodyToJson(request);
     if (!(body instanceof Object)) {
         throw new utils.HttpError("expected request body to be a JSON object");
     }

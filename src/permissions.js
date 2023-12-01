@@ -25,12 +25,7 @@ export async function setPermissionsHandler(request, nonblockers) {
     }
 
     // Checking validity of request body. 
-    let new_perms;
-    try {
-        new_perms = await request.json();
-    } catch (e) {
-        throw new utils.HttpError("failed to parse JSON body; " + String(err), 400);
-    }
+    let new_perms = await utils.bodyToJson(request);
     auth.validatePermissions(new_perms);
 
     // Updating everything on top of the existing permissions.
