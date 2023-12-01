@@ -34,7 +34,7 @@ export async function approveProbationHandler(request, nonblockers) {
             throw new utils.HttpError("failed to update version summary", 500);
         }
     } finally {
-        await lck.unlockProject(project, asset);
+        await lock.unlockProject(project, asset);
     }
 
     return new Response(null, { status: 200 });
@@ -70,7 +70,7 @@ export async function rejectProbationHandler(request, nonblockers) {
 
         await utils.quickRecursiveDelete(project + "/" + asset + "/" + version + "/");
     } finally {
-        await lck.unlockProject(project, asset);
+        await lock.unlockProject(project, asset);
     }
 
     return new Response(null, { status: 200 });
