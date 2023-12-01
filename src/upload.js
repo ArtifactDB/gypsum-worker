@@ -232,24 +232,6 @@ export async function initializeUploadHandler(request, nonblockers) {
         }
         preparation.push(utils.quickUploadJson(pkeys.versionManifest(project, asset, version), manifest));
 
-//        // Create link structures within each subdirectory for bulk consumers.
-//        let linkable = {};
-//        for (const l of split.link) {
-//            let i = l.path.lastIndexOf("/");
-//            let hostdir = "";
-//            if (i >= 0) {
-//                hostdir = l.path.slice(0, i + 1); // include the trailing slash, see below.
-//            }
-//            if (!(hostdir in linkable)) {
-//                linkable[hostdir] = {};
-//            }
-//            linkable[hostdir][l.path.slice(i)] = l.link;
-//        }
-//        for (const [k, v] of Object.entries(linkable)) {
-//            // Either 'k' already has a trailing slash or is an empty string, so we can just add it to the file name.
-//            preparation.push(utils.quickUploadJson(project + "/" + asset + "/" + version + "/" + k + "..links", v));
-//        }
-
         // Creating the upload URLs; this could, in theory, switch logic depending on size.
         let upload_urls = [];
         for (const s of split.simple) {
@@ -327,30 +309,76 @@ export async function completeUploadHandler(request, nonblockers) {
     let version = decodeURIComponent(request.params.version);
     await lock.checkLock(project, asset, version, auth.extractBearerToken(request));
 
+    let list_promise = new Promise(resolve => {
+        let all_files = new Set;
+        utils.listApply(project + "/" + asset + "/" + version + "/", f => {
+            if (!f.key.startsWith("..")){
+                all_files.add(f.key);
+            }
+        }).then(x => resolve(all_files));
+    });
+
     let sumpath = pkeys.versionSummary(project, asset, version);
-    let raw_info = await bound_bucket.get(sumpath);
-    let info = await raw_info.json();
+    let assets = await utils.namedResolve({
+        manifest: bound_bucket.get(pkeys.versionManifest(project, asset, version)).then(x => x.json()),
+        summary: bound_bucket.get(sumpath).then(x => x.json()),
+        listing: list_promise,
+    });
 
+    // We scan the manifest to check that all files were uploaded. We also
+    // collect links for some more work later.
+    let manifest = await assets.manifest;
+    let linkable = {};
+    for (const [k, v] of Object.entries(manifest)) {
+        if ("link" in v) {
+            if (assets.listing.has(k)) {
+                throw new utils.HttpError("linked-from path '" + k + "' in manifest should not have a file", 500);
+            }
+            let i = k.lastIndexOf("/");
+            let hostdir = "";
+            if (i >= 0) {
+                hostdir = k.slice(0, i + 1); // include the trailing slash, see below.
+            }
+            if (!(hostdir in linkable)) {
+                linkable[hostdir] = {};
+            }
+            linkable[hostdir][k.slice(i)] = v.link;
+        } else {
+            if (!assets.listing.has(k)) {
+                throw new utils.HttpError("path '" + k + "' in manifest should have a file", 400);
+            }
+        }
+    }
+
+    let info = await assets.summary;
     let bound_bucket = s3.getR2Binding();
-    let latest_update = true;
-    if (!info.on_probation) {
-        latest_update = utils.quickUploadJson(pkeys.latestVersion(project, asset), { "version": version });
-        delete info.on_probation; 
-    }
+    let preparation = [];
+    try {
+        // Create link structures within each subdirectory for bulk consumers.
+        for (const [k, v] of Object.entries(linkable)) {
+            // Either 'k' already has a trailing slash or is an empty string, so we can just add it to the file name.
+            preparation.push(utils.quickUploadJson(project + "/" + asset + "/" + version + "/" + k + "..links", v));
+        }
 
-    info.upload_finish = (new Date).toISOString();
-    let summary_update = utils.quickUploadJson(sumpath, info);
+        if (!info.on_probation) {
+            preparation.push(utils.quickUploadJson(pkeys.latestVersion(project, asset), { "version": version }));
+            delete info.on_probation; 
+        }
 
-    // Await these so that we can handle the prior async'ness concurrently.
-    if ((await summary_update) == null) {
-        throw new utils.HttpError("failed to update version summary", 500);
-    }
-    if ((await latest_update) === null) {
-        throw new utils.HttpError("failed to update latest version of project's assets", 500);
+        info.upload_finish = (new Date).toISOString();
+        preparation.push(utils.quickUploadJson(sumpath, info));
+    } finally {
+        // Checking that everything was uploaded correctly.
+        let resolved = await Promise.all(preparation);
+        for (const r of resolved) {
+            if (r == null) {
+                throw new utils.HttpError("failed to upload manifest and/or link files to the bucket", 500);
+            }
+        }
     }
 
     // Release lock once we're clear.
-    await lck.unlockProject(project, asset);
+    await lock.unlockProject(project, asset);
     return new Response(null, { status: 200 });
 }
 
