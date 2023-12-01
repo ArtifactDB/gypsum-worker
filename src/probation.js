@@ -1,5 +1,8 @@
 import * as utils from "./utils.js";
 import * as auth from "./auth.js";
+import * as s3 from "./s3.js";
+import * as pkeys from "./internal.js";
+import * as lock from "./lock.js";
 
 export async function approveProbationHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
@@ -20,7 +23,7 @@ export async function approveProbationHandler(request, nonblockers) {
             throw new utils.HttpError("probational version does not exist", 400);
         }
 
-        let info = JSON.parse(raw_info);
+        let info = await raw_info.json();
         if (!("on_probation" in info) || !info.on_probation) {
             throw new utils.HttpError("cannot approve probation for non-probational version", 400);
         }
@@ -43,7 +46,7 @@ export async function rejectProbationHandler(request, nonblockers) {
     let version = decodeURIComponent(request.params.version);
 
     let token = auth.extractBearerToken(request);
-    let { status, user } = await auth.checkProjectUploadPermissions(project, asset, version, token, nonblockers);
+    let { can_manage, is_trusted, user } = await auth.checkProjectUploadPermissions(project, asset, version, token, nonblockers);
 
     let bound_bucket = s3.getR2Binding();
     let session_key = crypto.randomUUID();
@@ -56,12 +59,12 @@ export async function rejectProbationHandler(request, nonblockers) {
             throw new utils.HttpError("probational version does not exist", 400);
         }
 
-        let info = JSON.parse(raw_info);
+        let info = await raw_info.json();
         if (!("on_probation" in info) || !info.on_probation) {
             throw new utils.HttpError("cannot reject probation for non-probational version", 400);
         }
 
-        if (status !== "owner" && user.login !== info.upload_user_id) {
+        if (!can_manage && user.login !== info.upload_user_id) {
             throw new utils.HttpError("cannot reject probation for different user", 400);
         }
 
