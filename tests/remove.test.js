@@ -9,6 +9,10 @@ beforeAll(async () => {
     setup.mockGitHubIdentities(rigging);
 })
 
+afterAll(() => {
+    gh.enableTestRigging(false);
+})
+
 test("removeProjectHandler works correctly", async () => {
     await setup.mockProject();
     await setup.mockProjectRaw("testicle", "blob", "v1");

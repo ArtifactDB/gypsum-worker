@@ -10,6 +10,10 @@ beforeAll(async () => {
     setup.mockGitHubIdentities(rigging);
 })
 
+afterAll(() => {
+    gh.enableTestRigging(false);
+})
+
 test("createHandler works correctly", async () => {
     {
         let req = new Request("http://localhost", {
