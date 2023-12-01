@@ -16,4 +16,7 @@ test("project locking works as expected", async () => {
 
     expect(await lock.isLocked("test-lock-test", "locker")).toBe(true);
     expect(await lock.isLocked("test-lock-test", "other")).toBe(false);
+
+    await lock.unlockProject("test-lock-test", "locker");
+    expect(await lock.isLocked("test-lock-test", "locker")).toBe(false);
 })

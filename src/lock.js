@@ -15,6 +15,12 @@ export async function lockProject(project, asset, version, user_name) {
     return;
 }
 
+export async function unlockProject(project, asset, version) {
+    let bound_bucket = s3.getR2Binding();
+    let lck = pkeys.lock(project, asset);
+    await bound_bucket.delete(lck);
+}
+
 export async function checkLock(project, asset, version, user_name) {
     let bound_bucket = s3.getR2Binding();
     let lck = pkeys.lock(project, asset);
