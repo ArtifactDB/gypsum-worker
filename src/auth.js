@@ -3,16 +3,6 @@ import * as gh from "./github.js";
 import * as pkeys from "./internal.js";
 import * as s3 from "./s3.js";
 
-var encrypt_key = null;
-
-export function getGlobalEncryptKey() {
-    return encrypt_key;
-}
-
-export function setGlobalEncryptKey(x) {
-    encrypt_key = x;
-}
-
 /******************************************
  ******************************************/
 
@@ -152,17 +142,69 @@ export function getAdmins() {
 /******************************************
  ******************************************/
 
-export function validatePermissions(body) {
+export function validatePermissions(body, required) {
     if (!(body instanceof Object)) {
         throw new utils.HttpError("expected permissions to be a JSON object", 400);
     }
-    if (!("owners" in body) || !(body.owners instanceof Array)) {
-        throw new utils.HttpError("expected 'owners' to be an array", 400);
-    }
-    for (const j of body.owners) {
-        if (typeof j != "string") {
-            throw new utils.HttpError("expected 'owners' to be an array of strings", 400);
+
+    if ("owners" in body) {
+        let owners = body.owners;
+        if (!(owners instanceof Array)) {
+            throw new utils.HttpError("expected 'owners' to be an array", 400);
         }
+        for (const j of owners) {
+            if (typeof j != "string") {
+                throw new utils.HttpError("expected 'owners' to be an array of strings", 400);
+            }
+        }
+    } else if (required) {
+        throw new utils.HttpError("expected an 'owners' property to be present", 400);
+    }
+
+    if ("uploaders" in body) {
+        let uploaders = body.uploaders;
+        if (!(uploaders instanceof Array)) {
+            throw new utils.HttpError("expected 'uploaders' to be an array", 400);
+        }
+        for (const entry of uploaders) {
+            if (!(entry instanceof Object)) {
+                throw new utils.HttpError("expected 'uploaders' to be an array of objects", 400);
+            }
+
+            if (!("id" in entry) || typeof entry.id != "string") {
+                throw new utils.HttpError("expected 'uploaders.id' property to be a string", 400);
+            }
+
+            if ("until" in entry) {
+                if (typeof entry.until != "string") {
+                    throw new utils.HttpError("expected 'uploaders.until' property to be a date-formatted string", 400);
+                }
+                let parsed = Date.parse(entry.until);
+                if (Number.isNaN(parsed)) {
+                    throw new utils.HttpError("expected 'uploaders.until' property to be a date-formatted string", 400);
+                }
+            }
+
+            if ("trusted" in entry) {
+                if (typeof entry.trusted != "boolean") {
+                    throw new utils.HttpError("expected 'uploaders.trusted' property to be a boolean", 400);
+                }
+            }
+
+            if ("asset" in entry) {
+                if (typeof entry.asset != "string") {
+                    throw new utils.HttpError("expected 'asset' property to be a string");
+                }
+            }
+
+            if ("version" in entry) {
+                if (typeof entry.version != "string") {
+                    throw new utils.HttpError("expected 'version' property to be a string");
+                }
+            }
+        }
+    } else if (required) {
+        throw new utils.HttpError("expected an 'uploaders' property to be present", 400);
     }
 }
 
@@ -177,4 +219,39 @@ export async function checkProjectManagementPermissions(project, token, nonblock
         throw new utils.HttpError("user is not an owner of project '" + project + "'", 403);
     }
     return user;
+}
+
+export async function checkProjectUploadPermissions(project, asset, version, token, nonblockers) {
+    let resolved = await utils.namedResolve({
+        user: findUser(token, nonblockers),
+        permissions: getPermissions(project, nonblockers),
+    });
+
+    let user = resolved.user;
+    let perms = resolved.permissions;
+    if (isOneOf(user, perms.owners) || isOneOf(user, getAdmins())) {
+        return { can_manage: true, is_trusted: true, user: user };
+    }
+
+    let user_orgs = new Set(user.organizations);
+    for (const uploader of perms.uploaders) {
+        if (uploader.id == user.login || user_orgs.has(uploader.id)) {
+            if ("asset" in uploader && uploader.asset != asset) {
+                break;
+            }
+            if ("version" in uploader && uploader.version != version) {
+                break;
+            }
+            if ("until" in uploader && Date.parse(uploader.until) < Date.now()) {
+                break;
+            }
+            let is_trusted = true;
+            if ("trusted" in uploader && !uploader.trusted) {
+                is_trusted = false;
+            }
+            return { can_manage: false, is_trusted: is_trusted, user: user };
+        }
+    }
+
+    throw new utils.HttpError("user is not authorized to upload", 403);
 }

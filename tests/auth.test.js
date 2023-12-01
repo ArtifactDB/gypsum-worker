@@ -90,20 +90,94 @@ test("setting admins works correctly", () => {
 })
 
 test("validatePermissions works correctly", () => {
-    expect(auth.validatePermissions({ owners: ["b"] })).toBeUndefined();
-    expect(() => auth.validatePermissions({ owners: "b" })).toThrow("to be an array");
-    expect(() => auth.validatePermissions({ owners: [1,2,3] })).toThrow("array of strings");
+    expect(auth.validatePermissions({ owners: ["b"], uploaders: [] }, true)).toBeUndefined();
+    expect(auth.validatePermissions({}, false)).toBeUndefined();
+
+    expect(() => auth.validatePermissions({}, true)).toThrow("'owners' property to be present");
+    expect(() => auth.validatePermissions({ owners: "b", uploaders: [] }, true)).toThrow("to be an array");
+    expect(() => auth.validatePermissions({ owners: [1,2,3], uploaders: [] }, true)).toThrow("array of strings");
+
+    expect(() => auth.validatePermissions({ owners: [] }, true)).toThrow("'uploaders' property to be present");
+    expect(() => auth.validatePermissions({ owners: [], uploaders: "asdad"}, true)).toThrow("to be an array");
+    expect(() => auth.validatePermissions({ owners: [], uploaders: ["asdsad"]}, true)).toThrow("array of objects");
+
+    expect(() => auth.validatePermissions({ owners: [], uploaders: [{}]}, true)).toThrow("uploaders.id");
+    expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:2}]}, true)).toThrow("uploaders.id");
+    expect(auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd"}]}, true)).toBeUndefined();
+
+    expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", until: 5}]}, true)).toThrow("to be a date-formatted string");
+    expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", until: "asdad"}]}, true)).toThrow("to be a date-formatted string");
+    expect(auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", until: "2019-12-22"}]}, true)).toBeUndefined();
+
+    expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", trusted: 1}]}, true)).toThrow("to be a boolean");
+    expect(auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", trusted: false}]}, true)).toBeUndefined();
+
+    expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", asset: 1}]}, true)).toThrow("to be a string");
+    expect(auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", asset: "foobar"}]}, true)).toBeUndefined();
+
+    expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", version: 1}]}, true)).toThrow("to be a string");
+    expect(auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", version: "foobar"}]}, true)).toBeUndefined();
 })
 
 test("checkProjectManagementPermissions works correctly", async () => {
     let nb = [];
     await auth.checkProjectManagementPermissions("test", utils.mockToken, nb);
     await utils.expectError(auth.checkProjectManagementPermissions("test", utils.mockTokenOther, nb), "not an owner");
+    await auth.checkProjectManagementPermissions("test", utils.mockTokenAaron, nb);
+})
 
-    try {
-        auth.setAdmins(["SomeoneElse"]);
-        await auth.checkProjectManagementPermissions("test", utils.mockTokenOther, nb);
-    } finally {
-        auth.setAdmins([]);
-    }
+test("checkProjectUploadPermissions works correctly", async () => {
+    let nb = [];
+    let out = await auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockToken, nb);
+    expect(out.can_manage).toBe(true);
+    expect(out.is_trusted).toBe(true);
+
+    await utils.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockTokenOther, nb), "not authorized to upload");
+
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockTokenAaron, nb);
+    expect(out.can_manage).toBe(true);
+    expect(out.is_trusted).toBe(true);
+
+    // Alright time to get wild.
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ArtifactDB-bot" ], "uploaders": [ { "id": "SomeoneElse" } ] }');
+    await auth.flushCachedPermissions("test", nb);
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockTokenOther, nb);
+    expect(out.can_manage).toBe(false);
+    expect(out.is_trusted).toBe(true);
+
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ArtifactDB-bot" ], "uploaders": [ { "id": "SomeoneElse", "asset": "foo" } ] }');
+    await auth.flushCachedPermissions("test", nb);
+    await utils.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockTokenOther, nb), "not authorized to upload");
+    out = await auth.checkProjectUploadPermissions("test", "foo", "v1", utils.mockTokenOther, nb);
+    expect(out.can_manage).toBe(false);
+    expect(out.is_trusted).toBe(true);
+
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ArtifactDB-bot" ], "uploaders": [ { "id": "SomeoneElse", "version": "foo" } ] }');
+    await auth.flushCachedPermissions("test", nb);
+    await utils.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockTokenOther, nb), "not authorized to upload");
+    out = await auth.checkProjectUploadPermissions("test", "blob", "foo", utils.mockTokenOther, nb);
+    expect(out.can_manage).toBe(false);
+    expect(out.is_trusted).toBe(true);
+
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ArtifactDB-bot" ], "uploaders": [ { "id": "SomeoneElse", "until": "1989-11-09" } ] }');
+    await auth.flushCachedPermissions("test", nb);
+    await utils.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockTokenOther, nb), "not authorized to upload");
+
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ArtifactDB-bot" ], "uploaders": [ { "id": "SomeoneElse", "until": "' + (new Date(Date.now() + 10000)).toISOString() + '" } ] }');
+    await auth.flushCachedPermissions("test", nb);
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockTokenOther, nb);
+    expect(out.can_manage).toBe(false);
+    expect(out.is_trusted).toBe(true);
+
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ArtifactDB-bot" ], "uploaders": [ { "id": "SomeoneElse", "trusted": false } ] }');
+    await auth.flushCachedPermissions("test", nb);
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockTokenOther, nb);
+    expect(out.can_manage).toBe(false);
+    expect(out.is_trusted).toBe(false);
+
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ArtifactDB-bot" ], "uploaders": [ { "id": "SomeoneElse", "trusted": true } ] }');
+    await auth.flushCachedPermissions("test", nb);
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", utils.mockTokenOther, nb);
+    expect(out.can_manage).toBe(false);
+    expect(out.is_trusted).toBe(true);
 })

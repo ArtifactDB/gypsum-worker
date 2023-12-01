@@ -54,7 +54,7 @@ export async function mockProjectRaw(project, asset, version) {
 
     let permpath = project + "/..permissions";
     if ((await BOUND_BUCKET.head(permpath)) == null) {
-        let perms = { owners: ["ArtifactDB-bot"] };
+        let perms = { owners: ["ArtifactDB-bot"], uploaders: [] };
         await BOUND_BUCKET.put(permpath, JSON.stringify(perms), jsonmeta);
     }
     return null;

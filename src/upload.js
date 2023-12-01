@@ -168,29 +168,20 @@ export async function initializeUploadHandler(request, nonblockers) {
         throw new utils.HttpError("project, asset and version names cannot start with the reserved '..'", 400);
     }
 
-    let uploading_user;
-    let probation;
-    let token = auth.extractBearerToken(request);
-    if (token.startsWith("gypsum.")) {
-        let scope = probation.extractTokenScope(token);
-        if (scope.expires_in > Date.now()) {
-            throw new utils.HttpError("probational token has expired", 403);
-        }
-        if (scope.project !== project) {
-            throw new utils.HttpError("probational token was generated for a different project '" + scope.project + "'", 403);
-        }
-        if ("asset" in scope && scope.asset !== asset) {
-            throw new utils.HttpError("probational token was generated for a different asset '" + scope.asset + "'", 403);
-        }
-        if ("version" in scope && scope.version !== version) {
-            throw new utils.HttpError("probational token was generated for a different version '" + scope.version + "'", 403);
-        }
-        uploading_user = scope.user_id;
+    let body = await utils.bodyToJson(request);
+    if (!(body instanceof Object)) {
+        throw new utils.HttpError("expected request body to be a JSON object");
+    }
+    let probation = false;
+    if ("on_probation" in body && body.on_probation) {
         probation = true;
-    } else {
-        let user = await auth.checkProjectManagementPermissions(project, token, nonblockers);
-        uploading_user = user.login;
-        probation = false;
+    }
+
+    let token = auth.extractBearerToken(request);
+    let { status, user } = await checkProjectUploadPermissions(project, asset, version, token, nonblockers);
+    let uploading_user = user.login;
+    if (status == "untrusted") {
+        probation = true;
     }
 
     let bound_bucket = s3.getR2Binding();
@@ -212,11 +203,6 @@ export async function initializeUploadHandler(request, nonblockers) {
     await lock.lockProject(project, asset, version, session_key);
 
     // Now scanning through the files.
-    let body = await utils.bodyToJson(request);
-    if (!(body instanceof Object)) {
-        throw new utils.HttpError("expected request body to be a JSON object");
-    }
-
     if (!("files" in body) || !(body.files instanceof Array)) {
         throw new utils.HttpError("expected 'files' to be an array");
     }

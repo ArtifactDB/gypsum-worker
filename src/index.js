@@ -25,11 +25,6 @@ if (typeof ACCESS_KEY_ID !== "undefined" && typeof SECRET_ACCESS_KEY != "undefin
 } else {
     console.warn("missing the ACCESS_KEY_ID or SECRET_ACCESS_KEY secrets");
 }
-if (typeof ENCRYPT_SECRET !== "undefined") {
-    auth.setGlobalEncryptKey(ENCRYPT_SECRET);
-} else {
-    console.warn("missing the ENCRYPT_SECRET secret");
-}
 
 const router = Router();
 
