@@ -1,4 +1,4 @@
-import * as f_ from "../src/index.js";
+import * as f_ from "../src/index.js"; // need this to set the bucket bindings.
 import * as utils from "./utils.js";
 import * as gh from "../src/github.js";
 import * as auth from "../src/auth.js";
@@ -14,41 +14,40 @@ afterAll(() => {
     gh.enableTestRigging(false);
 })
 
-test("findUserHandler works correctly", async () => {
+test("extractBearerToken works correctly", async () => {
     let req = new Request("http://localhost");
     req.query = {};
 
+    // Fails with nothing.
+    expect(() => auth.extractBearerToken(req)).toThrow("user identity");
+
+    // Fails with no Bearer prefix:
+    req.headers.set("Authorization", "aasdasD");
+    expect(() => auth.extractBearerToken(req)).toThrow("user identity");
+
+    // Finally works.
+    req.headers.set("Authorization", "Bearer " + utils.mockToken);
+    expect(auth.extractBearerToken(req)).toEqual(utils.mockToken);
+})
+
+test("findUser works correctly", async () => {
     let nb = [];
-    await utils.expectError(auth.findUserHandler(req, nb), "user identity");
-    expect(nb.length).toBe(0);
-
-    // Adding headers to the request object, and doing it again.
-    req.headers.append("Authorization", "Bearer " + utils.mockToken);
-
-    let res = await auth.findUserHandler(req, nb);
-    expect(res.status).toBe(200);
-    let body = await res.json();
-    expect(body.login).toEqual("ArtifactDB-bot");
-    expect(body.organizations).toEqual([]);
+    let res = await auth.findUser(utils.mockToken, nb);
+    expect(res.login).toEqual("ArtifactDB-bot");
+    expect(res.organizations).toEqual([]);
     expect(nb.length).toBeGreaterThan(0);
 
     // Just fetches it from cache, so no cache insertion is performed.
     let nb2 = [];
-    let res2 = await auth.findUserHandler(req, nb2);
-    let body2 = await res2.json();
-    expect(body2.login).toEqual("ArtifactDB-bot");
+    let res2 = await auth.findUser(utils.mockToken, nb2);
+    expect(res2.login).toEqual("ArtifactDB-bot");
     expect(nb2.length).toBe(0);
 
     // Checking that the organizations are returned properly...
     // also check that the caching doesn't just return the same result.
-    {
-        req.headers.set("Authorization", "Bearer " + utils.mockTokenOther);
-        let res = await auth.findUserHandler(req, nb);
-        expect(res.status).toBe(200);
-        let body = await res.json();
-        expect(body.login).toEqual("SomeoneElse");
-        expect(body.organizations).toEqual(["FOO", "BAR"]);
-    }
+    let res3 = await auth.findUser(utils.mockTokenOther, nb);
+    expect(res3.login).toEqual("SomeoneElse");
+    expect(res3.organizations).toEqual(["FOO", "BAR"]);
 })
 
 test("getPermissions works correctly", async () => {
@@ -56,6 +55,7 @@ test("getPermissions works correctly", async () => {
     let out = await auth.getPermissions("test", nb);
     expect(out.owners).toEqual(["ArtifactDB-bot"]);
     expect(nb.length).toBeGreaterThan(0);
+    await Promise.all(nb);
 
     // Fails correctly.
     await utils.expectError(auth.getPermissions("nonexistent", nb), "no existing permissions");
@@ -65,6 +65,12 @@ test("getPermissions works correctly", async () => {
     let out2 = await auth.getPermissions("test", nb2);
     expect(out2.owners).toEqual(["ArtifactDB-bot"]);
     expect(nb2.length).toBe(0);
+
+    // Flushes the cache.
+    let nb3 = [];
+    await auth.flushCachedPermissions("test", nb3);
+    expect(nb3.length).toBeGreaterThan(0);
+    await Promise.all(nb3);
 })
 
 test("isOneOf works correctly", () => {

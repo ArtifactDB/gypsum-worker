@@ -5,6 +5,7 @@ import * as auth from "./auth.js";
 import * as upload from "./upload.js";
 import * as create from "./create.js";
 import * as remove from "./remove.js";
+import * as permissions from "./permissions.js";
 import * as probation from "./probation.js";
 import * as utils from "./utils.js";
 import * as s3 from "./s3.js";
@@ -80,7 +81,7 @@ router.put("/upload/abort/:project/:asset/:version", upload.abortUploadHandler);
 
 /*** Permission handling ***/
 
-router.put("/permissions/:project", manage.setPermissionsHandler);
+router.put("/permissions/:project", permissions.setPermissionsHandler);
 
 /*** Probation ***/
 
