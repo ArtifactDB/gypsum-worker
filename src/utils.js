@@ -15,6 +15,14 @@ export function errorResponse(reason, code, headers={}) {
     return jsonResponse({ "status": "error", "reason": reason }, code, headers);
 }
 
+export async function bodyToJson(req) {
+    try {
+        return await req.json();
+    } catch (e) {
+        throw new utils.HttpError("failed to parse JSON body; " + String(err), 400);
+    }
+}
+
 export function quickCacheJsonText(cache, key, value, expires) {
     let headers = {
         "Cache-Control": "max-age=" + String(expires),
