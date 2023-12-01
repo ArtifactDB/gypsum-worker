@@ -78,6 +78,41 @@ test("named resolve works as expected", async () => {
     expect(eres).toEqual({});
 });
 
+test("listApply works as expected", async () => {
+    await other.quickUploadJson("alpha/alex.txt", [ "Union" ]);
+    await other.quickUploadJson("alpha/bravo/bar.txt", [ "Flyers!!!" ]);
+    await other.quickUploadJson("alpha/bravo2/stuff.txt", [ "Glow Map" ]);
+    await other.quickUploadJson("charlie/whee.txt", [ "Harmony 4 You" ]);
+
+    {
+        let survivors = [];
+        await other.listApply("alpha/", f => { survivors.push(f.key); });
+        survivors.sort();
+        expect(survivors).toEqual(["alpha/alex.txt", "alpha/bravo/bar.txt", "alpha/bravo2/stuff.txt"]);
+    }
+
+    {
+        let survivors = [];
+        await other.listApply("alpha/bravo", f => { survivors.push(f.key); });
+        survivors.sort();
+        expect(survivors).toEqual(["alpha/bravo/bar.txt", "alpha/bravo2/stuff.txt"]);
+    }
+
+    {
+        let survivors = [];
+        await other.listApply("alpha/bravo/", f => { survivors.push(f.key); });
+        survivors.sort();
+        expect(survivors).toEqual(["alpha/bravo/bar.txt"]);
+    }
+
+    {
+        let survivors = [];
+        await other.listApply("", f => { survivors.push(f.key); }, /* list_limit = */ 1); // forcing iteration.
+        survivors.sort();
+        expect(survivors).toEqual(["alpha/alex.txt", "alpha/bravo/bar.txt", "alpha/bravo2/stuff.txt", "charlie/whee.txt"]);
+    }
+})
+
 test("quick recursive delete works as expected", async () => {
     var it = 0;
     while (true) {

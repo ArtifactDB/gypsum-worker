@@ -61,17 +61,14 @@ export async function namedResolve(x) {
     return output;
 }
 
-export async function quickRecursiveDelete(prefix, list_limit = 1000) {
+export async function listApply(prefix, op, list_limit = 1000) {
     let bound_bucket = s3.getR2Binding();
     let list_options = { prefix: prefix, limit: list_limit };
     let truncated = true;
-    let deletions = [];
 
     while (true) {
         let listing = await bound_bucket.list(list_options);
-        for (const f of listing.objects) {
-            deletions.push(f.key);
-        }
+        listing.objects.forEach(op);
         truncated = listing.truncated;
         if (truncated) {
             list_options.cursor = listing.cursor;
@@ -79,9 +76,11 @@ export async function quickRecursiveDelete(prefix, list_limit = 1000) {
             break;
         }
     }
+}
 
-    for (var i = 0; i < deletions.length; i++) {
-        deletions[i] = bound_bucket.delete(deletions[i]); 
-    }
+export async function quickRecursiveDelete(prefix, list_limit = 1000) {
+    let bound_bucket = s3.getR2Binding();
+    let deletions = [];
+    await listApply(prefix, f => { deletions.push(bound_bucket.delete(f.key)); }, /* list_limit = */ list_limit);
     await Promise.all(deletions);
 }
