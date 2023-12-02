@@ -1,19 +1,15 @@
 import * as f_ from "../src/index.js";
 import * as upload from "../src/upload.js";
-import * as s3 from "../src/s3.js";
+import * as create from "../src/create.js";
+import * as pkeys from "../src/internal.js";
 import * as gh from "../src/github.js";
-import * as utils from "./utils.js";
+import * as s3 from "../src/s3.js";
 import * as setup from "./setup.js";
 
-let gh_test_rigging = null;
-
 beforeAll(async () => {
-    await setup.mockPublicProject();
+    let rigging = gh.enableTestRigging();
+    setup.mockGitHubIdentities(rigging);
     s3.setS3ObjectDirectly(setup.S3Obj);
-    gh.setToken(null); // forcibly nullify any token to avoid communication.
-
-    gh_test_rigging = gh.enableTestRigging();
-    utils.mockGitHubIdentities(gh_test_rigging);
 });
 
 afterAll(() => {
@@ -23,511 +19,526 @@ afterAll(() => {
 /******* Basic checks *******/
 
 test("initializeUploadHandler throws the right errors related to formatting", async () => {
-    {
-        let req = new Request("http://localhost");
-        req.params = { project: "test/upload", version: "test" };
-        let nb = [];
-        await utils.expectError(upload.initializeUploadHandler(req, nb), "cannot contain");
-    }
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
+    let nb = [];
+    let req = new Request("http://localhost");
 
-    {
-        let req = new Request("http://localhost");
-        req.params = { project: "test:upload", version: "test" };
-        let nb = [];
-        await utils.expectError(upload.initializeUploadHandler(req, nb), "cannot contain");
-    }
+    req.params = { project: "test/upload", asset: "foo", version: "v1" };
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot contain");
+    req.params = { project: "..test-upload", asset: "foo", version: "v1" };
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot start");
 
-    {
-        let req = new Request("http://localhost");
-        req.params = { project: "test-upload", version: "test@" };
-        let nb = [];
-        await utils.expectError(upload.initializeUploadHandler(req, nb), "cannot contain");
-    }
+    req.params = { project: "test-upload", asset: "foo/bar", version: "v1" };
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot contain");
+    req.params = { project: "test-upload", asset: "..foobar", version: "v1" };
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot start");
 
-    {
-        let req = new Request("http://localhost");
-        req.params = { project: "test-public", version: "base" };
-        req.headers.append("Authorization", "Bearer " + utils.mockToken);
-        let nb = [];
-        await utils.expectError(upload.initializeUploadHandler(req, nb), "already exists");
-    }
+    req.params = { project: "test-upload", asset: "foobar", version: "v/1" };
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot contain");
+    req.params = { project: "test-upload", asset: "foobar", version: "..v1" };
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot start");
 
-    {
-        // First request fails input schema validation.
-        let req = new Request("http://localhost", { method: "POST", body: '{ "value": "WHEEE" }' });
-        req.params = { project: "test-upload", version: "test" };
-        req.headers.append("Authorization", "Bearer " + utils.mockToken);
-        let nb = [];
-        await utils.expectError(upload.initializeUploadHandler(req, nb), "invalid request body");
+    let create_req = body => {
+        let req = new Request("http://localhost", { method: "POST", body: JSON.stringify(body) });
+        req.params = { project: "test-upload", asset: "foobar", version: "v1" };
+        req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
+        return req;
+    };
 
-        // Trying again causes a lock failure.
-        await utils.expectError(upload.initializeUploadHandler(req, nb), "already been locked");
-    }
+    req = create_req(2);
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "JSON object");
 
-    {
-        let req = new Request("http://localhost", { 
-            method: "POST", 
-            body: JSON.stringify({
-                filenames: [
-                    { check: "simple", filename: "WHEE/..foo", value: { md5sum: "a4caf5afa851da451e2161a4c3ac46bb" } },
-                ]
-            })
-        });
-        req.params = { project: "test-upload", version: "test2" };
-        req.headers.append("Authorization", "Bearer " + utils.mockToken);
-        let nb = [];
-        await utils.expectError(upload.initializeUploadHandler(req, nb), "reserved '..' pattern");
-    }
+    req = create_req({ on_probation: 2 });
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "'on_probation' property to be a boolean");
+
+    req = create_req({ files: "foo" });
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "'files' property to be an array");
+
+    req = create_req({ files: [ "foo" ] });
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "'files' should be an array of objects");
+
+    req = create_req({ files: [ { "path": 2 } ] });
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "'files.path' should be a string");
+
+    req = create_req({ files: [ { "path": "..asdasd" } ] });
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot start with");
+
+    req = create_req({ files: [ { "path": "yay/..asdasd" } ] });
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot start with");
+
+    req = create_req({ files: [ { "path": "asdasd" } ] });
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "'files.type' should be a string");
+
+    req = create_req({ files: [ { "path": "asdasd", "type": "simple" } ] });
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "'files.md5sum' should be a string");
+
+    req = create_req({ files: [ { "path": "asdasd", "type": "simple", "md5sum": "YAY", "size": "YAY"} ] });
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "'files.size' should be a non-negative integer");
+
+    req = create_req({ files: [ { "path": "asdasd", "type": "simple", "md5sum": "YAY", "size": 1.5} ] });
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "'files.size' should be a non-negative integer");
+
+    req = create_req({ files: [ { "path": "asdasd", "type": "simple", "md5sum": "YAY", "size": -100} ] });
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "'files.size' should be a non-negative integer");
+
+    req = create_req({ files: [ { "path": "asdasd", "type": "link" } ] });
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "'files.link' should be an object");
+
+    req = create_req({ files: [ { "path": "asdasd", "type": "link", "link": { } } ] });
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "'files.link.project' should be a string");
+
+    req = create_req({ files: [ { "path": "asdasd", "type": "link", "link": { "project": "YAY" } } ] });
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "'files.link.asset' should be a string");
+
+    req = create_req({ files: [ { "path": "asdasd", "type": "link", "link": { "project": "YAY", "asset": "asdasd" } } ] });
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "'files.link.version' should be a string");
+
+    req = create_req({ files: [ { "path": "asdasd", "type": "link", "link": { "project": "YAY", "asset": "asdasd", "version": "foo" } } ] });
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "'files.link.path' should be a string");
+
+    req = create_req({ files: [ { "path": "asdasd", "type": "urmom" } ] });
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "invalid 'files.type'");
 })
 
 test("initializeUploadHandler throws the right errors for permission-related errors", async () => {
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
+    let options = { method: "POST", body: JSON.stringify({ files: [] }) };
+
     {
-        let req = new Request("http://localhost");
-        req.params = { project: "test-upload", version: "test" };
+        let req = new Request("http://localhost", options);
+        req.params = { project: "test-upload", asset: "palms", version: "test" };
         let nb = [];
-        await utils.expectError(upload.initializeUploadHandler(req, nb), "user identity");
+        await setup.expectError(upload.initializeUploadHandler(req, nb), "user identity");
     }
 
     {
-        let req = new Request("http://localhost");
-        req.params = { project: "test-upload", version: "test" };
-        req.headers.append("Authorization", "Bearer " + utils.mockTokenOther);
+        let req = new Request("http://localhost", options);
+        req.params = { project: "test-upload", asset: "palms", version: "test" };
+        req.headers.append("Authorization", "Bearer " + setup.mockTokenUser);
         let nb = [];
-        await utils.expectError(upload.initializeUploadHandler(req, nb), "upload a new project");
+        await setup.expectError(upload.initializeUploadHandler(req, nb), "not authorized to upload");
     }
 
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [ { id: "RandomDude", version: "foo" } ] }));
     {
-        let req = new Request("http://localhost");
-        req.params = { project: "test-public", version: "foo" };
-        req.headers.append("Authorization", "Bearer " + utils.mockTokenOther);
+        let req = new Request("http://localhost", options);
+        req.params = { project: "test-upload", asset: "palms", version: "test" };
+        req.headers.append("Authorization", "Bearer " + setup.mockTokenUser);
         let nb = [];
-        await utils.expectError(upload.initializeUploadHandler(req, nb), "write access");
+        await setup.expectError(upload.initializeUploadHandler(req, nb), "not authorized to upload");
     }
 })
 
 test("initializeUploadHandler works correctly for simple uploads", async () => {
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
     let req = new Request("http://localhost", {
         method: "POST",
         body: JSON.stringify({ 
-            filenames: [
-                { check: "simple", filename: "WHEE", value: { md5sum: "a4caf5afa851da451e2161a4c3ac46bb" } },
-                { check: "simple", filename: "BAR", value: { md5sum: "4209df9c96263664123450aa48fd1bfa" } }
+            files: [
+                { type: "simple", path: "WHEE", md5sum: "a4caf5afa851da451e2161a4c3ac46bb", size: 100 },
+                { type: "simple", path: "BAR", md5sum: "4209df9c96263664123450aa48fd1bfa", size: 23 }
             ]
         })
     });
-    req.params = { project: "test-upload", version: "test" };
-    req.headers.append("Authorization", "Bearer " + utils.mockToken);
+    req.params = { project: "test-upload", asset: "blob", version: "v0" };
+    req.headers.append("Authorization", "Bearer " + setup.mockTokenOwner);
 
-    let nb = [];
-    gh_test_rigging.postNewIssue = [];
-    let init = await upload.initializeUploadHandler(req, nb);
+    let init = await upload.initializeUploadHandler(req, []);
     let body = await init.json();
 
-    expect(body.presigned_urls.length).toBe(2);
-    expect(body.presigned_urls[0].filename).toBe("WHEE");
-    expect(body.presigned_urls[0].url).toMatch("WHEE");
-    expect(body.presigned_urls[0].md5sum.length).toBe(24);
-    expect(body.presigned_urls[0].md5sum.endsWith("==")).toBe(true);
+    expect(body.upload_urls.length).toBe(2);
+    expect(body.upload_urls[0].path).toBe("WHEE");
+    expect(body.upload_urls[0].url).toMatch("presigned-file");
+    expect(body.upload_urls[1].path).toBe("BAR");
+    expect(body.upload_urls[1].url).toMatch("presigned-file");
 
-    expect(body.presigned_urls[1].filename).toBe("BAR");
-    expect(body.presigned_urls[1].url).toMatch("BAR");
-    expect(body.presigned_urls[1].md5sum.length).toBe(24);
-    expect(body.presigned_urls[1].md5sum.endsWith("==")).toBe(true);
+    expect(body.completion_url).toMatch(/complete.*test-upload/);
+    expect(body.abort_url).toMatch(/abort.*test-upload/);
 
-    expect(body.completion_url).toMatch("test-upload/version/test");
-    expect(body.abort_url).toMatch("test-upload/version/test");
-
-    // Check that the issue posting is done.
-    await Promise.all(nb);
-    let posted = gh_test_rigging.postNewIssue[0];
-    expect(posted.title).toEqual("purge project");
-
-    // Check that a lock file was created with the right user name.
-    let lckinfo = await BOUND_BUCKET.get("test-upload/test/..LOCK");
+    // Check that a lock file was correctly created.
+    let lckinfo = await BOUND_BUCKET.get("test-upload/blob/..LOCK");
     let lckbody = await lckinfo.json();
-    expect(lckbody.user_name).toEqual("ArtifactDB-bot");
+    expect(typeof lckbody.user_name).toEqual("string");
+    expect(lckbody.version).toEqual("v0");
 
-    // Check that a version metadata file was posted to the bucket.
-    let vinfo = await BOUND_BUCKET.get("test-upload/test/..manifest");
+    // Check that a version summary file was posted to the bucket.
+    let sinfo = await BOUND_BUCKET.get("test-upload/blob/v0/..summary");
+    let sbody = await sinfo.json();
+    expect(sbody.upload_user_id).toEqual("ProjectOwner");
+    expect(Number.isNaN(Date.parse(sbody.upload_start))).toBe(false);
+    expect(sbody.on_probation).toEqual(false);
+
+    // Check that a version manifest file was posted to the bucket.
+    let vinfo = await BOUND_BUCKET.get("test-upload/blob/v0/..manifest");
     let vbody = await vinfo.json();
-    expect(vbody).toEqual(["WHEE", "BAR"]);
+    expect(vbody["WHEE"]).toEqual({ size: 100, md5sum: "a4caf5afa851da451e2161a4c3ac46bb" });
+    expect(vbody["BAR"]).toEqual({ size: 23, md5sum: "4209df9c96263664123450aa48fd1bfa" });
 })
 
-test("initializeUploadHandler registers transient uploads correctly", async () => {
+test("initializeUploadHandler converts MD5'able files to simple uploads if no prior version exists", async () => {
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
     let req = new Request("http://localhost", {
         method: "POST",
         body: JSON.stringify({ 
-            filenames: [
-                { check: "simple", filename: "WHEE", value: { md5sum: "a4caf5afa851da451e2161a4c3ac46bb" } },
-                { check: "simple", filename: "BAR", value: { md5sum: "4209df9c96263664123450aa48fd1bfa" } }
-            ],
-            expires_in: "in 2 days"
-        })
-    });
-    req.params = { project: "test-upload", version: "transient" };
-    req.headers.append("Authorization", "Bearer " + utils.mockToken);
-
-    let nb = [];
-    await upload.initializeUploadHandler(req, nb);
-    await Promise.all(nb);        
-
-    let expinfo = await BOUND_BUCKET.get("test-upload/transient/..expiry");
-    let expbody = await expinfo.json();
-    expect(expbody.expires_in).toBe(2*24*60*60*1000);
-})
-
-/******* Initialize link checks *******/
-
-test("initializeUploadHandler works correctly for MD5 deduplication", async () => {
-    let payload = setup.mockFiles();
-    await setup.mockProjectVersion("test-upload-md5sum-link", "test", payload);
-    await setup.dumpProjectSundries("test-upload-md5sum-link", "test");
-
-    let req = new Request("http://localhost", {
-        method: "POST",
-        body: JSON.stringify({ 
-            filenames: [
-                { check: "simple", filename: "whee.txt", value: { md5sum: setup.computeHash(payload["whee.txt"]) } },
-                { check: "md5", filename: "blah.txt", value: { field: "md5sum", md5sum: setup.computeHash(payload["blah.txt"]) } },
-                { check: "md5", filename: "foo/bar.txt", value: { field: "md5sum", md5sum: "cannot_match_anything" } },
+            files: [
+                { type: "dedup", path: "WHEE", md5sum: "a4caf5afa851da451e2161a4c3ac46bb", size: 100 },
+                { type: "dedup", path: "BAR", md5sum: "4209df9c96263664123450aa48fd1bfa", size: 23 }
             ]
         })
     });
-    req.params = { project: "test-upload-md5sum-link", version: "v2" };
-    req.headers.append("Authorization", "Bearer " + utils.mockToken);
+    req.params = { project: "test-upload", asset: "blob", version: "v0" };
+    req.headers.append("Authorization", "Bearer " + setup.mockTokenOwner);
+
+    let init = await upload.initializeUploadHandler(req, []);
+    let body = await init.json();
+
+    expect(body.upload_urls.length).toBe(2);
+    expect(body.upload_urls[0].path).toBe("WHEE");
+    expect(body.upload_urls[0].url).toMatch("presigned-file");
+    expect(body.upload_urls[1].path).toBe("BAR");
+    expect(body.upload_urls[1].url).toMatch("presigned-file");
+})
+
+test("initializeUploadHandler works correctly for MD5'able uploads with a prior version", async () => {
+    let payload = await setup.mockProjectRaw("test-upload", "linker", "v0");
+    let whee_md5 = setup.computeHash(payload["whee.txt"]);
+    let whee_size = payload["whee.txt"].length;
+    let blah_md5 = setup.computeHash(payload["blah.txt"]);
+    let blah_size = payload["blah.txt"].length;
+
+    let req = new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ 
+            files: [
+                { type: "simple", path: "carbs/rice.txt", md5sum: whee_md5, size: whee_size }, // respects explicit request to avoid deduplication.
+                { type: "dedup", path: "carbs/bread.txt", md5sum: whee_md5, size: whee_size },
+                { type: "dedup", path: "carbs/beans.txt", md5sum: blah_md5, size: blah_size },
+                { type: "dedup", path: "fruit/apple.txt", md5sum: blah_md5, size: blah_size * 10 },
+                { type: "dedup", path: "fruit/orange.txt", md5sum: "cannot_match_anything", size: 1 },
+            ]
+        })
+    });
+    req.params = { project: "test-upload", asset: "linker", version: "v1" };
+    req.headers.append("Authorization", "Bearer " + setup.mockTokenOwner);
 
     let nb = [];
     let init = await upload.initializeUploadHandler(req, nb);
     let body = await init.json();
 
-    expect(body.presigned_urls.length).toBe(2);
-    expect(body.presigned_urls[0].filename).toBe("whee.txt");
-    expect(body.presigned_urls[1].filename).toBe("foo/bar.txt");
+    expect(body.upload_urls.length).toBe(3);
+    expect(body.upload_urls[0].path).toBe("carbs/rice.txt");
+    expect(body.upload_urls[1].path).toBe("fruit/apple.txt");
+    expect(body.upload_urls[2].path).toBe("fruit/orange.txt");
 
-    expect(body.links.length).toBe(1);
-    expect(body.links[0].filename).toBe("blah.txt");
-    expect(body.links[0].url).toMatch(btoa("test-upload-md5sum-link:blah.txt@v2"));
-
-    // Checking that a link file is posted.
-    await Promise.all(nb);
-    let linkinfo = await BOUND_BUCKET.get("test-upload-md5sum-link/v2/..links");
-    let linkbody = await linkinfo.json();
-    expect(linkbody["blah.txt"]).toBe("test-upload-md5sum-link:blah.txt@test");
-    expect("whee.txt" in linkbody).toBe(false);
-    expect("foo/bar.txt" in linkbody).toBe(false);
+    // Checking that the manifest contains links.
+    let vinfo = await BOUND_BUCKET.get("test-upload/linker/v1/..manifest");
+    let vbody = await vinfo.json();
+    expect("carbs/rice.txt" in vbody).toBe(true);
+    expect("fruit/apple.txt" in vbody).toBe(true);
+    expect("fruit/orange.txt" in vbody).toBe(true);
+    expect(vbody["carbs/bread.txt"]).toEqual({ md5sum: whee_md5, size: whee_size, link: { project: "test-upload", asset: "linker", version: "v0", path: "whee.txt" } });
+    expect(vbody["carbs/beans.txt"]).toEqual({ md5sum: blah_md5, size: blah_size, link: { project: "test-upload", asset: "linker", version: "v0", path: "blah.txt" } });
 })
 
 test("initializeUploadHandler works correctly for link-based deduplication", async () => {
-    let payload = setup.mockFiles();
-    await setup.mockProjectVersion("test-upload-id-link", "test", payload);
-    await setup.dumpProjectSundries("test-upload-id-link", "test");
+    let payload = await setup.mockProject();
+    let whee_md5 = setup.computeHash(payload["whee.txt"]);
+    let whee_size = payload["whee.txt"].length;
+    let blah_md5 = setup.computeHash(payload["blah.txt"]);
+    let blah_size = payload["blah.txt"].length;
+    let foobar_md5 = setup.computeHash(payload["foo/bar.txt"]);
+    let foobar_size = payload["foo/bar.txt"].length;
 
+    // Performing a new upload.
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
     let req = new Request("http://localhost", {
         method: "POST",
         body: JSON.stringify({ 
-            filenames: [
-                { check: "link", filename: "whee.txt", value: { artifactdb_id: "test-upload-id-link:whee.txt@test" } },
-                { check: "link", filename: "blah.txt", value: { artifactdb_id: "test-upload-id-link:blah.txt@test" } },
-                { check: "link", filename: "foo/bar.txt", value: { artifactdb_id: "test-upload-id-link:foo/bar.txt@test" } },
+            files: [
+                { type: "link", path: "pet/rabbit.txt", link: { project: "test", asset: "blob", version: "v1", path: "foo/bar.txt" } },
+                { type: "link", path: "pet/cat.txt", link: { project: "test", asset: "blob", version: "v1", path: "whee.txt" } },
+                { type: "link", path: "pet/dog.txt", link: { project: "test", asset: "blob", version: "v1", path: "blah.txt" } }
             ]
         })
     });
-    req.params = { project: "test-upload-id-link", version: "v2" };
-    req.headers.append("Authorization", "Bearer " + utils.mockToken);
+    req.params = { project: "test-upload", asset: "linker", version: "v1" };
+    req.headers.append("Authorization", "Bearer " + setup.mockTokenOwner);
 
-    // Checking that links are returned.
+    // Checking that no links are returned.
     let nb = [];
     let init = await upload.initializeUploadHandler(req, nb);
     let body = await init.json();
-
-    expect(body.links.length).toBe(3);
-    expect(body.links[0].filename).toBe("whee.txt");
-    expect(body.links[0].url).toMatch(btoa("test-upload-id-link:whee.txt@v2"));
-    expect(body.links[1].filename).toBe("blah.txt");
-    expect(body.links[1].url).toMatch(btoa("test-upload-id-link:blah.txt@v2"));
-    expect(body.links[2].filename).toBe("foo/bar.txt");
-    expect(body.links[2].url).toMatch(btoa("test-upload-id-link:foo/bar.txt@v2"));
+    expect(body.upload_urls.length).toBe(0);
 
     // Checking that a link file is posted.
-    await Promise.all(nb);
-    let linkinfo = await BOUND_BUCKET.get("test-upload-id-link/v2/..links");
-    let linkbody = await linkinfo.json();
-    expect(linkbody["whee.txt"]).toBe("test-upload-id-link:whee.txt@test");
-    expect(linkbody["blah.txt"]).toBe("test-upload-id-link:blah.txt@test");
-    expect(linkbody["foo/bar.txt"]).toBe("test-upload-id-link:foo/bar.txt@test");
+    let vinfo = await BOUND_BUCKET.get("test-upload/linker/v1/..manifest");
+    let vbody = await vinfo.json();
+    expect(vbody["pet/rabbit.txt"]).toEqual({ md5sum: foobar_md5, size: foobar_size, link: { project: "test", asset: "blob", version: "v1", path: "foo/bar.txt" } });
+    expect(vbody["pet/cat.txt"]).toEqual({ md5sum: whee_md5, size: whee_size, link: { project: "test", asset: "blob", version: "v1", path: "whee.txt" } });
+    expect(vbody["pet/dog.txt"]).toEqual({ md5sum: blah_md5, size: blah_size, link: { project: "test", asset: "blob", version: "v1", path: "blah.txt" } });
 })
 
-test("initializeUploadHandler prohibits invalid links to missing files", async () => {
-    let payload = setup.mockFiles();
-    await setup.mockProjectVersion("test-upload-id-link-missing", "v1", payload);
-    await setup.dumpProjectSundries("test-upload-id-link-missing", "v1");
+test("initializeUploadHandler prohibits links to missing files or versions", async () => {
+    let payload = await setup.mockProject();
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
 
-    let req = new Request("http://localhost", {
-        method: "POST",
-        body: JSON.stringify({ 
-            filenames: [
-                { check: "link", filename: "whee2.txt", value: { artifactdb_id: "test-upload-id-link-missing:whee2.txt@v1" } }
-            ]
-        })
-    });
-    req.params = { project: "test-upload-id-link-missing", version: "v2" };
-    req.headers.append("Authorization", "Bearer " + utils.mockToken);
+    {
+        let req = new Request("http://localhost", {
+            method: "POST",
+            body: JSON.stringify({ 
+                files: [
+                    { type: "link", path: "pet/rabbit.txt", link: { project: "test", asset: "blob", version: "v1", path: "foo/bar2.txt" } }
+                ]
+            })
+        });
+        req.params = { project: "test-upload", asset: "linker", version: "v1" };
+        req.headers.append("Authorization", "Bearer " + setup.mockTokenOwner);
 
-    let nb = [];
-    await utils.expectError(upload.initializeUploadHandler(req, nb), "does not exist");
-})
-
-test("initializeUploadHandler prohibits links to unauthorized projects", async () => {
-    let payload = setup.mockFiles();
-    await setup.mockProjectVersion("test-upload-id-link-private", "test", payload);
-    await setup.dumpProjectSundries("test-upload-id-link-private", "test", false);
-
-    // Putting some manual permissions in there.
-    let perms = setup.definePermissions(["SomeoneElse"], [], false);
-    await BOUND_BUCKET.put("test-upload-id-link-private/..permissions", JSON.stringify(perms), setup.jsonmeta);
-
-    let req = new Request("http://localhost", {
-        method: "POST",
-        body: JSON.stringify({ 
-            filenames: [
-                { check: "link", filename: "whee.txt", value: { artifactdb_id: "test-upload-id-link-private:whee.txt@test" } }
-            ]
-        })
-    });
-    req.params = { project: "test-upload-id-link-private2", version: "v1" };
-    req.headers.append("Authorization", "Bearer " + utils.mockToken);
-
-    // Fails without access to the linked project.
-    let nb = [];
-    await utils.expectError(upload.initializeUploadHandler(req, nb), "'test-upload-id-link-private'");
-})
-
-test("initializeUploadHandler prohibits invalid links to transient projects", async () => {
-    let payload = setup.mockFiles();
-    await setup.mockProjectVersion("test-upload-id-link-expiry", "test", payload);
-    await setup.dumpProjectSundries("test-upload-id-link-expiry", "test");
-
-    // Injecting an expiry file.
-    await BOUND_BUCKET.put("test-upload-id-link-expiry/test/..expiry", JSON.stringify({ expires_in: 100 }), setup.jsonmeta);
-
-    let req = new Request("http://localhost", {
-        method: "POST",
-        body: JSON.stringify({ 
-            filenames: [
-                { check: "link", filename: "whee.txt", value: { artifactdb_id: "test-upload-id-link-expiry:whee.txt@test" } }
-            ]
-        })
-    });
-    req.params = { project: "test-upload-id-link-expiry", version: "v2" };
-    req.headers.append("Authorization", "Bearer " + utils.mockToken);
-
-    let nb = [];
-    await utils.expectError(upload.initializeUploadHandler(req, nb), "detected links to a transient project");
-})
-
-/******* Create link checks *******/
-
-test("createLinkHandler works correctly", async () => {
-    let all_links = [
-        { check: "link", filename: "whee.txt", value: { artifactdb_id: "test-public:whee.txt@base" } },
-        { check: "link", filename: "blah.txt", value: { artifactdb_id: "test-public:blah.txt@base" } },
-        { check: "link", filename: "foo/bar.txt", value: { artifactdb_id: "test-public:foo/bar.txt@base" } },
-    ];
-
-    let req = new Request("http://localhost", {
-        method: "POST",
-        body: JSON.stringify({ filenames: all_links })
-    });
-    req.params = { project: "test-upload-id-link-create", version: "first" };
-    req.headers.append("Authorization", "Bearer " + utils.mockToken);
-
-    let nb = [];
-    let init = await upload.initializeUploadHandler(req, nb);
-    let body = await init.json();
-    await Promise.all(nb);
-
-    // Hitting all the links.
-    expect(body.links.length).toBe(3);
-    for (const x of body.links) {
-        let paths = x.url.split("/");
-        let req = new Request("http://localhost");
-        req.params = { source: paths[2], target: paths[4] };
-        req.headers.append("Authorization", "Bearer " + utils.mockToken);
-        let res = await upload.createLinkHandler(req, nb);
-        expect(res.status).toBe(202);
+        let nb = [];
+        await setup.expectError(upload.initializeUploadHandler(req, nb), "failed to link");
     }
 
-    // Checking that a link file is actually created.
-    for (const info of all_links) {
-        let x = info.filename;
-        let check = await BOUND_BUCKET.get("test-upload-id-link-create/first/" + x);
-        let expected_id = "test-public:" + x + "@base";
-        expect(check.customMetadata.artifactdb_id).toBe(expected_id);
-        let body = await check.json();
-        expect(body.artifactdb_id).toBe(expected_id);
+    {
+        let req = new Request("http://localhost", {
+            method: "POST",
+            body: JSON.stringify({ 
+                files: [
+                    { type: "link", path: "pet/rabbit.txt", link: { project: "test", asset: "blob", version: "v0", path: "foo/bar.txt" } }
+                ]
+            })
+        });
+        req.params = { project: "test-upload", asset: "linker", version: "v1" };
+        req.headers.append("Authorization", "Bearer " + setup.mockTokenOwner);
+
+        let nb = [];
+        await setup.expectError(upload.initializeUploadHandler(req, nb), "no manifest available");
     }
 })
 
-test("createLinkHandler throws the right errors", async () => {
-    let req = new Request("http://localhost");
-    req.params = { source: btoa("foo:whee.txt@1"), target: btoa("test-public:whee.txt@base") };
+/******* Presigned upload checks *******/
+
+test("uploadPresignedFileHandler works as expected", async () => {
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
+
+    // Setting up the state.
+    let req = new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ 
+            files: [
+                { type: "simple", path: "WHEE", md5sum: "a4caf5afa851da451e2161a4c3ac46bb", size: 100 },
+            ]
+        })
+    });
+    req.params = { project: "test-upload", asset: "blob", version: "v0" };
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
 
     let nb = [];
-    await utils.expectError(upload.createLinkHandler(req, nb), "user identity");
+    let raw_init = await upload.initializeUploadHandler(req, nb);
+    let init = await raw_init.json();
 
-    req.headers.append("Authorization", "Bearer " + utils.mockToken);
-    await utils.expectError(upload.createLinkHandler(req, nb), "not been previously locked");
+    // Tapping the presigned endpoint.
+    let req2 = new Request("http://localhost", { method: "POST" });
+    req2.params = { slug: "YAAY" };
+    await setup.expectError(upload.uploadPresignedFileHandler(req2, nb), "invalid slug");
+
+    let url = init.upload_urls[0].url;
+    let slug = url.slice(url.lastIndexOf("/") + 1);
+    req2.params = { slug: slug };
+    req2.headers.set("Authorization", "Bearer NOOOOOOO");
+    await setup.expectError(upload.uploadPresignedFileHandler(req2, nb), "different user");
+
+    req2.headers.set("Authorization", "Bearer " + init.session_key);
+    let raw_pres = await upload.uploadPresignedFileHandler(req2, nb);
+    let pres = await raw_pres.json();
+    expect(pres.url).toMatch("pretend");
+    expect(pres.md5sum_base64.length).toEqual(24);
+    expect(pres.md5sum_base64.endsWith("==")).toBe(true);
 })
 
 /******* Complete uploads checks *******/
 
 test("completeUploadHandler works correctly", async () => {
-    // Initializing the upload.
+    let payload = await setup.mockProject();
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
+
+    // Setting up the state.
+    let params = { project: "test-upload", asset: "blob", version: "v0" };
+    let key;
     {
         let req = new Request("http://localhost", {
             method: "POST",
             body: JSON.stringify({ 
-                filenames: [
-                    { check: "simple", filename: "WHEE", value: { md5sum: "a4caf5afa851da451e2161a4c3ac46bb" } },
-                    { check: "simple", filename: "BAR", value: { md5sum: "4209df9c96263664123450aa48fd1bfa" } }
+                files: [
+                    { type: "simple", path: "witch/makoto.csv", md5sum: "a4caf5afa851da451e2161a4c3ac46bb", size: 100 },
+                    { type: "simple", path: "witch/akane.csv", md5sum: "3f8aaed3d149be552fc2ec47ae2d1e57", size: 218 },
+                    { type: "link", path: "human/chinatsu.txt", link: { project: "test", asset: "blob", version: "v1", path: "foo/bar.txt" } },
+                    { type: "link", path: "human/nao.txt", link: { project: "test", asset: "blob", version: "v1", path: "whee.txt" } },
+                    { type: "link", path: "haru-no-hakobiya", link: { project: "test", asset: "blob", version: "v1", path: "blah.txt" } },
+                    { type: "link", path: "animal/cat/kenny.txt", link: { project: "test", asset: "blob", version: "v1", path: "foo/bar.txt" } },
+                    { type: "simple", path: "animal/cat/chito.txt", md5sum: "4ba0e96c086a229b4f39e544e2fa7873", size: 92 }, 
                 ]
             })
         });
-        req.params = { project: "test-complete-upload", version: "test" };
-        req.headers.append("Authorization", "Bearer " + utils.mockToken);
+        req.params = params;
+        req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
 
         let nb = [];
-        await upload.initializeUploadHandler(req, nb);
-        await Promise.all(nb);
+        let init = await (await upload.initializeUploadHandler(req, nb)).json();
+        key = init.session_key;
     }
+
+    // Now we do the two uploads that we're obliged to do.
+    await BOUND_BUCKET.put("test-upload/blob/v0/witch/makoto.csv", "Minami Shinoda");
+    await BOUND_BUCKET.put("test-upload/blob/v0/witch/akane.csv", "Kana Aoi");
+    await BOUND_BUCKET.put("test-upload/blob/v0/animal/cat/chito.txt", "Ai Kayano");
 
     // Completing the upload.
     let req = new Request("http://localhost", { method: "POST", body: "{}" });
-    req.params = { project: "test-complete-upload", version: "test" };
+    req.params = params;
     req.query = {};
-    req.headers.append("Authorization", "Bearer " + utils.mockToken);
 
     let nb = [];
-    gh_test_rigging.postNewIssue = [];
-    let res = await upload.completeUploadHandler(req, nb);
+    await setup.expectError(upload.completeUploadHandler(req, nb), "no user identity");
 
-    let body = await res.json();
-    expect(body.job_id).toBe(-1); // placeholder number, used for testing.
-    let postinfo = gh_test_rigging.postNewIssue[0];
-    expect(postinfo.title).toBe("upload complete");
-    let postbody = JSON.parse(postinfo.body);
-    expect(postbody.project).toBe("test-complete-upload");
-    expect(postbody.permissions.read_access).toBe("public");
-    expect(postbody.permissions.owners).toEqual(["ArtifactDB-bot"]);
+    req.headers.append("Authorization", "Bearer " + key);
+    await upload.completeUploadHandler(req, nb);
+
+    // Checking that the lock on the folder has been removed.
+    let lckinfo = await BOUND_BUCKET.head("test-upload/blob/..LOCK");
+    expect(lckinfo).toBeNull();
+
+    // Check that an updated summary file was posted to the bucket.
+    let sinfo = await BOUND_BUCKET.get("test-upload/blob/v0/..summary");
+    let sbody = await sinfo.json();
+    expect(Number.isNaN(Date.parse(sbody.upload_finish))).toBe(false);
+    expect("on_probation" in sbody).toEqual(false);
+
+    // Check that we created the link files.
+    let link1 = await (await BOUND_BUCKET.get("test-upload/blob/v0/..links")).json();
+    expect(link1).toEqual({ 
+        "haru-no-hakobiya": { project: "test", asset: "blob", version: "v1", path: "blah.txt" } 
+    });
+
+    let link2 = await (await BOUND_BUCKET.get("test-upload/blob/v0/human/..links")).json();
+    expect(link2).toEqual({ 
+        "chinatsu.txt": { project: "test", asset: "blob", version: "v1", path: "foo/bar.txt" },
+        "nao.txt": { project: "test", asset: "blob", version: "v1", path: "whee.txt" },
+    });
+
+    let link3 = await (await BOUND_BUCKET.get("test-upload/blob/v0/animal/cat/..links")).json();
+    expect(link3).toEqual({ 
+        "kenny.txt": { project: "test", asset: "blob", version: "v1", path: "foo/bar.txt" },
+    });
 })
 
-test("completeUploadHandler works correctly with custom permissions", async () => {
-    // Initializing the upload.
+test("completeUploadHandler checks that all uploads are present", async () => {
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
+
+    // Setting up the state.
+    let params = { project: "test-upload", asset: "blob", version: "v0" };
+    let key;
     {
         let req = new Request("http://localhost", {
             method: "POST",
             body: JSON.stringify({ 
-                filenames: [
-                    { check: "simple", filename: "WHEE", value: { md5sum: "a4caf5afa851da451e2161a4c3ac46bb" } },
-                    { check: "simple", filename: "BAR", value: { md5sum: "4209df9c96263664123450aa48fd1bfa" } }
+                files: [
+                    { type: "simple", path: "witch/makoto.csv", md5sum: "a4caf5afa851da451e2161a4c3ac46bb", size: 100 },
+                    { type: "simple", path: "witch/akane.csv", md5sum: "3f8aaed3d149be552fc2ec47ae2d1e57", size: 218 },
+                    { type: "simple", path: "animal/cat/chito.txt", md5sum: "4ba0e96c086a229b4f39e544e2fa7873", size: 92 }, 
                 ]
             })
         });
-        req.params = { project: "test-complete-upload2", version: "test" };
-        req.headers.append("Authorization", "Bearer " + utils.mockToken);
+        req.params = params;
+        req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
 
         let nb = [];
-        await upload.initializeUploadHandler(req, nb);
-        await Promise.all(nb);
+        let init = await (await upload.initializeUploadHandler(req, nb)).json();
+        key = init.session_key;
     }
 
-    // Completing the upload.
-    let req = new Request("http://localhost", { method: "POST", body: '{ "read_access": "viewers", "owners": [ "chihaya-kisaragi" ] }' });
-    req.params = { project: "test-complete-upload2", version: "test" };
+    // Upload fails due to missing files.
+    let req = new Request("http://localhost", { method: "POST", body: "{}" });
+    req.params = params;
     req.query = {};
-    req.headers.append("Authorization", "Bearer " + utils.mockToken);
+    req.headers.append("Authorization", "Bearer " + key);
 
     let nb = [];
-    gh_test_rigging.postNewIssue = [];
-    let res = await upload.completeUploadHandler(req, nb);
-
-    let postinfo = gh_test_rigging.postNewIssue[0];
-    expect(postinfo.title).toBe("upload complete");
-    let postbody = JSON.parse(postinfo.body);
-    expect(postbody.project).toBe("test-complete-upload2");
-    expect(postbody.permissions.read_access).toBe("viewers");
-    expect(postbody.permissions.owners).toEqual(["chihaya-kisaragi"]);
+    await setup.expectError(upload.completeUploadHandler(req, nb), "should have a file");
 })
 
-test("completeUploadHandler throws the right errors", async () => {
-    let req = new Request("http://localhost", { method: "POST", body: '{ "read_access": "FOOABLE" }' });
-    req.params = { project: "test-complete-check", version: "WHEE" };
+test("completeUploadHandler checks that all uploads are present", async () => {
+    let payload = await setup.mockProject();
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
 
-    // First attempt without identity.
+    // Setting up the state.
+    let params = { project: "test-upload", asset: "blob", version: "v0" };
+    let key;
+    {
+        let req = new Request("http://localhost", {
+            method: "POST",
+            body: JSON.stringify({ 
+                files: [
+                    { type: "link", path: "human/chinatsu.txt", link: { project: "test", asset: "blob", version: "v1", path: "foo/bar.txt" } },
+                    { type: "link", path: "human/nao.txt", link: { project: "test", asset: "blob", version: "v1", path: "whee.txt" } },
+                ]
+            })
+        });
+        req.params = params;
+        req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
+
+        let nb = [];
+        let init = await (await upload.initializeUploadHandler(req, nb)).json();
+        key = init.session_key;
+    }
+
+    // Adding files at the links.
+    await BOUND_BUCKET.put("test-upload/blob/v0/human/chinatsu.txt", "Eri Suzuki");
+    await BOUND_BUCKET.put("test-upload/blob/v0/human/nao.txt", "Shiori Mikami");
+
+    // Upload fails due to files present at the links.
+    let req = new Request("http://localhost", { method: "POST", body: "{}" });
+    req.params = params;
+    req.query = {};
+    req.headers.append("Authorization", "Bearer " + key);
+
     let nb = [];
-    await utils.expectError(upload.completeUploadHandler(req, nb), "user identity");
-
-    // Trying again after adding headers.
-    req.headers.append("Authorization", "Bearer " + utils.mockToken);
-    await utils.expectError(upload.completeUploadHandler(req, nb), "not been previously locked");
-
-    // Forcing a lock file.
-    await BOUND_BUCKET.put("test-complete-check/WHEE/..LOCK", '{ "user_name": "ArtifactDB-bot" }')
-    await utils.expectError(upload.completeUploadHandler(req, nb), "invalid request body");
+    await setup.expectError(upload.completeUploadHandler(req, nb), "should not have a file");
 })
 
-test("queryJobHandler works correctly", async () => {
-    let req = new Request("http://localhost", { method: "POST", body: '{ "read_access": "FOOABLE" }' });
-    req.params = { jobid: "-1" };
-
-    // PENDING
-    {
-        gh_test_rigging.getIssue = { "-1": { "state": "open", "comments": 0 } };
-
-        let nb = [];
-        let res = await upload.queryJobIdHandler(req, nb);
-        expect(res.status).toBe(200);
-        let body = await res.json();
-        expect(body.status).toBe("PENDING");
-    }
-
-    // SUCCESS
-    {
-        gh_test_rigging.getIssue = { "-1": { "state": "closed", "comments": 0 } };
-
-        let nb = [];
-        let res = await upload.queryJobIdHandler(req, nb);
-        expect(res.status).toBe(200);
-        let body = await res.json();
-        expect(body.status).toBe("SUCCESS");
-    }
-
-    // FAILURE 
-    {
-        gh_test_rigging.getIssue = { "-1": { "state": "open", "comments": 10 } };
-
-        let nb = [];
-        let res = await upload.queryJobIdHandler(req, nb);
-        expect(res.status).toBe(200);
-        let body = await res.json();
-        expect(body.status).toBe("FAILURE");
-    }
-})
+/******* Abort upload checks *******/
 
 test("abortUploadHandler works correctly", async () => {
-    let req = new Request("http://localhost");
-    req.params = { project: "test-abort-upload", version: "test" };
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
+
+    // Setting up the state.
+    let req = new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ 
+            files: [
+                { type: "simple", path: "WHEE", md5sum: "a4caf5afa851da451e2161a4c3ac46bb", size: 100 },
+            ]
+        })
+    });
+    req.params = { project: "test-upload", asset: "blob", version: "v0" };
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
+
+    let nb = [];
+    let raw_init = await upload.initializeUploadHandler(req, nb);
+    let init = await raw_init.json();
 
     // First attempt without headers.
-    let nb = [];
-    await utils.expectError(upload.abortUploadHandler(req, nb), "user identity");
+    let req2 = new Request("http://localhost", { method: "DELETE" });
+    req2.params = req.params;
+    await setup.expectError(upload.abortUploadHandler(req2, nb), "user identity");
 
     // Trying again after adding headers.
-    req.headers.append("Authorization", "Bearer " + utils.mockToken);
-    await utils.expectError(upload.abortUploadHandler(req, nb), "not been previously locked");
+    req2.headers.set("Authorization", "Bearer NOOO");
+    await setup.expectError(upload.abortUploadHandler(req2, nb), "different user");
 
-    // Forcing a lock file.
-    await BOUND_BUCKET.put("test-abort-upload/test/..LOCK", '{ "user_name": "ArtifactDB-bot" }')
-    let res = await upload.abortUploadHandler(req, nb);
-    expect(res.status).toBe(202);
+    // Success!
+    req2.headers.set("Authorization", "Bearer " + init.session_key);
+    await upload.abortUploadHandler(req2, nb);
+
+    // Repeated attempts fail as the lock file is gone.
+    await setup.expectError(upload.abortUploadHandler(req2, nb), "not been previously locked");
 })

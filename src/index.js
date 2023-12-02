@@ -1,37 +1,30 @@
 import { Router } from 'itty-router'
 
 import * as gh from "./github.js";
-import * as files from "./files.js";
-import * as project from "./project.js";
 import * as auth from "./auth.js";
 import * as upload from "./upload.js";
+import * as create from "./create.js";
+import * as remove from "./remove.js";
+import * as permissions from "./permissions.js";
+import * as probation from "./probation.js";
 import * as utils from "./utils.js";
 import * as s3 from "./s3.js";
 
-if (typeof GITHUB_PAT !== "undefined") {
-    gh.setToken(GITHUB_PAT);
-} else {
-    console.warn("missing the GITHUB_PAT secret");
-}
-
+// Variables in the wrangler.toml.
 if (ADMIN_ACCOUNTS !== "") {
     auth.setAdmins(ADMIN_ACCOUNTS.split(","));
 }
-if (ALLOWED_UPLOADERS !== "") {
-    auth.setUploaders(ALLOWED_UPLOADERS.split(","));
-}
-
-gh.setRepository(GITHUB_CI_REPOSITORY);
 gh.setUserAgent(GITHUB_USER_AGENT);
 s3.setBucketName(R2_BUCKET_NAME);
 
+s3.setR2Binding(BOUND_BUCKET);
+
+// Secret variables.
 if (typeof ACCESS_KEY_ID !== "undefined" && typeof SECRET_ACCESS_KEY != "undefined") {
     s3.setS3Object(CF_ACCOUNT_ID, ACCESS_KEY_ID, SECRET_ACCESS_KEY);
 } else {
     console.warn("missing the ACCESS_KEY_ID or SECRET_ACCESS_KEY secrets");
 }
-
-s3.setR2Binding(BOUND_BUCKET);
 
 const router = Router();
 
@@ -61,41 +54,37 @@ function handleOptions(request) {
     }
 }
 
-/*** Setting up the routes ***/
+/*** Setting up admin routes ***/
 
-router.get("/files/:id/metadata", files.getFileMetadataHandler);
+router.post("/create/:project", create.createProjectHandler);
 
-router.get("/files/:id", files.getFileHandler);
+router.delete("/remove/:project", remove.removeProjectHandler);
 
-router.post("/projects/:project/version/:version/upload", upload.initializeUploadHandler);
+router.delete("/remove/:project/:asset", remove.removeProjectAssetHandler);
 
-router.put("/link/:source/to/:target", upload.createLinkHandler);
+router.delete("/remove/:project/:asset/:version", remove.removeProjectAssetVersionHandler);
 
-router.put("/projects/:project/version/:version/complete", upload.completeUploadHandler);
+/*** Project upload ***/
 
-router.put("/projects/:project/version/:version/abort", upload.abortUploadHandler);
+router.post("/upload/start/:project/:asset/:version", upload.initializeUploadHandler);
 
-router.get("/jobs/:jobid", upload.queryJobIdHandler);
+router.post("/upload/presigned-file/:slug", upload.uploadPresignedFileHandler);
 
-router.get("/projects", project.listProjectsHandler);
+router.put("/upload/complete/:project/:asset/:version", upload.completeUploadHandler);
 
-router.get("/projects/:project/metadata", project.getProjectMetadataHandler);
+router.put("/upload/abort/:project/:asset/:version", upload.abortUploadHandler);
 
-router.get("/projects/:project/version/:version/metadata", project.getProjectVersionMetadataHandler);
+/*** Permission handling ***/
 
-router.get("/projects/:project/version/:version/info", project.getProjectVersionInfoHandler);
+router.put("/permissions/:project", permissions.setPermissionsHandler);
 
-router.get("/projects/:project/versions", project.listProjectVersionsHandler);
+/*** Probation ***/
 
-router.get("/projects/:project/permissions", auth.getPermissionsHandler);
+router.post("/probation/request-token/:project", probation.requestTokenHandler);
 
-router.put("/projects/:project/permissions", auth.setPermissionsHandler);
+router.post("/probation/approve/:project", probation.approveProbationHandler);
 
-/*** Non-standard endpoints, for testing and other things***/
-
-router.get("/custom/user", auth.findUserHandler);
-
-router.put("/custom/upload-secret", auth.setUploadOverrideHandler);
+router.post("/probation/reject/:project", probation.rejectProbationHandler);
 
 /*** Setting up the listener ***/
 

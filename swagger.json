@@ -1,0 +1,165 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "gypsum REST API",
+        "description": "Upload files to the gypsum file store.",
+        "version": "1.0.0"
+    },
+    "servers": [
+        {
+            "url": "https://gypsum-test.aaron-lun.workers.dev",
+            "description": "Production instance of the API"
+        }
+    ],
+    "paths": {
+
+        "/create/{project}": {
+            "post": {
+                "summary": "Create a new project. This requires administrator privileges.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/project" }
+                ],
+                "security": [ { "admin": [] } ],
+                "responses": {
+                    "200": { "description": "Successful project creation." },
+                    "400": {
+                        "description": "Invalid project name, or the project already exists.",
+                        "content": { 
+                            "application/json": {
+                                "schema":  { "$ref": "#/components/schemas/error" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/401" },
+                    "403": { "$ref": "#/components/responses/403" }
+                },
+                "tags": ["Project creation"]
+            }
+        },
+
+        "/remove/{project}": {
+            "delete": {
+                "summary": "Remove a project. This requires administrator privileges.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/project" }
+                ],
+                "security": [ { "admin": [] } ],
+                "responses": {
+                    "200": { "description": "Successful project removal. Note that this is returned even if `project` did not exist." },
+                    "401": { "$ref": "#/components/responses/401" },
+                    "403": { "$ref": "#/components/responses/403" }
+                },
+                "tags": ["Deletion"]
+            }
+        },
+
+        "/remove/{project}/{asset}": {
+            "delete": {
+                "summary": "Remove an asset from a project. This requires administrator privileges.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/project" },
+                    { "$ref": "#/components/parameters/asset" }
+                ],
+                "security": [ { "admin": [] } ],
+                "responses": {
+                    "200": { "description": "Successful asset removal. Note that this is returned even if `project` or `asset` did not exist." },
+                    "401": { "$ref": "#/components/responses/401" },
+                    "403": { "$ref": "#/components/responses/403" }
+                },
+                "tags": ["Deletion"]
+            }
+        },
+
+        "/remove/{project}/{asset}/{version}": {
+            "delete": {
+                "summary": "Remove a version of an asset from a project. This requires administrator privileges.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/project" },
+                    { "$ref": "#/components/parameters/asset" },
+                    { "$ref": "#/components/parameters/version" }
+                ],
+                "security": [ { "admin": [] } ],
+                "responses": {
+                    "200": { "description": "Successful version removal. Note that this is returned even if `project`, `asset` or `version` did not exist." },
+                    "401": { "$ref": "#/components/responses/401" },
+                    "403": { "$ref": "#/components/responses/403" }
+                },
+                "tags": ["Deletion"]
+            }
+        }
+
+    },
+    "components": {
+        "parameters": {
+            "project": {
+                "in": "path",
+                "name": "project",
+                "schema": {
+                    "type": "string"
+                },
+                "description": "Name of the project. This should not contain '/' or start with '..'.",
+                "required": true
+            },
+            "asset": {
+                "in": "path",
+                "name": "asset",
+                "schema": {
+                    "type": "string"
+                },
+                "description": "Name of the asset inside a project. This should not contain '/' or start with '..'.",
+                "required": true
+            },
+            "version": {
+                "in": "path",
+                "name": "version",
+                "schema": {
+                    "type": "string"
+                },
+                "description": "Name of the version of the asset inside a project. This should not contain '/' or start with '..'.",
+                "required": true
+            }
+        },
+
+        "responses": {
+            "401": {
+                "description": "No token supplied.",
+                "content": { 
+                    "application/json": {
+                        "schema":  { "$ref": "#/components/schemas/error" }
+                    }
+                }
+            },
+            "403": {
+                "description": "User is not authorized to perform this operation.",
+                "content": { 
+                    "application/json": {
+                        "schema":  { "$ref": "#/components/schemas/error" }
+                    }
+                }
+            }
+        },
+        "schemas": {
+            "error": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": ["error"]
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Reason for the error"
+                    }
+                }
+            }
+        },
+        "securitySchemes": {
+            "admin": {
+                "type": "http",
+                "scheme": "bearer",
+                "description": "GitHub token for an account that gypsum recognizes as an administrator."
+            }
+        }
+    }
+}    
+

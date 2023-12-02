@@ -1,24 +1,5 @@
 import * as f_ from "../src/index.js";
 import * as other from "../src/utils.js";
-import * as utils from "./utils.js";
-
-test("ID packing and unpacking works correctly", () => {
-    let packed = other.packId("test-public", "whee.txt", "base");
-    expect(packed).toBe("test-public:whee.txt@base");
-
-    let unpacked = other.unpackId(packed);
-    expect(unpacked.project).toBe("test-public");
-    expect(unpacked.path).toBe("whee.txt");
-    expect(unpacked.version).toBe("base");
-
-    expect(() => other.unpackId("test-public@base")).toThrow("could not identify project");
-    expect(() => other.unpackId(":whee.txt@base")).toThrow("empty project");
-    expect(() => other.unpackId("test-public:base")).toThrow("could not identify version");
-    expect(() => other.unpackId("test-public:whee.txt@")).toThrow("empty version");
-
-    expect(() => other.unpackId("test-public@whee.txt:base")).toThrow("could not identify path");
-    expect(() => other.unpackId("test-public:@base")).toThrow("empty path");
-})
 
 test("JSON responses are correctly constructed", async () => {
     {
@@ -46,11 +27,6 @@ test("error responses are correctly constructed", async () => {
     let body = await err.json();
     expect(body.reason).toBe("u suck");
     expect(body.status).toBe("error");
-})
-
-test("time conversions are performed properly", () => {
-    expect(other.minutesFromNow(10)).toBe(10 * 60);
-    expect(other.hoursFromNow(5)).toBe(5 * 3600);
 })
 
 test("caching of JSON payloads works correctly", async () => {
@@ -101,3 +77,77 @@ test("named resolve works as expected", async () => {
     let eres = await other.namedResolve({});
     expect(eres).toEqual({});
 });
+
+test("listApply works as expected", async () => {
+    await other.quickUploadJson("alpha/alex.txt", [ "Union" ]);
+    await other.quickUploadJson("alpha/bravo/bar.txt", [ "Flyers!!!" ]);
+    await other.quickUploadJson("alpha/bravo2/stuff.txt", [ "Glow Map" ]);
+    await other.quickUploadJson("charlie/whee.txt", [ "Harmony 4 You" ]);
+
+    {
+        let survivors = [];
+        await other.listApply("alpha/", f => { survivors.push(f.key); });
+        survivors.sort();
+        expect(survivors).toEqual(["alpha/alex.txt", "alpha/bravo/bar.txt", "alpha/bravo2/stuff.txt"]);
+    }
+
+    {
+        let survivors = [];
+        await other.listApply("alpha/bravo", f => { survivors.push(f.key); });
+        survivors.sort();
+        expect(survivors).toEqual(["alpha/bravo/bar.txt", "alpha/bravo2/stuff.txt"]);
+    }
+
+    {
+        let survivors = [];
+        await other.listApply("alpha/bravo/", f => { survivors.push(f.key); });
+        survivors.sort();
+        expect(survivors).toEqual(["alpha/bravo/bar.txt"]);
+    }
+
+    {
+        let survivors = [];
+        await other.listApply("", f => { survivors.push(f.key); }, /* list_limit = */ 1); // forcing iteration.
+        survivors.sort();
+        expect(survivors).toEqual(["alpha/alex.txt", "alpha/bravo/bar.txt", "alpha/bravo2/stuff.txt", "charlie/whee.txt"]);
+    }
+})
+
+test("quick recursive delete works as expected", async () => {
+    var it = 0;
+    while (true) {
+        await other.quickUploadJson("alpha/foo.txt", [ "Yuka Nakano", "Yukino Aihara" ]);
+        await other.quickUploadJson("alpha/bravo/bar.txt", [ "Kanako Mimura" ]);
+        await other.quickUploadJson("alpha/bravo/stuff.txt", [ "Miria Akagi" ]);
+        await other.quickUploadJson("alpha/bravo-foo/whee.txt", [ "Yumi Aiba" ]);
+
+        if (it == 0) {
+            await other.quickRecursiveDelete("alpha/bravo/");
+            expect(await BOUND_BUCKET.head("alpha/foo.txt")).not.toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo/bar.txt")).toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo/stuff.txt")).toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo-foo/whee.txt")).not.toBeNull();
+        } else if (it == 1) {
+            await other.quickRecursiveDelete("alpha/bravo-foo/whee.txt");
+            expect(await BOUND_BUCKET.head("alpha/foo.txt")).not.toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo/bar.txt")).not.toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo/stuff.txt")).not.toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo-foo/whee.txt")).toBeNull();
+        } else if (it == 2) {
+            await other.quickRecursiveDelete("alpha/");
+            expect(await BOUND_BUCKET.head("alpha/foo.txt")).toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo/bar.txt")).toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo/stuff.txt")).toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo-foo/whee.txt")).toBeNull();
+        } else if (it == 3) {
+            await other.quickRecursiveDelete("alpha/", 1); // setting a list limit of 1 to force iteration.
+            expect(await BOUND_BUCKET.head("alpha/foo.txt")).toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo/bar.txt")).toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo/stuff.txt")).toBeNull();
+            expect(await BOUND_BUCKET.head("alpha/bravo-foo/whee.txt")).toBeNull();
+        } else {
+            break;
+        }
+        it++;
+    }
+})

@@ -1,277 +1,191 @@
-import * as f_ from "../src/index.js";
-import * as utils from "./utils.js";
+import * as f_ from "../src/index.js"; // need this to set the bucket bindings.
 import * as gh from "../src/github.js";
 import * as auth from "../src/auth.js";
 import * as setup from "./setup.js";
 
 beforeAll(async () => {
-    await setup.mockPublicProject();
-    await setup.mockPrivateProject();
-
+    await setup.mockProject();
     let rigging = gh.enableTestRigging();
-    utils.mockGitHubIdentities(rigging);
+    setup.mockGitHubIdentities(rigging);
 })
 
 afterAll(() => {
     gh.enableTestRigging(false);
 })
 
-test("findUserHandler works correctly", async () => {
+test("extractBearerToken works correctly", async () => {
     let req = new Request("http://localhost");
     req.query = {};
 
+    // Fails with nothing.
+    expect(() => auth.extractBearerToken(req)).toThrow("user identity");
+
+    // Fails with no Bearer prefix:
+    req.headers.set("Authorization", "aasdasD");
+    expect(() => auth.extractBearerToken(req)).toThrow("user identity");
+
+    // Finally works.
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenUser);
+    expect(auth.extractBearerToken(req)).toEqual(setup.mockTokenUser);
+})
+
+test("findUser works correctly", async () => {
     let nb = [];
-    await utils.expectError(auth.findUserHandler(req, nb), "user identity");
-    expect(nb.length).toBe(0);
-
-    // Adding headers to the request object, and doing it again.
-    req.headers.append("Authorization", "Bearer " + utils.mockToken);
-
-    let res = await auth.findUserHandler(req, nb);
-    expect(res.status).toBe(200);
-    let body = await res.json();
-    expect(body.login).toEqual("ArtifactDB-bot");
-    expect(body.organizations).toEqual([]);
+    let res = await auth.findUser(setup.mockTokenOwner, nb);
+    expect(res.login).toEqual("ProjectOwner");
+    expect(res.organizations).toEqual(["STUFF"]);
     expect(nb.length).toBeGreaterThan(0);
 
     // Just fetches it from cache, so no cache insertion is performed.
     let nb2 = [];
-    let res2 = await auth.findUserHandler(req, nb2);
-    let body2 = await res2.json();
-    expect(body2.login).toEqual("ArtifactDB-bot");
+    let res2 = await auth.findUser(setup.mockTokenOwner, nb2);
+    expect(res2.login).toEqual("ProjectOwner");
     expect(nb2.length).toBe(0);
+
+    // Works with no organizations:
+    res2 = await auth.findUser(setup.mockTokenAdmin, nb2);
+    expect(res2.login).toEqual("LTLA");
+    expect(res2.organizations).toEqual([]);
 
     // Checking that the organizations are returned properly...
     // also check that the caching doesn't just return the same result.
-    {
-        req.headers.set("Authorization", "Bearer " + utils.mockTokenOther);
-        let res = await auth.findUserHandler(req, nb);
-        expect(res.status).toBe(200);
-        let body = await res.json();
-        expect(body.login).toEqual("SomeoneElse");
-        expect(body.organizations).toEqual(["FOO", "BAR"]);
-    }
+    let res3 = await auth.findUser(setup.mockTokenUser, nb);
+    expect(res3.login).toEqual("RandomDude");
+    expect(res3.organizations).toEqual(["FOO", "BAR"]);
 })
 
-test("getPermissionsHandler works correctly", async () => {
-    let req = new Request("http://localhost");
-    req.params = { project: "test-public" };
-    req.query = {};
-
+test("getPermissions works correctly", async () => {
     let nb = [];
-    let res = await auth.getPermissionsHandler(req, nb);
-    expect(res.status).toBe(200);
-
-    let body = await res.json();
-    expect(body.owners).toEqual(["ArtifactDB-bot"]);
-    expect(body.read_access).toEqual("public");
-
-    // Checking the error state.
-    req.params.project = "test-foo";
-    await utils.expectError(auth.getPermissionsHandler(req, nb), "does not exist");
-})
-
-test("getPermissionsHandler fails correctly without authentication", async () => {
-    let req = new Request("http://localhost");
-    req.params = { project: "test-private" };
-    req.query = {};
-
-    let nb = [];
-    await utils.expectError(auth.getPermissionsHandler(req, nb), "user credentials");
-
-    // Adding the wrong credentials.
-    req.headers.append("Authorization", "Bearer " + utils.mockTokenOther);
-    await utils.expectError(auth.getPermissionsHandler(req, nb), "does not have read access");
-
-    // Adding credentials.
-    req.headers.set("Authorization", "Bearer " + utils.mockToken);
-    let res = await auth.getPermissionsHandler(req, nb);
-    expect(res.status).toBe(200);
-
-    let body = await res.json();
-    expect(body.owners).toEqual(["ArtifactDB-bot"]);
-    expect(body.read_access).toEqual("viewers");
-})
-
-test("checkReadPermissions works correctly", () => {
-    let perms = {
-        owners: [ "ArtifactDB-bot" ],
-        viewers: [ "chihaya-kisaragi" ],
-        read_access: "public"
-    };
-    expect(auth.checkReadPermissions(perms, null, "FOO")).toBe(null);
-
-    // Making it non-public.
-    perms.read_access = "viewers";
-    expect(() => auth.checkReadPermissions(perms, null, "FOO")).toThrow("user credentials");
-    expect(() => auth.checkReadPermissions(perms, { login: "FOO", organizations: [] }, "FOO")).toThrow("does not have read access");
-    expect(auth.checkReadPermissions(perms, { login: "ArtifactDB-bot", organizations: [] }, "FOO")).toBe(null);
-    expect(auth.checkReadPermissions(perms, { login: "chihaya-kisaragi", organizations: [] }, "FOO")).toBe(null);
-
-    // Checking that organizations work.
-    perms.viewers.push("foo-org");
-    expect(auth.checkReadPermissions(perms, { login: "FOO", organizations: [ "foo-org" ] }, "FOO")).toBe(null);
-
-    // Checking that admins have clearance.
-    expect(auth.checkReadPermissions(perms, { login: ADMIN_ACCOUNTS.split(",")[0], organizations: [] })).toBe(null);
-
-    // Throws a nice error.
-    expect(() => auth.checkReadPermissions(null, null, "FOO")).toThrow("failed to load permissions");
-})
-
-test("checkWritePermissions works correctly", () => {
-    let perms = {
-        owners: [ "ArtifactDB-bot" ],
-        write_access: "owners"
-    };
-
-    expect(() => auth.checkWritePermissions(perms, null, "FOO")).toThrow("user credentials");
-    expect(() => auth.checkWritePermissions(perms, { login: "chihaya-kisaragi", organizations: [] }, "FOO")).toThrow("does not have write access");
-    expect(auth.checkWritePermissions(perms, { login: "ArtifactDB-bot", organizations: [] }, "FOO")).toBe(null);
-
-    // Checking that organizations work.
-    perms.owners.push("foo-org");
-    expect(auth.checkWritePermissions(perms, { login: "FOO", organizations: [ "foo-org" ] }, "FOO")).toBe(null);
-
-    // Checking that admins have clearance.
-    expect(auth.checkWritePermissions(perms, { login: ADMIN_ACCOUNTS.split(",")[0], organizations: [] })).toBe(null);
-
-    // Throws a nice error.
-    expect(() => auth.checkWritePermissions(null, null, "FOO")).toThrow("failed to load permissions");
-})
-
-test("checkNewUploadPermissions works correctly", async () => {
-    await expect(() => auth.checkNewUploadPermissions(null)).rejects.toThrow("user credentials");
-    await expect(() => auth.checkNewUploadPermissions({ login: "FOO", organizations: [] })).rejects.toThrow("upload a new project");
-
-    // Allowed uploaders and admins have clearance.
-    expect(await auth.checkNewUploadPermissions({ login: "ArtifactDB-bot", organizations: [] })).toBe(null);
-    expect(await auth.checkNewUploadPermissions({ login: "LTLA", organizations: [] })).toBe(null);
-
-    // Uploading the upload override secret.
-    await BOUND_BUCKET.put("..upload_override", '"foobar"');
-    let nonblockers = [];
-    let random = { login: "chihaya-kisaragi", organizations: [] }
-    expect(await auth.checkNewUploadPermissions(random, new Request("https://google.com", { headers: { "ArtifactDB-upload-override-key": "foobar" } }), nonblockers)).toBeNull();
-    await utils.expectError(auth.checkNewUploadPermissions(random, new Request("https://google.com", { headers: { "ArtifactDB-upload-override-key": "foobar2" } }), nonblockers), "upload");
-})
-
-test("setUploadOverrideHandler works correctly", async () => {
-    let req = new Request("http://localhost", {
-        method: "PUT",
-        headers: { "ArtifactDB-upload-override-key": "whoople" }
-    });
-    let nb = [];
-
-    await utils.expectError(auth.setUploadOverrideHandler(req, nb), "user identity");
-
-    // Adding the wrong credentials.
-    req.headers.append("Authorization", "Bearer " + utils.mockTokenOther);
-    await utils.expectError(auth.setUploadOverrideHandler(req, nb), "set the upload override key");
-
-    // Trying again.
-    req.headers.set("Authorization", "Bearer " + utils.mockTokenAaron);
-    let res = await auth.setUploadOverrideHandler(req, nb);
-    expect(res.status).toBe(202);
-
+    let out = await auth.getPermissions("test", nb);
+    expect(out.owners).toEqual(["ProjectOwner"]);
+    expect(nb.length).toBeGreaterThan(0);
     await Promise.all(nb);
-    let found = await BOUND_BUCKET.get("..upload_override");
-    expect(await found.json()).toBe("whoople");
+
+    // Fails correctly.
+    await setup.expectError(auth.getPermissions("nonexistent", nb), "no existing permissions");
+
+    // Fetches from cache.
+    let nb2 = [];
+    let out2 = await auth.getPermissions("test", nb2);
+    expect(out2.owners).toEqual(["ProjectOwner"]);
+    expect(nb2.length).toBe(0);
+
+    // Flushes the cache.
+    let nb3 = [];
+    await auth.flushCachedPermissions("test", nb3);
+    expect(nb3.length).toBeGreaterThan(0);
+    await Promise.all(nb3);
 })
 
-test("validateNewPermissions works correctly", () => {
-    expect(() => auth.validateNewPermissions({ read_access: "FOO" })).toThrow("public, viewers, owners, or none");
-    expect(() => auth.validateNewPermissions({ read_access: "public", write_access: "FOO" })).toThrow("owners or none");
-    expect(() => auth.validateNewPermissions({ scope: "version", read_access: "public", write_access: "owners" })).toThrow("scope");
-
-    let base = { scope: "project", read_access: "public", write_access: "owners" };
-    expect(() => auth.validateNewPermissions({ ...base, viewers: [1] })).toThrow("non-empty strings");
-    expect(() => auth.validateNewPermissions({ ...base, viewers: [""] })).toThrow("non-empty strings");
-    expect(() => auth.validateNewPermissions({ ...base, viewers: ["a"], owners: [""] })).toThrow("non-empty strings");
-
-    expect(auth.validateNewPermissions({ ...base, viewers: ["a"], owners: ["b"] })).toBeUndefined();
+test("isOneOf works correctly", () => {
+    expect(auth.isOneOf({login:"luna", organizations:["foo", "bar"]}, ["akari", "luna", "kaori"])).toBe(true)
+    expect(auth.isOneOf({login:"luna", organizations:["foo", "bar"]}, ["akari", "kaori"])).toBe(false)
+    expect(auth.isOneOf({login:"luna", organizations:["foo", "bar"]}, ["akari", "foo", "kaori"])).toBe(true)
 })
 
-test("setPermissionsHandler works correctly", async () => {
-    {
-        let req = new Request("http://localhost", {
-            method: "POST",
-            body: JSON.stringify({ read_access: "viewers" }),
-            headers: { "Content-Type": "application/json" }
-        });
-        req.params = { project: "test-private" };
-        req.query = {};
+test("setting admins works correctly", async () => {
+    let old = auth.getAdmins();
 
-        let nb = [];
-        await utils.expectError(auth.setPermissionsHandler(req, nb), "user identity");
+    // Check that our admin token is actually in the set of admins.
+    expect(old.indexOf((await auth.findUser(setup.mockTokenAdmin, [])).login)).toBeGreaterThanOrEqual(0);
 
-        // Adding the wrong credentials.
-        req.headers.append("Authorization", "Bearer " + utils.mockTokenOther);
-        await utils.expectError(auth.setPermissionsHandler(req, nb), "does not have write access");
-
-        // Trying again.
-        req.headers.set("Authorization", "Bearer " + utils.mockToken);
-        let res = await auth.setPermissionsHandler(req, nb);
-        expect(res.status).toBe(202);
+    try {
+        auth.setAdmins(["a", "b", "c"]);
+        expect(auth.getAdmins()).toEqual(["a", "b", "c"]);
+    } finally {
+        auth.setAdmins(old);
     }
+})
 
-    // Checking that the update was propagated.
-    {
-        let req = new Request("http://localhost");
-        req.params = { project: "test-private" };
-        req.query = {};
-        req.headers.append("Authorization", "Bearer " + utils.mockToken);
+test("validatePermissions works correctly", () => {
+    expect(auth.validatePermissions({ owners: ["b"], uploaders: [] }, true)).toBeUndefined();
+    expect(auth.validatePermissions({}, false)).toBeUndefined();
 
-        let nb = [];
-        let res = await auth.getPermissionsHandler(req, nb);
-        expect(res.status).toBe(200);
+    expect(() => auth.validatePermissions({}, true)).toThrow("'owners' property to be present");
+    expect(() => auth.validatePermissions({ owners: "b", uploaders: [] }, true)).toThrow("to be an array");
+    expect(() => auth.validatePermissions({ owners: [1,2,3], uploaders: [] }, true)).toThrow("array of strings");
 
-        let body = await res.json();
-        expect(body.read_access).toBe("viewers");
-    }
+    expect(() => auth.validatePermissions({ owners: [] }, true)).toThrow("'uploaders' property to be present");
+    expect(() => auth.validatePermissions({ owners: [], uploaders: "asdad"}, true)).toThrow("to be an array");
+    expect(() => auth.validatePermissions({ owners: [], uploaders: ["asdsad"]}, true)).toThrow("array of objects");
 
-    // Breaks correctly if project doesn't exist.
-    {
-        let req = new Request("http://localhost");
-        req.params = { project: "test-foo" };
-        req.query = {};
-        req.headers.append("Authorization", "Bearer " + utils.mockToken);
+    expect(() => auth.validatePermissions({ owners: [], uploaders: [{}]}, true)).toThrow("uploaders.id");
+    expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:2}]}, true)).toThrow("uploaders.id");
+    expect(auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd"}]}, true)).toBeUndefined();
 
-        let nb = [];
-        await utils.expectError(auth.getPermissionsHandler(req, nb), "does not exist");
-    }
+    expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", until: 5}]}, true)).toThrow("to be a date-formatted string");
+    expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", until: "asdad"}]}, true)).toThrow("to be a date-formatted string");
+    expect(auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", until: "2019-12-22"}]}, true)).toBeUndefined();
 
-    // Breaks correctly if request body is invalid.
-    {
-        let req = new Request("http://localhost", {
-            method: "POST",
-            body: JSON.stringify({ read_access: ["viewers"] }),
-            headers: { "Content-Type": "application/json" }
-        });
-        req.params = { project: "test-public" };
-        req.query = {};
-        req.headers.append("Authorization", "Bearer " + utils.mockToken);
+    expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", trusted: 1}]}, true)).toThrow("to be a boolean");
+    expect(auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", trusted: false}]}, true)).toBeUndefined();
 
-        let nb = [];
-        await utils.expectError(auth.setPermissionsHandler(req, nb), "invalid request body");
-    }
+    expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", asset: 1}]}, true)).toThrow("to be a string");
+    expect(auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", asset: "foobar"}]}, true)).toBeUndefined();
 
-    // Fails correctly if user is not authorized.
-    {
-        let req = new Request("http://localhost", {
-            method: "POST",
-            body: JSON.stringify({ write_access: "none" }),
-            headers: { "Content-Type": "application/json" }
-        });
-        req.params = { project: "test-private" };
-        req.query = {};
-        req.headers.append("Authorization", "Bearer " + utils.mockToken);
+    expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", version: 1}]}, true)).toThrow("to be a string");
+    expect(auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", version: "foobar"}]}, true)).toBeUndefined();
+})
 
-        let nb = [];
-        let res = await auth.setPermissionsHandler(req, nb); // initial request works.
-        expect(res.status).toBe(202);
+test("checkProjectManagementPermissions works correctly", async () => {
+    let nb = [];
+    await auth.checkProjectManagementPermissions("test", setup.mockTokenOwner, nb);
+    await setup.expectError(auth.checkProjectManagementPermissions("test", setup.mockTokenUser, nb), "not an owner");
+    await auth.checkProjectManagementPermissions("test", setup.mockTokenAdmin, nb);
+})
 
-        // Second request fais as ArtifactDB-bot is no longer authorized.
-        await utils.expectError(auth.setPermissionsHandler(req, nb), "write access");
-    }
+test("checkProjectUploadPermissions works correctly", async () => {
+    let nb = [];
+    let out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenOwner, nb);
+    expect(out.can_manage).toBe(true);
+    expect(out.is_trusted).toBe(true);
+
+    await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb), "not authorized to upload");
+
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenAdmin, nb);
+    expect(out.can_manage).toBe(true);
+    expect(out.is_trusted).toBe(true);
+
+    // Alright time to get wild.
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude" } ] }');
+    await auth.flushCachedPermissions("test", nb);
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb);
+    expect(out.can_manage).toBe(false);
+    expect(out.is_trusted).toBe(true);
+
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "asset": "foo" } ] }');
+    await auth.flushCachedPermissions("test", nb);
+    await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb), "not authorized to upload");
+    out = await auth.checkProjectUploadPermissions("test", "foo", "v1", setup.mockTokenUser, nb);
+    expect(out.can_manage).toBe(false);
+    expect(out.is_trusted).toBe(true);
+
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "version": "foo" } ] }');
+    await auth.flushCachedPermissions("test", nb);
+    await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb), "not authorized to upload");
+    out = await auth.checkProjectUploadPermissions("test", "blob", "foo", setup.mockTokenUser, nb);
+    expect(out.can_manage).toBe(false);
+    expect(out.is_trusted).toBe(true);
+
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "until": "1989-11-09" } ] }');
+    await auth.flushCachedPermissions("test", nb);
+    await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb), "not authorized to upload");
+
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "until": "' + (new Date(Date.now() + 10000)).toISOString() + '" } ] }');
+    await auth.flushCachedPermissions("test", nb);
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb);
+    expect(out.can_manage).toBe(false);
+    expect(out.is_trusted).toBe(true);
+
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "trusted": false } ] }');
+    await auth.flushCachedPermissions("test", nb);
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb);
+    expect(out.can_manage).toBe(false);
+    expect(out.is_trusted).toBe(false);
+
+    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "trusted": true } ] }');
+    await auth.flushCachedPermissions("test", nb);
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb);
+    expect(out.can_manage).toBe(false);
+    expect(out.is_trusted).toBe(true);
 })

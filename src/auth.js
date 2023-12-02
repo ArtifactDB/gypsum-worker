@@ -2,29 +2,31 @@ import * as utils from "./utils.js";
 import * as gh from "./github.js";
 import * as pkeys from "./internal.js";
 import * as s3 from "./s3.js";
-import { permissions as set_perm_validator } from "./validators.js";
 
-async function find_user(request, nonblockers) {
+/******************************************
+ ******************************************/
+
+export function extractBearerToken(request) {
     let auth = request.headers.get("Authorization");
     if (auth == null || !auth.startsWith("Bearer ")) {
-        return null;
+        throw new utils.HttpError("no user identity supplied", 401);
     }
+    return auth.slice(7);
+}
 
-    let token = auth.slice(7);
-
-    // Hashing the token with HMAC to avoid problems if the cache leaks. The
-    // identity now depends on two unknowns - the user-supplied token, and the
-    // server-side secret, which should be good enough.
-    let key;
+export async function findUser(token, nonblockers) {
+    // Some cursory hashing of the token to avoid problems if the cache leaks.
+    // Github's tokens should have high enough entropy that we don't need
+    // salting or iterations, see commentary at:
+    // https://security.stackexchange.com/questions/151257/what-kind-of-hashing-to-use-for-storing-rest-api-tokens-in-the-database
+    let hash;
     {
-        let master = gh.getToken();
-        let enc = new TextEncoder();
-        let ckey = await crypto.subtle.importKey("raw", enc.encode(master), { name: "HMAC", hash: "SHA-256" }, false, [ "sign" ]);
-        let secured = await crypto.subtle.sign({ name: "HMAC" }, ckey, enc.encode(token));
-
-        // Creating a pretend URL for caching purposes: this should not get called.
-        key = "https://github.com/ArtifactDB/gypsum-actions/user/" + btoa(String.fromCharCode(...new Uint8Array(secured))); 
+        const encoder = new TextEncoder();
+        const data = encoder.encode(token);
+        let digest = await crypto.subtle.digest("SHA-256", data);
+        hash = btoa(String.fromCharCode(...new Uint8Array(digest)));
     }
+    let key = "https://github.com/ArtifactDB/gypsum-actions/user/" + hash;
 
     const userCache = await caches.open("user:cache");
     let check = await userCache.match(key);
@@ -57,37 +59,15 @@ async function find_user(request, nonblockers) {
         login: (await (await user_prom).json()).login,
         organizations: orgs 
     };
-    nonblockers.push(utils.quickCacheJson(userCache, key, val, utils.hoursFromNow(2)));
+    nonblockers.push(utils.quickCacheJson(userCache, key, val, 2 * 3600));
     return val;
-}
-
-export async function findUser(request, nonblockers) {
-    let user = await find_user(request, nonblockers);
-    if (user == null) {
-        throw new utils.HttpError("no user identity supplied", 401);
-    }
-    return user;
-}
-
-export async function findUserNoThrow(request, nonblockers) {
-    try {
-        return find_user(request, nonblockers);
-    } catch (e) {
-        console.warn(e.message);
-        return null;
-    }
-}
-
-export async function findUserHandler(request, nonblockers) {
-    let user = await findUser(request, nonblockers);
-    return utils.jsonResponse(user, 200);
 }
 
 /******************************************
  ******************************************/
 
 function permissions_cache() {
-    return caches.open("permission:cache");
+    return caches.open("permissions:cache");
 }
 
 function permissions_cache_key(project) {
@@ -108,57 +88,38 @@ export async function getPermissions(project, nonblockers) {
     let path = pkeys.permissions(project);
     let res = await bound_bucket.get(path);
     if (res == null) {
-        return null;
+        throw new utils.HttpError("no existing permissions for project '" + project + "'", 400);
     }
 
     let data = await res.text();
-    nonblockers.push(utils.quickCacheJsonText(permCache, key, data, utils.minutesFromNow(5)));
+    nonblockers.push(utils.quickCacheJsonText(permCache, key, data, 5 * 60));
     return JSON.parse(data);
 }
 
-export async function getPermissionsHandler(request, nonblockers) {
-    let project = decodeURIComponent(request.params.project);
-    let user_prom = findUserNoThrow(request, nonblockers);
-
-    // Non-standard endpoint, provided for testing.
-    let perm_prom;
-    if (request.query.force_reload === "true") {
-        let bound_bucket = s3.getR2Binding();
-        let key = pkeys.permissions(project);
-        perm_prom = bound_bucket.get(key).then(res => (res == null ? null : res.json()));
-    } else {
-        perm_prom = getPermissions(project, nonblockers);
-    }
-
-    let perms = await perm_prom;
-    if (perms == null) {
-        throw new utils.HttpError("requested project does not exist", 404);
-    }
-
-    let user = await user_prom;
-    checkReadPermissions(perms, user, project);
-
-    return utils.jsonResponse(perms, 200);
+export async function flushCachedPermissions(project, nonblockers) {
+    const permCache = await permissions_cache();
+    nonblockers.push(permCache.delete(permissions_cache_key(project)));
+    return;
 }
 
 /******************************************
  ******************************************/
 
-function is_member_of(login, orgs, allowed) {
+export function isOneOf(user, allowed) {
     // TODO: cache the return value to avoid having to recompute
     // this on subsequent requests? Not sure if it's worth it,
     // unless the permission structure is very complicated.
-    if (orgs.length == 0) {
-        return allowed.indexOf(login) >= 0;
+    if (user.organizations.length == 0) {
+        return allowed.indexOf(user.login) >= 0;
     }
 
     let all = new Set(allowed);
-    let present = all.has(login);
+    let present = all.has(user.login);
     if (present) {
         return true;
     }
 
-    for (const o of orgs) {
+    for (const o of user.organizations) {
         if (all.has(o)) {
             return true;
         }
@@ -174,215 +135,123 @@ export function setAdmins(x) {
     return;
 }
 
-export function checkReadPermissions(perm, user, project) {
-    if (perm == null) {
-        throw new utils.HttpError("failed to load permissions for project '" + project + "'", 404);
-    }
-
-    if (perm.read_access == "public") {
-        return null;
-    }
-
-    if (user == null) {
-        throw new utils.HttpError("user credentials not supplied to access project '" + project + "'", 401);
-    }
-
-    let in_owners = is_member_of(user.login, user.organizations, perm.owners);
-    if (perm.read_access == "owners" && in_owners) {
-        return null;
-    }
-
-    let in_viewers = is_member_of(user.login, user.organizations, perm.viewers);
-    if (perm.read_access == "viewers" && (in_owners || in_viewers)) {
-        return null;
-    }
-
-    // Admins get total access.
-    if (is_member_of(user.login, user.organizations, admins)) {
-        return null;
-    }
-
-    throw new utils.HttpError("user does not have read access to project '" + project + "'", 403);
-}
-
-export function checkWritePermissions(perm, user, project) {
-    if (perm == null) {
-        throw new utils.HttpError("failed to load permissions for project '" + project + "'", 404);
-    }
-
-    if (user == null) {
-        throw new utils.HttpError("user credentials not supplied to write to project '" + project + "'", 401);
-    }
-
-    let in_owners = is_member_of(user.login, user.organizations, perm.owners);
-    if (perm.write_access == "owners" && in_owners) {
-        return null;
-    }
-
-    // Admins get total access.
-    if (is_member_of(user.login, user.organizations, admins)) {
-        return null;
-    }
-
-    throw new utils.HttpError("user does not have write access to project '" + project + "'", 403);
+export function getAdmins() {
+    return admins;
 }
 
 /******************************************
  ******************************************/
 
-export function validateNewPermissions(perm) {
-    let allowed_readers = ["public", "viewers", "owners", "none"];
-    if (typeof perm.read_access != "string" || allowed_readers.indexOf(perm.read_access) == -1) {
-        throw new utils.HttpError("'read_access' for permissions must be one of public, viewers, owners, or none", 400);
+export function validatePermissions(body, required) {
+    if (!(body instanceof Object)) {
+        throw new utils.HttpError("expected permissions to be a JSON object", 400);
     }
 
-    let allowed_writers = ["owners", "none"];
-    if (typeof perm.write_access != "string" || allowed_writers.indexOf(perm.write_access) == -1) {
-        throw new utils.HttpError("'write_access' for permissions must be one of owners or none", 400);
+    if ("owners" in body) {
+        let owners = body.owners;
+        if (!(owners instanceof Array)) {
+            throw new utils.HttpError("expected 'owners' to be an array", 400);
+        }
+        for (const j of owners) {
+            if (typeof j != "string") {
+                throw new utils.HttpError("expected 'owners' to be an array of strings", 400);
+            }
+        }
+    } else if (required) {
+        throw new utils.HttpError("expected an 'owners' property to be present", 400);
     }
 
-    if (perm.scope !== "project") {
-        throw new utils.HttpError("'scope' for permissions is currently limited to project", 400);
+    if ("uploaders" in body) {
+        let uploaders = body.uploaders;
+        if (!(uploaders instanceof Array)) {
+            throw new utils.HttpError("expected 'uploaders' to be an array", 400);
+        }
+        for (const entry of uploaders) {
+            if (!(entry instanceof Object)) {
+                throw new utils.HttpError("expected 'uploaders' to be an array of objects", 400);
+            }
+
+            if (!("id" in entry) || typeof entry.id != "string") {
+                throw new utils.HttpError("expected 'uploaders.id' property to be a string", 400);
+            }
+
+            if ("until" in entry) {
+                if (typeof entry.until != "string") {
+                    throw new utils.HttpError("expected 'uploaders.until' property to be a date-formatted string", 400);
+                }
+                let parsed = Date.parse(entry.until);
+                if (Number.isNaN(parsed)) {
+                    throw new utils.HttpError("expected 'uploaders.until' property to be a date-formatted string", 400);
+                }
+            }
+
+            if ("trusted" in entry) {
+                if (typeof entry.trusted != "boolean") {
+                    throw new utils.HttpError("expected 'uploaders.trusted' property to be a boolean", 400);
+                }
+            }
+
+            if ("asset" in entry) {
+                if (typeof entry.asset != "string") {
+                    throw new utils.HttpError("expected 'asset' property to be a string");
+                }
+            }
+
+            if ("version" in entry) {
+                if (typeof entry.version != "string") {
+                    throw new utils.HttpError("expected 'version' property to be a string");
+                }
+            }
+        }
+    } else if (required) {
+        throw new utils.HttpError("expected an 'uploaders' property to be present", 400);
+    }
+}
+
+export async function checkProjectManagementPermissions(project, token, nonblockers) {
+    let resolved = await utils.namedResolve({
+        user: findUser(token, nonblockers),
+        permissions: getPermissions(project, nonblockers),
+    });
+    let user = resolved.user;
+    let perms = resolved.permissions;
+    if (!isOneOf(user, perms.owners) && !isOneOf(user, getAdmins())) {
+        throw new utils.HttpError("user is not an owner of project '" + project + "'", 403);
+    }
+    return user;
+}
+
+export async function checkProjectUploadPermissions(project, asset, version, token, nonblockers) {
+    let resolved = await utils.namedResolve({
+        user: findUser(token, nonblockers),
+        permissions: getPermissions(project, nonblockers),
+    });
+
+    let user = resolved.user;
+    let perms = resolved.permissions;
+    if (isOneOf(user, perms.owners) || isOneOf(user, getAdmins())) {
+        return { can_manage: true, is_trusted: true, user: user };
     }
 
-    for (const v of perm.viewers) {
-        if (typeof v != "string" || v.length == 0) {
-            throw new utils.HttpError("'viewers' should be an array of non-empty strings", 400);
+    let user_orgs = new Set(user.organizations);
+    for (const uploader of perms.uploaders) {
+        if (uploader.id == user.login || user_orgs.has(uploader.id)) {
+            if ("asset" in uploader && uploader.asset != asset) {
+                break;
+            }
+            if ("version" in uploader && uploader.version != version) {
+                break;
+            }
+            if ("until" in uploader && Date.parse(uploader.until) < Date.now()) {
+                break;
+            }
+            let is_trusted = true;
+            if ("trusted" in uploader && !uploader.trusted) {
+                is_trusted = false;
+            }
+            return { can_manage: false, is_trusted: is_trusted, user: user };
         }
     }
 
-    for (const v of perm.owners) {
-        if (typeof v != "string" || v.length == 0) {
-            throw new utils.HttpError("'owners' should be an array of non-empty strings", 400);
-        }
-    }
-}
-
-export async function setPermissionsHandler(request, nonblockers) {
-    let project = decodeURIComponent(request.params.project);
-    let bound_bucket = s3.getR2Binding();
-
-    // Making sure the user identifies themselves first.
-    let user = await findUser(request, nonblockers);
-
-    // Don't use the cache: get the file from storage again,
-    // just in case it was updated at some point.
-    let path = pkeys.permissions(project);
-    let res = await bound_bucket.get(path);
-    if (res == null) {
-        throw new utils.HttpError("requested project does not exist", 404);
-    }
-
-    let perms = await res.json();
-    checkWritePermissions(perms, user, project);
-
-    let new_perms = await request.json();
-    if (!set_perm_validator(new_perms)) {
-        throw new utils.HttpError("invalid request body: " + set_perm_validator.errors[0].message + " (" + set_perm_validator.errors[0].schemaPath + ")", 400);
-    }
-
-    // Updating everything on top of the existing permissions.
-    for (const x of Object.keys(perms)) {
-        if (x in new_perms) {
-            perms[x] = new_perms[x];
-        }
-    }
-    validateNewPermissions(perms);
-    nonblockers.push(bound_bucket.put(path, JSON.stringify(perms)));
-
-    // Clearing the cached permissions to trigger a reload on the next getPermissions() call.
-    const permCache = await permissions_cache();
-    nonblockers.push(permCache.delete(permissions_cache_key(project)));
-
-    return new Response(null, { status: 202 });
-}
-
-/******************************************
- ******************************************/
-
-function upload_override_cache() {
-    return caches.open("upload_override:cache");
-}
-
-// Key needs to be a URL.
-var upload_override_cache_key = "https://github.com/ArtifactDB/gypsum-worker/upload_override/"; 
-
-var upload_override_path = "..upload_override";
-
-var upload_override_header = "ArtifactDB-upload-override-key";
-
-async function get_upload_override_key(nonblockers) {
-    const uploadCache = await upload_override_cache();
-    let check = await uploadCache.match(upload_override_cache_key);
-    if (check) {
-        return await check.json();
-    }
-
-    let bound_bucket = s3.getR2Binding();
-    let res = await bound_bucket.get(upload_override_path);
-    if (res == null) {
-        return null;
-    }
-
-    let data = await res.text();
-    nonblockers.push(utils.quickCacheJsonText(uploadCache, upload_override_cache_key, data, utils.hoursFromNow(2)));
-    return JSON.parse(data);
-}
-
-export async function setUploadOverrideHandler(request, nonblockers) {
-    let user = await findUser(request, nonblockers);
-    if (!is_member_of(user.login, user.organizations, admins)) {
-        throw new utils.HttpError("user is not authorized to set the upload override key", 403);
-    }
-
-    // Saving the key.
-    let secret = request.headers.get(upload_override_header);
-    if (secret == null) {
-        throw new utils.HttpError("the 'ArtifactDb-upload-override-key' header has not been set", 400);
-    }
-
-    let bound_bucket = s3.getR2Binding();
-    nonblockers.push(bound_bucket.put(upload_override_path, JSON.stringify(secret)));
-
-    // Clearing the cached secret to trigger a reload on the next getUploadOverrideKey() call.
-    const uploadCache = await upload_override_cache();
-    nonblockers.push(uploadCache.delete(upload_override_cache_key));
-
-    return new Response(null, { status: 202 });
-}
-
-/******************************************
- ******************************************/
-
-var uploaders = [];
-
-export function setUploaders(x) {
-    uploaders = x;
-    return;
-}
-
-export async function checkNewUploadPermissions(user, request, nonblockers) {
-    if (user == null) {
-        throw new utils.HttpError("user credentials not supplied to upload new project", 401);
-    }
-
-    if (is_member_of(user.login, user.organizations, uploaders)) {
-        return null;
-    }
-
-    // Admins get total access.
-    if (is_member_of(user.login, user.organizations, admins)) {
-        return null;
-    }
-
-    // Checking for the override key.
-    if (request) {
-        let key = await get_upload_override_key(nonblockers); 
-        let supplied = request.headers.get(upload_override_header);
-        if (supplied !== null && key !== null && supplied == key) {
-            return null;
-        }
-    }
-
-    throw new utils.HttpError("user is not authorized to upload a new project", 403);
+    throw new utils.HttpError("user is not authorized to upload", 403);
 }
