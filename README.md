@@ -31,15 +31,16 @@ Readers will have to inspect the manifest or link files to retrieve the contents
 
 **gypsum** supports three levels of permissions - adminstrators, project owners and uploaders.
 
-Uploaders can upload new assets or versions to an existing project.
-Upload authorization is provided by the project's owners, and can be limited to particular asset/version names, or within a certain time frame.
-Project owners can also specify whether an uploader is untrusted (and thus whether their uploads should be probational, see below).
+- Uploaders can upload new assets or versions to an existing project.
+  Upload authorization is provided by the project's owners, and can be limited to particular asset/version names, or within a certain time frame.
+  Project owners can also specify whether an uploader is untrusted (and thus whether their uploads should be probational, see below).
+- Project owners can modify the permissions of their project, including the addition/removal of new owners or changes to uploader authorizations.
+  They can also do anything that uploaders can do.
+- Adminstrators can create projects and projects (or particular assets/versions thereof).
+  They can also do anything that project owners can do.
 
-Project owners can modify the permissions of their project, including the addition/removal of new owners or changes to uploader authorizations.
-They can also do anything that uploaders can do.
-
-Adminstrators can create projects and remove projects/assets/versions.
-They can also do anything that project owners can do.
+All users are authenticated by their GitHub personal access tokens.
+Permissions can also be extended to GitHub organizations, in which case each user's organization membership may also be inspected.
 
 ### Upload probation
 
