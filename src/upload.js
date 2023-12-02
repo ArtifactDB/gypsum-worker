@@ -305,19 +305,19 @@ export async function uploadPresignedFileHandler(request, nonblockers) {
 
 export async function completeUploadHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
-    let asset = decodeURIComponent(request.params.project);
+    let asset = decodeURIComponent(request.params.asset);
     let version = decodeURIComponent(request.params.version);
     await lock.checkLock(project, asset, version, auth.extractBearerToken(request));
 
     let list_promise = new Promise(resolve => {
         let all_files = new Set;
-        utils.listApply(project + "/" + asset + "/" + version + "/", f => {
-            if (!f.key.startsWith("..")){
-                all_files.add(f.key);
-            }
+        let prefix = project + "/" + asset + "/" + version + "/";
+        utils.listApply(prefix, f => {
+            all_files.add(f.key.slice(prefix.length));
         }).then(x => resolve(all_files));
     });
 
+    let bound_bucket = s3.getR2Binding();
     let sumpath = pkeys.versionSummary(project, asset, version);
     let assets = await utils.namedResolve({
         manifest: bound_bucket.get(pkeys.versionManifest(project, asset, version)).then(x => x.json()),
@@ -336,13 +336,15 @@ export async function completeUploadHandler(request, nonblockers) {
             }
             let i = k.lastIndexOf("/");
             let hostdir = "";
+            let fname = k;
             if (i >= 0) {
                 hostdir = k.slice(0, i + 1); // include the trailing slash, see below.
+                fname = k.slice(i + 1);
             }
             if (!(hostdir in linkable)) {
                 linkable[hostdir] = {};
             }
-            linkable[hostdir][k.slice(i)] = v.link;
+            linkable[hostdir][fname] = v.link;
         } else {
             if (!assets.listing.has(k)) {
                 throw new utils.HttpError("path '" + k + "' in manifest should have a file", 400);
@@ -351,7 +353,6 @@ export async function completeUploadHandler(request, nonblockers) {
     }
 
     let info = await assets.summary;
-    let bound_bucket = s3.getR2Binding();
     let preparation = [];
     try {
         // Create link structures within each subdirectory for bulk consumers.

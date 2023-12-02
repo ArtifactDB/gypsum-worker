@@ -165,7 +165,7 @@ test("initializeUploadHandler works correctly for simple uploads", async () => {
     let sinfo = await BOUND_BUCKET.get("test-upload/blob/v0/..summary");
     let sbody = await sinfo.json();
     expect(sbody.upload_user_id).toEqual("ProjectOwner");
-    expect(Number.isNaN(sbody.upload_started)).toBe(false);
+    expect(Number.isNaN(Date.parse(sbody.upload_start))).toBe(false);
     expect(sbody.on_probation).toEqual(false);
 
     // Check that a version manifest file was posted to the bucket.
@@ -355,65 +355,155 @@ test("uploadPresignedFileHandler works as expected", async () => {
     expect(pres.md5sum_base64.endsWith("==")).toBe(true);
 })
 
-///******* Complete uploads checks *******/
-//
-//test("completeUploadHandler works correctly", async () => {
-//    // Initializing the upload.
-//    {
-//        let req = new Request("http://localhost", {
-//            method: "POST",
-//            body: JSON.stringify({ 
-//                filenames: [
-//                    { check: "simple", filename: "WHEE", value: { md5sum: "a4caf5afa851da451e2161a4c3ac46bb" } },
-//                    { check: "simple", filename: "BAR", value: { md5sum: "4209df9c96263664123450aa48fd1bfa" } }
-//                ]
-//            })
-//        });
-//        req.params = { project: "test-complete-upload", version: "test" };
-//        req.headers.append("Authorization", "Bearer " + setup.mockToken);
-//
-//        let nb = [];
-//        await upload.initializeUploadHandler(req, nb);
-//        await Promise.all(nb);
-//    }
-//
-//    // Completing the upload.
-//    let req = new Request("http://localhost", { method: "POST", body: "{}" });
-//    req.params = { project: "test-complete-upload", version: "test" };
-//    req.query = {};
-//    req.headers.append("Authorization", "Bearer " + setup.mockToken);
-//
-//    let nb = [];
-//    gh_test_rigging.postNewIssue = [];
-//    let res = await upload.completeUploadHandler(req, nb);
-//
-//    let body = await res.json();
-//    expect(body.job_id).toBe(-1); // placeholder number, used for testing.
-//    let postinfo = gh_test_rigging.postNewIssue[0];
-//    expect(postinfo.title).toBe("upload complete");
-//    let postbody = JSON.parse(postinfo.body);
-//    expect(postbody.project).toBe("test-complete-upload");
-//    expect(postbody.permissions.read_access).toBe("public");
-//    expect(postbody.permissions.owners).toEqual(["ArtifactDB-bot"]);
-//})
-//
-//test("completeUploadHandler throws the right errors", async () => {
-//    let req = new Request("http://localhost", { method: "POST", body: '{ "read_access": "FOOABLE" }' });
-//    req.params = { project: "test-complete-check", version: "WHEE" };
-//
-//    // First attempt without identity.
-//    let nb = [];
-//    await setup.expectError(upload.completeUploadHandler(req, nb), "user identity");
-//
-//    // Trying again after adding headers.
-//    req.headers.append("Authorization", "Bearer " + setup.mockToken);
-//    await setup.expectError(upload.completeUploadHandler(req, nb), "not been previously locked");
-//
-//    // Forcing a lock file.
-//    await BOUND_BUCKET.put("test-complete-check/WHEE/..LOCK", '{ "user_name": "ArtifactDB-bot" }')
-//    await setup.expectError(upload.completeUploadHandler(req, nb), "invalid request body");
-//})
-//
+/******* Complete uploads checks *******/
+
+test("completeUploadHandler works correctly", async () => {
+    let payload = await setup.mockProject();
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
+
+    // Setting up the state.
+    let params = { project: "test-upload", asset: "blob", version: "v0" };
+    let key;
+    {
+        let req = new Request("http://localhost", {
+            method: "POST",
+            body: JSON.stringify({ 
+                files: [
+                    { type: "simple", path: "witch/makoto.csv", md5sum: "a4caf5afa851da451e2161a4c3ac46bb", size: 100 },
+                    { type: "simple", path: "witch/akane.csv", md5sum: "3f8aaed3d149be552fc2ec47ae2d1e57", size: 218 },
+                    { type: "link", path: "human/chinatsu.txt", link: { project: "test", asset: "blob", version: "v1", path: "foo/bar.txt" } },
+                    { type: "link", path: "human/nao.txt", link: { project: "test", asset: "blob", version: "v1", path: "whee.txt" } },
+                    { type: "link", path: "haru-no-hakobiya", link: { project: "test", asset: "blob", version: "v1", path: "blah.txt" } },
+                    { type: "link", path: "animal/cat/kenny.txt", link: { project: "test", asset: "blob", version: "v1", path: "foo/bar.txt" } },
+                    { type: "simple", path: "animal/cat/chito.txt", md5sum: "4ba0e96c086a229b4f39e544e2fa7873", size: 92 }, 
+                ]
+            })
+        });
+        req.params = params;
+        req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
+
+        let nb = [];
+        let init = await (await upload.initializeUploadHandler(req, nb)).json();
+        key = init.session_key;
+    }
+
+    // Now we do the two uploads that we're obliged to do.
+    await BOUND_BUCKET.put("test-upload/blob/v0/witch/makoto.csv", "Minami Shinoda");
+    await BOUND_BUCKET.put("test-upload/blob/v0/witch/akane.csv", "Kana Aoi");
+    await BOUND_BUCKET.put("test-upload/blob/v0/animal/cat/chito.txt", "Ai Kayano");
+
+    // Completing the upload.
+    let req = new Request("http://localhost", { method: "POST", body: "{}" });
+    req.params = params;
+    req.query = {};
+
+    let nb = [];
+    await setup.expectError(upload.completeUploadHandler(req, nb), "no user identity");
+
+    req.headers.append("Authorization", "Bearer " + key);
+    await upload.completeUploadHandler(req, nb);
+
+    // Checking that the lock on the folder has been removed.
+    let lckinfo = await BOUND_BUCKET.head("test-upload/blob/..LOCK");
+    expect(lckinfo).toBeNull();
+
+    // Check that an updated summary file was posted to the bucket.
+    let sinfo = await BOUND_BUCKET.get("test-upload/blob/v0/..summary");
+    let sbody = await sinfo.json();
+    expect(Number.isNaN(Date.parse(sbody.upload_finish))).toBe(false);
+    expect("on_probation" in sbody).toEqual(false);
+
+    // Check that we created the link files.
+    let link1 = await (await BOUND_BUCKET.get("test-upload/blob/v0/..links")).json();
+    expect(link1).toEqual({ 
+        "haru-no-hakobiya": { project: "test", asset: "blob", version: "v1", path: "blah.txt" } 
+    });
+
+    let link2 = await (await BOUND_BUCKET.get("test-upload/blob/v0/human/..links")).json();
+    expect(link2).toEqual({ 
+        "chinatsu.txt": { project: "test", asset: "blob", version: "v1", path: "foo/bar.txt" },
+        "nao.txt": { project: "test", asset: "blob", version: "v1", path: "whee.txt" },
+    });
+
+    let link3 = await (await BOUND_BUCKET.get("test-upload/blob/v0/animal/cat/..links")).json();
+    expect(link3).toEqual({ 
+        "kenny.txt": { project: "test", asset: "blob", version: "v1", path: "foo/bar.txt" },
+    });
+})
+
+test("completeUploadHandler checks that all uploads are present", async () => {
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
+
+    // Setting up the state.
+    let params = { project: "test-upload", asset: "blob", version: "v0" };
+    let key;
+    {
+        let req = new Request("http://localhost", {
+            method: "POST",
+            body: JSON.stringify({ 
+                files: [
+                    { type: "simple", path: "witch/makoto.csv", md5sum: "a4caf5afa851da451e2161a4c3ac46bb", size: 100 },
+                    { type: "simple", path: "witch/akane.csv", md5sum: "3f8aaed3d149be552fc2ec47ae2d1e57", size: 218 },
+                    { type: "simple", path: "animal/cat/chito.txt", md5sum: "4ba0e96c086a229b4f39e544e2fa7873", size: 92 }, 
+                ]
+            })
+        });
+        req.params = params;
+        req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
+
+        let nb = [];
+        let init = await (await upload.initializeUploadHandler(req, nb)).json();
+        key = init.session_key;
+    }
+
+    // Upload fails due to missing files.
+    let req = new Request("http://localhost", { method: "POST", body: "{}" });
+    req.params = params;
+    req.query = {};
+    req.headers.append("Authorization", "Bearer " + key);
+
+    let nb = [];
+    await setup.expectError(upload.completeUploadHandler(req, nb), "should have a file");
+})
+
+test("completeUploadHandler checks that all uploads are present", async () => {
+    let payload = await setup.mockProject();
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
+
+    // Setting up the state.
+    let params = { project: "test-upload", asset: "blob", version: "v0" };
+    let key;
+    {
+        let req = new Request("http://localhost", {
+            method: "POST",
+            body: JSON.stringify({ 
+                files: [
+                    { type: "link", path: "human/chinatsu.txt", link: { project: "test", asset: "blob", version: "v1", path: "foo/bar.txt" } },
+                    { type: "link", path: "human/nao.txt", link: { project: "test", asset: "blob", version: "v1", path: "whee.txt" } },
+                ]
+            })
+        });
+        req.params = params;
+        req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
+
+        let nb = [];
+        let init = await (await upload.initializeUploadHandler(req, nb)).json();
+        key = init.session_key;
+    }
+
+    // Adding files at the links.
+    await BOUND_BUCKET.put("test-upload/blob/v0/human/chinatsu.txt", "Eri Suzuki");
+    await BOUND_BUCKET.put("test-upload/blob/v0/human/nao.txt", "Shiori Mikami");
+
+    // Upload fails due to files present at the links.
+    let req = new Request("http://localhost", { method: "POST", body: "{}" });
+    req.params = params;
+    req.query = {};
+    req.headers.append("Authorization", "Bearer " + key);
+
+    let nb = [];
+    await setup.expectError(upload.completeUploadHandler(req, nb), "should not have a file");
+})
 
 /******* Abort upload checks *******/
 
