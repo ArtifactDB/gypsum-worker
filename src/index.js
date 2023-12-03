@@ -70,17 +70,15 @@ router.post("/upload/start/:project/:asset/:version", upload.initializeUploadHan
 
 router.post("/upload/presigned-file/:slug", upload.uploadPresignedFileHandler);
 
-router.put("/upload/complete/:project/:asset/:version", upload.completeUploadHandler);
+router.post("/upload/complete/:project/:asset/:version", upload.completeUploadHandler);
 
-router.put("/upload/abort/:project/:asset/:version", upload.abortUploadHandler);
+router.post("/upload/abort/:project/:asset/:version", upload.abortUploadHandler);
 
 /*** Permission handling ***/
 
 router.put("/permissions/:project", permissions.setPermissionsHandler);
 
 /*** Probation ***/
-
-router.post("/probation/request-token/:project", probation.requestTokenHandler);
 
 router.post("/probation/approve/:project", probation.approveProbationHandler);
 

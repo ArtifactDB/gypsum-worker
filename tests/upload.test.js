@@ -146,13 +146,13 @@ test("initializeUploadHandler works correctly for simple uploads", async () => {
     let init = await upload.initializeUploadHandler(req, []);
     let body = await init.json();
 
-    expect(body.upload_urls.length).toBe(2);
-    expect(body.upload_urls[0].path).toBe("WHEE");
-    expect(body.upload_urls[0].url).toMatch("presigned-file");
-    expect(body.upload_urls[1].path).toBe("BAR");
-    expect(body.upload_urls[1].url).toMatch("presigned-file");
+    expect(body.file_urls.length).toBe(2);
+    expect(body.file_urls[0].path).toBe("WHEE");
+    expect(body.file_urls[0].url).toMatch("presigned-file");
+    expect(body.file_urls[1].path).toBe("BAR");
+    expect(body.file_urls[1].url).toMatch("presigned-file");
 
-    expect(body.completion_url).toMatch(/complete.*test-upload/);
+    expect(body.complete_url).toMatch(/complete.*test-upload/);
     expect(body.abort_url).toMatch(/abort.*test-upload/);
 
     // Check that a lock file was correctly created.
@@ -192,11 +192,11 @@ test("initializeUploadHandler converts MD5'able files to simple uploads if no pr
     let init = await upload.initializeUploadHandler(req, []);
     let body = await init.json();
 
-    expect(body.upload_urls.length).toBe(2);
-    expect(body.upload_urls[0].path).toBe("WHEE");
-    expect(body.upload_urls[0].url).toMatch("presigned-file");
-    expect(body.upload_urls[1].path).toBe("BAR");
-    expect(body.upload_urls[1].url).toMatch("presigned-file");
+    expect(body.file_urls.length).toBe(2);
+    expect(body.file_urls[0].path).toBe("WHEE");
+    expect(body.file_urls[0].url).toMatch("presigned-file");
+    expect(body.file_urls[1].path).toBe("BAR");
+    expect(body.file_urls[1].url).toMatch("presigned-file");
 })
 
 test("initializeUploadHandler works correctly for MD5'able uploads with a prior version", async () => {
@@ -225,10 +225,10 @@ test("initializeUploadHandler works correctly for MD5'able uploads with a prior 
     let init = await upload.initializeUploadHandler(req, nb);
     let body = await init.json();
 
-    expect(body.upload_urls.length).toBe(3);
-    expect(body.upload_urls[0].path).toBe("carbs/rice.txt");
-    expect(body.upload_urls[1].path).toBe("fruit/apple.txt");
-    expect(body.upload_urls[2].path).toBe("fruit/orange.txt");
+    expect(body.file_urls.length).toBe(3);
+    expect(body.file_urls[0].path).toBe("carbs/rice.txt");
+    expect(body.file_urls[1].path).toBe("fruit/apple.txt");
+    expect(body.file_urls[2].path).toBe("fruit/orange.txt");
 
     // Checking that the manifest contains links.
     let vinfo = await BOUND_BUCKET.get("test-upload/linker/v1/..manifest");
@@ -268,7 +268,7 @@ test("initializeUploadHandler works correctly for link-based deduplication", asy
     let nb = [];
     let init = await upload.initializeUploadHandler(req, nb);
     let body = await init.json();
-    expect(body.upload_urls.length).toBe(0);
+    expect(body.file_urls.length).toBe(0);
 
     // Checking that a link file is posted.
     let vinfo = await BOUND_BUCKET.get("test-upload/linker/v1/..manifest");
@@ -341,13 +341,13 @@ test("uploadPresignedFileHandler works as expected", async () => {
     req2.params = { slug: "YAAY" };
     await setup.expectError(upload.uploadPresignedFileHandler(req2, nb), "invalid slug");
 
-    let url = init.upload_urls[0].url;
+    let url = init.file_urls[0].url;
     let slug = url.slice(url.lastIndexOf("/") + 1);
     req2.params = { slug: slug };
     req2.headers.set("Authorization", "Bearer NOOOOOOO");
     await setup.expectError(upload.uploadPresignedFileHandler(req2, nb), "different user");
 
-    req2.headers.set("Authorization", "Bearer " + init.session_key);
+    req2.headers.set("Authorization", "Bearer " + init.session_token);
     let raw_pres = await upload.uploadPresignedFileHandler(req2, nb);
     let pres = await raw_pres.json();
     expect(pres.url).toMatch("pretend");
@@ -384,7 +384,7 @@ test("completeUploadHandler works correctly", async () => {
 
         let nb = [];
         let init = await (await upload.initializeUploadHandler(req, nb)).json();
-        key = init.session_key;
+        key = init.session_token;
     }
 
     // Now we do the two uploads that we're obliged to do.
@@ -453,7 +453,7 @@ test("completeUploadHandler checks that all uploads are present", async () => {
 
         let nb = [];
         let init = await (await upload.initializeUploadHandler(req, nb)).json();
-        key = init.session_key;
+        key = init.session_token;
     }
 
     // Upload fails due to missing files.
@@ -488,7 +488,7 @@ test("completeUploadHandler checks that all uploads are present", async () => {
 
         let nb = [];
         let init = await (await upload.initializeUploadHandler(req, nb)).json();
-        key = init.session_key;
+        key = init.session_token;
     }
 
     // Adding files at the links.
@@ -536,7 +536,7 @@ test("abortUploadHandler works correctly", async () => {
     await setup.expectError(upload.abortUploadHandler(req2, nb), "different user");
 
     // Success!
-    req2.headers.set("Authorization", "Bearer " + init.session_key);
+    req2.headers.set("Authorization", "Bearer " + init.session_token);
     await upload.abortUploadHandler(req2, nb);
 
     // Repeated attempts fail as the lock file is gone.

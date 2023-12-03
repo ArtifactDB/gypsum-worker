@@ -244,10 +244,10 @@ export async function initializeUploadHandler(request, nonblockers) {
         }
 
         output = utils.jsonResponse({ 
-            upload_urls: upload_urls,
-            completion_url: "/upload/complete/" + project + "/" + asset + "/" + version,
+            file_urls: upload_urls,
+            complete_url: "/upload/complete/" + project + "/" + asset + "/" + version,
             abort_url: "/upload/abort/" + project + "/" + asset + "/" + version,
-            session_key: session_key,
+            session_token: session_key,
         }, 200);
 
     } catch (e) {

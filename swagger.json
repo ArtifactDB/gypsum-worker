@@ -184,40 +184,40 @@
                             "application/json": {
                                 "schema": {
                                     "type": "object",
-                                    "required": [ "upload_urls", "completion_url", "abort_url", "session_key" ],
+                                    "required": [ "file_urls", "complete_url", "abort_url", "session_token" ],
                                     "properties": {
-                                        "upload_urls": {
-                                            "description": "URLs for uploading non-link files in the request `files`.",
+                                        "file_urls": {
+                                            "description": "URLs for uploading non-link files from the request's `files`.",
                                             "type": "array",
                                             "items": {
                                                 "type": "object",
-                                                "required": [ "type", "path", "url" ],
+                                                "required": [ "method", "path", "url" ],
                                                 "properties": {
-                                                    "type": {
+                                                    "method": {
                                                         "type": "string",
-                                                        "description": "Type of upload. If `presigned`, a request can be made to `url` to obtain a presigned S3 URL for direct upload. If `multipart`, a request can be made to `url` to start a multi-part upload.",
+                                                        "description": "Upload method. If `presigned`, a `POST` request to `url` will obtain a presigned S3 URL for direct upload, see the `/upload/presigned-file` endpoint for details. If `multipart`, a `POST` request to `url` will start a multi-part upload.",
                                                         "enum": ["presigned", "multipart"]
                                                     },
                                                     "path": {
                                                         "type": "string",
-                                                        "description": "Relative path of the file to be uploaded. This is the same as the path listed in `files.path` in the initial request."
+                                                        "description": "Relative path of the file to be uploaded. This is taken from the `files.path` in the initial request."
                                                     },
                                                     "url": {
                                                         "type": "string",
-                                                        "description": "URL to use to start the upload. The actual upload process depends on `type`."
+                                                        "description": "URL to use to start the upload. The exact upload method depends on `method`."
                                                     }
                                                 }
                                             }
                                         },
-                                        "completion_url": {
+                                        "complete_url": {
                                             "type": "string",
-                                            "description": "URL for indicating that the upload of all individual files is complete."
+                                            "description": "URL to indicating that the upload of all individual files is complete, see the `/upload/complete` endpoint for details."
                                         },
                                         "abort_url": {
                                             "type": "string",
-                                            "description": "URL to abort the upload."
+                                            "description": "URL to abort the upload, see the `/upload/abort` endpoint for details."
                                         },
-                                        "session_key": {
+                                        "session_token": {
                                             "type": "string",
                                             "description": "Token to authenticate subsequent requests for this upload session."
                                         }
@@ -287,7 +287,7 @@
         },
 
         "/upload/complete/{project}/{asset}/{version}": {
-            "put": {
+            "post": {
                 "summary": "Complete an upload. This requires a token for an initialized upload session.",
                 "parameters": [
                     { "$ref": "#/components/parameters/project" },
@@ -305,7 +305,7 @@
         },
 
         "/upload/abort/{project}/{asset}/{version}": {
-            "put": {
+            "post": {
                 "summary": "Abort an upload. This requires a token for an initialized upload session.",
                 "parameters": [
                     { "$ref": "#/components/parameters/project" },
