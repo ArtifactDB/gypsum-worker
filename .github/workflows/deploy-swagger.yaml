@@ -1,0 +1,29 @@
+on:
+  push:
+    branches:
+      - master
+
+name: Deploy Swagger UI 
+
+jobs:
+  deploy-swagger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Fetch the Swagger UI
+        run: |
+            curl -L https://github.com/swagger-api/swagger-ui/archive/refs/tags/v5.0.0.tar.gz > swagger.tar.gz
+            tar -xf swagger.tar.gz
+
+      - name: Edit the JSON path
+        run: | 
+            HOST=swagger-ui-5.0.0/dist/swagger-initializer.js
+            cat ${HOST} | sed "s/https:\/\/petstore.swagger.io\/v2\/swagger.json/https:\/\/raw.githubusercontent.com\/ArtifactDB\/gypsum-worker\/master\/swagger.json/" > blah.js
+            mv blah.js ${HOST}
+      - name: Deploy 🚀
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: gh-pages # The branch the action should deploy to.
+          folder: swagger-ui-5.0.0/dist # The folder the action should deploy.

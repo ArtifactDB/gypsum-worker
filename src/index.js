@@ -86,6 +86,10 @@ router.post("/probation/reject/:project", probation.rejectProbationHandler);
 
 /*** Setting up the listener ***/
 
+router.get("/", () => {
+    return new Response(null, { headers: { "Location": "https://artifactdb.github.io/gypsum-worker" }, status: 301 })
+})
+
 addEventListener('fetch', event => {
     let request = event.request;
 
