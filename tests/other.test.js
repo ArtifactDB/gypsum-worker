@@ -84,32 +84,62 @@ test("listApply works as expected", async () => {
     await other.quickUploadJson("alpha/bravo2/stuff.txt", [ "Glow Map" ]);
     await other.quickUploadJson("charlie/whee.txt", [ "Harmony 4 You" ]);
 
+    // Recursive mode:
     {
         let survivors = [];
-        await other.listApply("alpha/", f => { survivors.push(f.key); });
+        await other.listApply("alpha/", f => survivors.push(f));
+        survivors.sort();
+        expect(survivors).toEqual(["alex.txt", "bravo/bar.txt", "bravo2/stuff.txt"]);
+    }
+
+    {
+        let survivors = [];
+        await other.listApply("alpha/", f => survivors.push(f), { trimPrefix: false });
         survivors.sort();
         expect(survivors).toEqual(["alpha/alex.txt", "alpha/bravo/bar.txt", "alpha/bravo2/stuff.txt"]);
     }
 
     {
         let survivors = [];
-        await other.listApply("alpha/bravo", f => { survivors.push(f.key); });
+        await other.listApply("alpha/", f => survivors.push(f.key), { namesOnly: false });
+        survivors.sort();
+        expect(survivors).toEqual(["alpha/alex.txt", "alpha/bravo/bar.txt", "alpha/bravo2/stuff.txt"]);
+    }
+
+    {
+        let survivors = [];
+        await other.listApply("alpha/bravo", f => survivors.push(f.key), { namesOnly: false });
         survivors.sort();
         expect(survivors).toEqual(["alpha/bravo/bar.txt", "alpha/bravo2/stuff.txt"]);
     }
 
     {
         let survivors = [];
-        await other.listApply("alpha/bravo/", f => { survivors.push(f.key); });
+        await other.listApply("alpha/bravo/", f => survivors.push(f));
         survivors.sort();
-        expect(survivors).toEqual(["alpha/bravo/bar.txt"]);
+        expect(survivors).toEqual(["bar.txt"]);
     }
 
     {
         let survivors = [];
-        await other.listApply("", f => { survivors.push(f.key); }, /* list_limit = */ 1); // forcing iteration.
+        await other.listApply(null, f => { survivors.push(f.key); }, { list_limit: 1, namesOnly: false }); // forcing iteration.
         survivors.sort();
         expect(survivors).toEqual(["alpha/alex.txt", "alpha/bravo/bar.txt", "alpha/bravo2/stuff.txt", "charlie/whee.txt"]);
+    }
+
+    // Non-recursive mode:
+    {
+        let survivors = [];
+        await other.listApply("alpha/", p => survivors.push(p), { local: true });
+        survivors.sort();
+        expect(survivors).toEqual(["alex.txt", "bravo", "bravo2"]);
+    }
+
+    {
+        let survivors = [];
+        await other.listApply("alpha/", p => survivors.push(p), { local: true, trimPrefix: false });
+        survivors.sort();
+        expect(survivors).toEqual(["alpha/alex.txt", "alpha/bravo", "alpha/bravo2"]);
     }
 })
 
@@ -140,7 +170,7 @@ test("quick recursive delete works as expected", async () => {
             expect(await BOUND_BUCKET.head("alpha/bravo/stuff.txt")).toBeNull();
             expect(await BOUND_BUCKET.head("alpha/bravo-foo/whee.txt")).toBeNull();
         } else if (it == 3) {
-            await other.quickRecursiveDelete("alpha/", 1); // setting a list limit of 1 to force iteration.
+            await other.quickRecursiveDelete("alpha/", { list_limit: 1 }); // setting a list limit of 1 to force iteration.
             expect(await BOUND_BUCKET.head("alpha/foo.txt")).toBeNull();
             expect(await BOUND_BUCKET.head("alpha/bravo/bar.txt")).toBeNull();
             expect(await BOUND_BUCKET.head("alpha/bravo/stuff.txt")).toBeNull();

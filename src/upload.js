@@ -317,9 +317,7 @@ export async function completeUploadHandler(request, nonblockers) {
     let list_promise = new Promise(resolve => {
         let all_files = new Set;
         let prefix = project + "/" + asset + "/" + version + "/";
-        utils.listApply(prefix, f => {
-            all_files.add(f.key.slice(prefix.length));
-        }).then(x => resolve(all_files));
+        utils.listApply(prefix, fname => all_files.add(fname)).then(x => resolve(all_files));
     });
 
     let bound_bucket = s3.getR2Binding();

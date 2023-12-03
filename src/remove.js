@@ -58,27 +58,18 @@ export async function removeProjectAssetVersionHandler(request, nonblockers) {
 
     if (linfo.version == version) {
         let prefix = project + "/" + asset + "/";
-        let list_options = { prefix: prefix, delimiter: "/" };
-        let truncated = true;
         let summaries = [];
         let versions = [];
-
-        while (true) {
-            let listing = await bound_bucket.list(list_options);
-            for (const f of listing.delimitedPrefixes) {
-                let basename = f.slice(prefix.length, f.length - 1); 
-                if (!basename.startsWith("..")) {
-                    summaries.push(bound_bucket.get(pkeys.versionSummary(project, asset, basename)));
-                    versions.push(basename);
+        await utils.listApply(
+            prefix, 
+            name => {
+                if (!name.startsWith("..")) {
+                    summaries.push(bound_bucket.get(pkeys.versionSummary(project, asset, name)));
+                    versions.push(name);
                 }
-            }
-            truncated = listing.truncated;
-            if (truncated) {
-                list_options.cursor = listing.cursor;
-            } else {
-                break;
-            }
-        }
+            }, 
+            { local: true }
+        );
 
         let resolved = await Promise.all(summaries);
         let best_version = null, best_time = null;

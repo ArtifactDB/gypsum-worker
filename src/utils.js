@@ -61,14 +61,40 @@ export async function namedResolve(x) {
     return output;
 }
 
-export async function listApply(prefix, op, list_limit = 1000) {
-    let bound_bucket = s3.getR2Binding();
-    let list_options = { prefix: prefix, limit: list_limit };
-    let truncated = true;
+export async function listApply(prefix, op, { namesOnly = true, trimPrefix = true, local = false, list_limit = 1000 } = {}) {
+    let list_options = { limit: list_limit };
+    if (prefix != null) {
+        list_options.prefix = prefix;
+    } else {
+        trimPrefix = false; // nothing to trim.
+    }
+    if (local) {
+        list_options.delimiter = "/";
+    }
 
+    let bound_bucket = s3.getR2Binding();
+    let truncated = true;
     while (true) {
         let listing = await bound_bucket.list(list_options);
-        listing.objects.forEach(op);
+
+        if (local) {
+            if (trimPrefix) {
+                listing.delimitedPrefixes.forEach(p => op(p.slice(prefix.length, p.length - 1))); // remove the prefix and the slash.
+            } else {
+                listing.delimitedPrefixes.forEach(p => op(p.slice(0, p.length - 1))); // remove the trailing slash.
+            }
+        } 
+
+        if (namesOnly || local) {
+            if (trimPrefix) {
+                listing.objects.forEach(f => op(f.key.slice(prefix.length)));
+            } else {
+                listing.objects.forEach(f => op(f.key));
+            }
+        } else {
+            listing.objects.forEach(op);
+        }
+
         truncated = listing.truncated;
         if (truncated) {
             list_options.cursor = listing.cursor;
@@ -78,9 +104,13 @@ export async function listApply(prefix, op, list_limit = 1000) {
     }
 }
 
-export async function quickRecursiveDelete(prefix, list_limit = 1000) {
+export async function quickRecursiveDelete(prefix, { list_limit = 1000 } = {}) {
     let bound_bucket = s3.getR2Binding();
     let deletions = [];
-    await listApply(prefix, f => { deletions.push(bound_bucket.delete(f.key)); }, /* list_limit = */ list_limit);
+    await listApply(
+        prefix, 
+        fname => deletions.push(bound_bucket.delete(fname), { trimPrefix: false }), 
+        { list_limit: list_limit, trimPrefix: false }
+    );
     await Promise.all(deletions);
 }
