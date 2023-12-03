@@ -5,12 +5,14 @@
         "description": "Upload files to the gypsum file store.",
         "version": "1.0.0"
     },
+
     "servers": [
         {
             "url": "https://gypsum-test.aaron-lun.workers.dev",
             "description": "Production instance of the API"
         }
     ],
+
     "paths": {
 
         "/create/{project}": {
@@ -19,6 +21,21 @@
                 "parameters": [
                     { "$ref": "#/components/parameters/project" }
                 ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "description": "Permissions for this new project.",
+                                "required": [ "owners", "uploaders" ],
+                                "properties": {
+                                    "owners": { "$ref": "#/components/schemas/owners" },
+                                    "uploaders": { "$ref": "#/components/schemas/uploaders" }
+                                }
+                            }
+                        }
+                    }
+                },
                 "security": [ { "admin": [] } ],
                 "responses": {
                     "200": { "description": "Successful project creation." },
@@ -33,7 +50,7 @@
                     "401": { "$ref": "#/components/responses/401" },
                     "403": { "$ref": "#/components/responses/403" }
                 },
-                "tags": ["Project creation"]
+                "tags": ["Creation"]
             }
         },
 
@@ -86,9 +103,301 @@
                 },
                 "tags": ["Deletion"]
             }
+        },
+
+        "/upload/start/{project}/{asset}/{version}": {
+            "post": {
+                "summary": "Start an upload of a new asset or a new version of an existing asset for a project. This requires uploader privileges.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/project" },
+                    { "$ref": "#/components/parameters/asset" },
+                    { "$ref": "#/components/parameters/version" }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [ "files" ],
+                                "properties": {
+                                    "files": {
+                                        "description": "Files to be uploaded.",
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "required": [ "path", "type" ],
+                                            "properties": {
+                                                "path": {
+                                                    "type": "string",
+                                                    "description": "Path to the file. This is interpreted relative to the version subdirectory."
+                                                },
+                                                "type": {
+                                                    "type": "string",
+                                                    "enum": [ "simple", "dedup", "link" ],
+                                                    "description": "Type of upload. For `simple`, files are directly uploaded to the destination bucket. For `dedup`, the API will attempt to find a matching file (based on the MD5 checksums and size) in the previous version, and create a link to that version instead of uploading a copy; if no copy can be found, it falls back to `simple`. For `link`, the user is expected to specify the link destination for `path`, and no file is actually uploaded."
+                                                },
+                                                "md5sum": {
+                                                    "type": "string",
+                                                    "description": "MD5 checksum for the file, hex-encoded. This only needs to be supplied if `type` is not `link`."
+                                                },
+                                                "size": {
+                                                    "type": "integer",
+                                                    "description": "Type of the file, in bytes. This only needs to be supplied if `type` is not `link`.",
+                                                    "minimum": 0
+                                                },
+                                                "link": {
+                                                    "type": "object",
+                                                    "description": "Link destination for the file, if `type` is `link`.",
+                                                    "required": [ "project", "asset", "version", "path" ],
+                                                    "properties": {
+                                                        "project": {
+                                                            "type": "string",
+                                                            "description": "Project of the link destination."
+                                                        },
+                                                        "asset": {
+                                                            "type": "string",
+                                                            "description": "Asset of the link destination."
+                                                        },
+                                                        "version": {
+                                                            "type": "string",
+                                                            "description": "Version of the link destination."
+                                                        },
+                                                        "path": {
+                                                            "type": "string",
+                                                            "description": "Relative path of the link destination."
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [ { "uploader": [] } ],
+                "responses": {
+                    "200": { 
+                        "description": "Successful initialization of an upload.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [ "upload_urls", "completion_url", "abort_url", "session_key" ],
+                                    "properties": {
+                                        "upload_urls": {
+                                            "description": "URLs for uploading non-link files in the request `files`.",
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "required": [ "type", "path", "url" ],
+                                                "properties": {
+                                                    "type": {
+                                                        "type": "string",
+                                                        "description": "Type of upload. If `presigned`, a request can be made to `url` to obtain a presigned S3 URL for direct upload. If `multipart`, a request can be made to `url` to start a multi-part upload.",
+                                                        "enum": ["presigned", "multipart"]
+                                                    },
+                                                    "path": {
+                                                        "type": "string",
+                                                        "description": "Relative path of the file to be uploaded. This is the same as the path listed in `files.path` in the initial request."
+                                                    },
+                                                    "url": {
+                                                        "type": "string",
+                                                        "description": "URL to use to start the upload. The actual upload process depends on `type`."
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "completion_url": {
+                                            "type": "string",
+                                            "description": "URL for indicating that the upload of all individual files is complete."
+                                        },
+                                        "abort_url": {
+                                            "type": "string",
+                                            "description": "URL to abort the upload."
+                                        },
+                                        "session_key": {
+                                            "type": "string",
+                                            "description": "Token to authenticate subsequent requests for this upload session."
+                                        }
+                                    }
+                                }
+                            }
+
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/401" },
+                    "403": { "$ref": "#/components/responses/403" }
+                },
+                "tags": ["Upload"]
+            }
+        },
+
+        "/upload/presigned-file/{slug}": {
+            "post": {
+                "summary": "Request a presigned URL to upload a single file. This requires a token for initialized upload session.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "slug",
+                        "description": "Base64-encoded JSON string containing upload details for a particular file. This is typically generated by the `/upload/start` endpoint.",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "required": true
+                    }
+                ],
+                "security": [ { "session": [] } ],
+                "responses": {
+                    "200": { 
+                        "description": "Successful request for a presigned URL.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [ "url", "md5sum_base64" ],
+                                    "properties": {
+                                        "url": {
+                                            "type": "string",
+                                            "description": "Presigned URL that can be directly used for a file upload via `PUT`."
+                                        },
+                                        "md5sum_base64": {
+                                            "type": "string",
+                                            "description": "Base64-encoded MD5 checksum, to be attached as the `Content-MD5` header in the request to `url`."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": { 
+                        "description": "Incorrectly formatted request, or the specified version of the project asset already exists.",
+                        "content": { 
+                            "application/json": {
+                                "schema":  { "$ref": "#/components/schemas/error" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/401" },
+                    "403": { "$ref": "#/components/responses/403" }
+                },
+                "tags": ["Upload"]
+            }
+        },
+
+        "/upload/complete/{project}/{asset}/{version}": {
+            "put": {
+                "summary": "Complete an upload. This requires a token for an initialized upload session.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/project" },
+                    { "$ref": "#/components/parameters/asset" },
+                    { "$ref": "#/components/parameters/version" }
+                ],
+                "security": [ { "session": [] } ],
+                "responses": {
+                    "200": { "description": "Successful completion." },
+                    "401": { "$ref": "#/components/responses/401" },
+                    "403": { "$ref": "#/components/responses/403" }
+                },
+                "tags": ["Upload"]
+            }
+        },
+
+        "/upload/abort/{project}/{asset}/{version}": {
+            "put": {
+                "summary": "Abort an upload. This requires a token for an initialized upload session.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/project" },
+                    { "$ref": "#/components/parameters/asset" },
+                    { "$ref": "#/components/parameters/version" }
+                ],
+                "security": [ { "session": [] } ],
+                "responses": {
+                    "200": { "description": "Successful completion." },
+                    "401": { "$ref": "#/components/responses/401" },
+                    "403": { "$ref": "#/components/responses/403" }
+                },
+                "tags": ["Upload"]
+            }
+        },
+
+        "/permissions/{project}": {
+            "put": {
+                "summary": "Set the permissions for a project. This requires project owner privileges.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/project" }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "description": "New permissions. If any property is not provided, the value in the current permissions is retained.",
+                                "properties": {
+                                    "owners": { "$ref": "#/components/schemas/owners" },
+                                    "uploaders": { "$ref": "#/components/schemas/uploaders" }
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [ { "owner": [] } ],
+                "responses": {
+                    "200": { "description": "Successful change to the project permissions." },
+                    "400": { 
+                        "description": "Incorrectly formatted request.",
+                        "content": { 
+                            "application/json": {
+                                "schema":  { "$ref": "#/components/schemas/error" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/401" },
+                    "403": { "$ref": "#/components/responses/403" }
+                },
+                "tags": [ "Permissions" ]
+            }
+        },
+
+        "/probation/approve/{project}/{asset}/{version}": {
+            "post": {
+                "summary": "Approve a probational upload. This requires project owner privileges.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/project" },
+                    { "$ref": "#/components/parameters/asset" },
+                    { "$ref": "#/components/parameters/version" }
+                ],
+                "security": [ { "owner": [] } ],
+                "responses": {
+                    "200": { "description": "Successful approval.." },
+                    "401": { "$ref": "#/components/responses/401" },
+                    "403": { "$ref": "#/components/responses/403" }
+                },
+                "tags": ["Probation"]
+            }
+        },
+
+        "/probation/reject/{project}/{asset}/{version}": {
+            "post": {
+                "summary": "Reject a probational upload. This requires project owner privileges.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/project" },
+                    { "$ref": "#/components/parameters/asset" },
+                    { "$ref": "#/components/parameters/version" }
+                ],
+                "security": [ { "owner": [] } ],
+                "responses": {
+                    "200": { "description": "Successful approval.." },
+                    "401": { "$ref": "#/components/responses/401" },
+                    "403": { "$ref": "#/components/responses/403" }
+                },
+                "tags": ["Probation"]
+            }
         }
 
     },
+
     "components": {
         "parameters": {
             "project": {
@@ -138,6 +447,7 @@
                 }
             }
         },
+
         "schemas": {
             "error": {
                 "type": "object",
@@ -151,15 +461,70 @@
                         "description": "Reason for the error"
                     }
                 }
+            },
+            "owners": {
+                "description": "GitHub logins of the project owners. Names of GitHub organizations are also allowed, in which case all public members of the organization are considered to be owners.",
+                "type": "array",
+                "items": {
+                    "type": "string"
+                }
+            },
+            "uploaders": {
+                "description": "GitHub logins of authorized uploaders. Names of GitHub organizations are also allowed, in which case all public members of the organization are authorized as uploaders.",
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": [ "id" ],
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "GitHub login or organization name."
+                        },
+                        "asset": {
+                            "type": "string",
+                            "description": "Name of the asset to limit uploads to. If not provided, uploads can be performed to any asset in the project."
+                        },
+                        "version": {
+                            "type": "string",
+                            "description": "Name of the version to limit uploads to. If not provided, uploads can be performed to any version in the project."
+                        },
+                        "until": {
+                            "type": "string",
+                            "description": "Lifetime of the upload authorization. If not provided, the authorization lasts indefinitely.",
+                            "format": "date-time"
+                        },
+                        "trusted": {
+                            "type": "boolean",
+                            "description": "Whether this uploader is to be trusted. If false, all uploads are probational.",
+                            "default": true
+                        }
+
+                    }
+                }
             }
         },
+
         "securitySchemes": {
             "admin": {
                 "type": "http",
                 "scheme": "bearer",
                 "description": "GitHub token for an account that gypsum recognizes as an administrator."
+            },
+            "uploader": {
+                "type": "http",
+                "scheme": "bearer",
+                "description": "GitHub token for an account that is authorized as an uploader for the specified project."
+            },
+            "owner": {
+                "type": "http",
+                "scheme": "bearer",
+                "description": "GitHub token for an account that is listed as an owner for the specified project."
+            },
+            "session": {
+                "type": "http",
+                "scheme": "bearer",
+                "description": "Token for an upload session."
             }
         }
     }
-}    
-
+}
