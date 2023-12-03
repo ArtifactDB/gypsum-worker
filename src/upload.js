@@ -12,6 +12,7 @@ function splitByUploadType(files) {
     let dedup = [];
     let linked = [];
 
+    let all_paths = new Set;
     for (const f of files) {
         if (typeof f != "object") {
             throw new utils.HttpError("'files' should be an array of objects", 400);
@@ -24,6 +25,10 @@ function splitByUploadType(files) {
         if (fname.startsWith("..") || fname.includes("/..")) {
             throw new utils.HttpError("components of 'files.path' cannot start with '..'", 400);
         }
+        if (all_paths.has(fname)) {
+            throw new utils.HttpError("duplicated value '" + fname + "' in 'files.path'", 400);
+        }
+        all_paths.add(fname);
 
         if (!("type" in f) || typeof f.type != "string") {
             throw new utils.HttpError("'files.type' should be a string", 400);

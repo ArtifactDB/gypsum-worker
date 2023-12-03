@@ -315,6 +315,25 @@ test("initializeUploadHandler prohibits links to missing files or versions", asy
     }
 })
 
+test("initializeUploadHandler prohibits duplicate files", async () => {
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
+
+    let req = new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ 
+            files: [
+                { type: "simple", path: "pet/rabbit.txt", md5sum: "asdasdasdasd", size: 20 },
+                { type: "dedup", path: "pet/rabbit.txt", md5sum: "blahblahbalh", size: 40 }
+            ]
+        })
+    });
+    req.params = { project: "test-upload", asset: "linker", version: "v1" };
+    req.headers.append("Authorization", "Bearer " + setup.mockTokenOwner);
+
+    let nb = [];
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "duplicated value");
+})
+
 /******* Presigned upload checks *******/
 
 test("uploadPresignedFileHandler works as expected", async () => {
