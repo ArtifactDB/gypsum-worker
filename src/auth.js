@@ -177,11 +177,14 @@ export function validatePermissions(body, required) {
 
             if ("until" in entry) {
                 if (typeof entry.until != "string") {
-                    throw new utils.HttpError("expected 'uploaders.until' property to be a date-formatted string", 400);
+                    throw new utils.HttpError("expected 'uploaders.until' property to be a date/time-formatted string", 400);
+                }
+                if (!entry.until.match(/^[1-9]\d{3}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
+                    throw new utils.HttpError("expected 'uploaders.until' property to be a date/time-formatted string", 400);
                 }
                 let parsed = Date.parse(entry.until);
                 if (Number.isNaN(parsed)) {
-                    throw new utils.HttpError("expected 'uploaders.until' property to be a date-formatted string", 400);
+                    throw new utils.HttpError("expected 'uploaders.until' property to be a date/time-formatted string", 400);
                 }
             }
 

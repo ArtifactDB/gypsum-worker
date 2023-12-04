@@ -113,9 +113,11 @@ test("validatePermissions works correctly", () => {
     expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:2}]}, true)).toThrow("uploaders.id");
     expect(auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd"}]}, true)).toBeUndefined();
 
-    expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", until: 5}]}, true)).toThrow("to be a date-formatted string");
-    expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", until: "asdad"}]}, true)).toThrow("to be a date-formatted string");
-    expect(auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", until: "2019-12-22"}]}, true)).toBeUndefined();
+    expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", until: 5}]}, true)).toThrow("to be a date/time-formatted string");
+    expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", until: "asdad"}]}, true)).toThrow("to be a date/time-formatted string");
+    expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", until: "2019-12-22"}]}, true)).toThrow("to be a date/time-formatted string");
+    expect(auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", until: "2019-12-22T01:02:03Z"}]}, true)).toBeUndefined();
+    expect(auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", until: "2019-12-22T01:02:03+08:00"}]}, true)).toBeUndefined();
 
     expect(() => auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", trusted: 1}]}, true)).toThrow("to be a boolean");
     expect(auth.validatePermissions({ owners: [], uploaders: [{id:"asdasd", trusted: false}]}, true)).toBeUndefined();
