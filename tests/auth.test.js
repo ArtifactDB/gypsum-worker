@@ -153,31 +153,33 @@ test("checkProjectUploadPermissions works correctly", async () => {
     await auth.flushCachedPermissions("test", nb);
     out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb);
     expect(out.can_manage).toBe(false);
-    expect(out.is_trusted).toBe(true);
+    expect(out.is_trusted).toBe(false);
 
     await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "asset": "foo" } ] }');
     await auth.flushCachedPermissions("test", nb);
     await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb), "not authorized to upload");
     out = await auth.checkProjectUploadPermissions("test", "foo", "v1", setup.mockTokenUser, nb);
     expect(out.can_manage).toBe(false);
-    expect(out.is_trusted).toBe(true);
+    expect(out.is_trusted).toBe(false);
 
     await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "version": "foo" } ] }');
     await auth.flushCachedPermissions("test", nb);
     await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb), "not authorized to upload");
     out = await auth.checkProjectUploadPermissions("test", "blob", "foo", setup.mockTokenUser, nb);
     expect(out.can_manage).toBe(false);
-    expect(out.is_trusted).toBe(true);
+    expect(out.is_trusted).toBe(false);
 
     await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "until": "1989-11-09" } ] }');
     await auth.flushCachedPermissions("test", nb);
     await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb), "not authorized to upload");
+    expect(out.can_manage).toBe(false);
+    expect(out.is_trusted).toBe(false);
 
     await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "until": "' + (new Date(Date.now() + 10000)).toISOString() + '" } ] }');
     await auth.flushCachedPermissions("test", nb);
     out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb);
     expect(out.can_manage).toBe(false);
-    expect(out.is_trusted).toBe(true);
+    expect(out.is_trusted).toBe(false);
 
     await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "trusted": false } ] }');
     await auth.flushCachedPermissions("test", nb);

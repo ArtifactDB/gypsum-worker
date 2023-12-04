@@ -563,8 +563,8 @@
                         },
                         "trusted": {
                             "type": "boolean",
-                            "description": "Whether this uploader is to be trusted. If false, all uploads are probational.",
-                            "default": true
+                            "description": "Whether this uploader is to be trusted. If false, all uploads from this user are probational.",
+                            "default": false
                         }
 
                     }

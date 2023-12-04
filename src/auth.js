@@ -248,9 +248,9 @@ export async function checkProjectUploadPermissions(project, asset, version, tok
             if ("until" in uploader && Date.parse(uploader.until) < Date.now()) {
                 break;
             }
-            let is_trusted = true;
-            if ("trusted" in uploader && !uploader.trusted) {
-                is_trusted = false;
+            let is_trusted = false;
+            if ("trusted" in uploader) {
+                is_trusted = uploader.trusted;
             }
             return { can_manage: false, is_trusted: is_trusted, user: user };
         }
