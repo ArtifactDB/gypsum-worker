@@ -47,9 +47,9 @@ export async function setPermissionsHandler(request, nonblockers) {
 }
 
 export function fetchS3Credentials(request, nonblockers) {
-    return new utils.jsonResponse(s3.getPublicS3Credentials(), 200); 
+    return new utils.jsonResponse(s3.getPublicS3Credentials(), 200, { 'Access-Control-Allow-Origin': '*' }); 
 }
 
 export function fetchGitHubCredentials(request, nonblockers) {
-    return new utils.jsonResponse(gh.getGitHubAppCredentials(), 200);
+    return new utils.jsonResponse(gh.getGitHubAppCredentials(), 200, { 'Access-Control-Allow-Origin': '*' });
 }
