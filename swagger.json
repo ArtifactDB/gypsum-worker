@@ -394,6 +394,74 @@
                 },
                 "tags": ["Probation"]
             }
+        },
+
+        "/credentials/s3-api": {
+            "get": {
+                "summary": "Get the key and secret for public read-only S3 API access to the R2 bucket.",
+                "responses": {
+                    "200": { 
+                        "description": "S3 credentials for public read-only access.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [ "endpoint", "bucket", "key", "secret" ],
+                                    "properties": {
+                                        "endpoint": {
+                                            "type": "string",
+                                            "description": "Endpoint URL for the S3-compatible API."
+                                        },
+                                        "bucket": {
+                                            "type": "string",
+                                            "description": "Name of the bucket."
+                                        },
+                                        "key": {
+                                            "type": "string",
+                                            "description": "Access key ID."
+                                        },
+                                        "secret": {
+                                            "type": "string",
+                                            "description": "Secret access key."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "tags": [ "Permissions" ]
+            }
+        },
+
+        "/credentials/github-app": {
+            "get": {
+                "summary": "Get the GitHub app ID and secret for the Oauth2 flow.",
+                "responses": {
+                    "200": { 
+                        "description": "GitHub app credentials for user authentication.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [ "id", "secret" ],
+                                    "properties": {
+                                        "id": {
+                                            "type": "string",
+                                            "description": "Github app ID."
+                                        },
+                                        "secret": {
+                                            "type": "string",
+                                            "description": "App secret."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "tags": [ "Permissions" ]
+            }
         }
 
     },

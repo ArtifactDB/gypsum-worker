@@ -3,6 +3,7 @@ import * as utils from "./utils.js";
 const api = "https://api.github.com";
 var user_agent = "placeholder";
 var test_rigging = null;
+var app_credentials = null;
 
 export function setRepository(repo) {
     repository = repo;
@@ -76,4 +77,16 @@ export async function identifyUserOrgs(token) {
     await propagate_github_error(res, "failed to query GitHub for user organizations", 401);
 
     return res;
+}
+
+export function setGitHubAppCredentials(app_id, app_secret) {
+    app_credentials = {
+        id: app_id,
+        secret: app_secret
+    };
+    return;
+}
+
+export function getGitHubAppCredentials() {
+    return app_credentials;
 }

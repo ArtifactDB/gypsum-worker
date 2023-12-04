@@ -2,6 +2,7 @@ import * as utils from "./utils.js";
 import * as auth from "./auth.js";
 import * as pkeys from "./internal.js";
 import * as s3 from "./s3.js";
+import * as gh from "./github.js";
 
 export async function setPermissionsHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
@@ -43,4 +44,12 @@ export async function setPermissionsHandler(request, nonblockers) {
     auth.flushCachedPermissions(project, nonblockers);
 
     return new Response(null, { status: 200 });
+}
+
+export function fetchS3Credentials(request, nonblockers) {
+    return new utils.jsonResponse(s3.getPublicS3Credentials(), 200); 
+}
+
+export function fetchGitHubCredentials(request, nonblockers) {
+    return new utils.jsonResponse(gh.getGitHubAppCredentials(), 200);
 }

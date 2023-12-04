@@ -20,10 +20,49 @@ s3.setBucketName(R2_BUCKET_NAME);
 s3.setR2Binding(BOUND_BUCKET);
 
 // Secret variables.
-if (typeof ACCESS_KEY_ID !== "undefined" && typeof SECRET_ACCESS_KEY != "undefined") {
+let missed_secrets = [];
+
+let missed_key = (typeof ACCESS_KEY_ID == "undefined");
+let missed_secret = (typeof SECRET_ACCESS_KEY == "undefined");
+if (!missed_key && !missed_secret) {
     s3.setS3Object(CF_ACCOUNT_ID, ACCESS_KEY_ID, SECRET_ACCESS_KEY);
 } else {
-    console.warn("missing the ACCESS_KEY_ID or SECRET_ACCESS_KEY secrets");
+    if (missed_key) {
+        missed_secrets.push("ACCESS_KEY_ID");
+    }
+    if (missed_secret) {
+        missed_secrets.push("SECRET_ACCESS_KEY");
+    }
+}
+
+let missed_public_key = (typeof PUBLIC_S3_KEY == "undefined");
+let missed_public_secret = (typeof PUBLIC_S3_SECRET == "undefined");
+if (!missed_public_key && !missed_public_secret) {
+    s3.setPublicS3Credentials(CF_ACCOUNT_ID, R2_BUCKET_NAME, PUBLIC_S3_KEY, PUBLIC_S3_SECRET);
+} else {
+    if (missed_public_key) {
+        missed_secrets.push("PUBLIC_S3_KEY");
+    } 
+    if (missed_public_secret) {
+        missed_secrets.push("PUBLIC_S3_SECRET");
+    }
+}
+
+let missed_github_key = (typeof GITHUB_APP_ID == "undefined");
+let missed_github_secret = (typeof GITHUB_APP_SECRET == "undefined");
+if (!missed_github_key && !missed_github_secret) {
+    gh.setGitHubAppCredentials(GITHUB_APP_ID, GITHUB_APP_SECRET);
+} else {
+    if (missed_github_key) {
+        missed_secrets.push("GITHUB_APP_ID");
+    }
+    if (missed_github_secret) {
+        missed_secrets.push("GITHUB_APP_SECRET");
+    }
+}
+
+if (missed_secrets.length) {
+    console.warn("missing the following secrets: " + missed_secrets.join(", "))
 }
 
 const router = Router();
@@ -77,6 +116,10 @@ router.post("/upload/abort/:project/:asset/:version", upload.abortUploadHandler)
 /*** Permission handling ***/
 
 router.put("/permissions/:project", permissions.setPermissionsHandler);
+
+router.get("/credentials/s3-api", permissions.fetchS3Credentials);
+
+router.get("/credentials/github-app", permissions.fetchGitHubCredentials);
 
 /*** Probation ***/
 
