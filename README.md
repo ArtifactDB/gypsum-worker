@@ -35,7 +35,8 @@ This contains a JSON object with the following properties:
 - `upload_user_id`, a string containing the identity of the uploading user.
 - `upload_start`, an Internet date/time-formatted string containing the upload start time.
 - `upload_finish`, an Internet date/time-formatted string containing the upload finish time.
-- `on_probation`, a boolean indicating whether this upload is on probation, see [below](#upload-probation).
+- `on_probation` (optional), a boolean indicating whether this upload is on probation, see [below](#upload-probation).
+  If not present, this can be assumed to be `false`.
 
 ### Link deduplication
 
