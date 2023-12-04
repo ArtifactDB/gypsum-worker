@@ -123,9 +123,9 @@ router.get("/credentials/github-app", permissions.fetchGitHubCredentials);
 
 /*** Probation ***/
 
-router.post("/probation/approve/:project", probation.approveProbationHandler);
+router.post("/probation/approve/:project/:asset/:version", probation.approveProbationHandler);
 
-router.post("/probation/reject/:project", probation.rejectProbationHandler);
+router.post("/probation/reject/:project/:asset/:version", probation.rejectProbationHandler);
 
 /*** Setting up the listener ***/
 
