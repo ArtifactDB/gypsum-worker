@@ -278,6 +278,79 @@ test("initializeUploadHandler works correctly for link-based deduplication", asy
     expect(vbody["pet/dog.txt"]).toEqual({ md5sum: blah_md5, size: blah_size, link: { project: "test", asset: "blob", version: "v1", path: "blah.txt" } });
 })
 
+test("initializeUploadHandler does not trust uploaders unless instructed to", async () => {
+    {
+        await BOUND_BUCKET.put(pkeys.permissions("test-upload1"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [ { id: "RandomDude" } ] }));
+        let req = new Request("http://localhost", {
+            method: "POST",
+            body: JSON.stringify({ files: [] })
+        });
+        req.headers.append("Authorization", "Bearer " + setup.mockTokenUser);
+        req.params = { project: "test-upload1", asset: "trust-check", version: "v1" };
+
+        let nb = [];
+        await upload.initializeUploadHandler(req, nb);
+
+        let sinfo = await BOUND_BUCKET.get("test-upload1/trust-check/v1/..summary");
+        let sbody = await sinfo.json();
+        expect(sbody.on_probation).toBe(true);
+    }
+
+    {
+        await BOUND_BUCKET.put(pkeys.permissions("test-upload2"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [ { id: "RandomDude", trusted: false } ] }));
+        let req = new Request("http://localhost", {
+            method: "POST",
+            body: JSON.stringify({ files: [] })
+        });
+        req.headers.append("Authorization", "Bearer " + setup.mockTokenUser);
+        req.params = { project: "test-upload2", asset: "trust-check", version: "v1" };
+
+        let nb = [];
+        await upload.initializeUploadHandler(req, nb);
+
+        let sinfo = await BOUND_BUCKET.get("test-upload2/trust-check/v1/..summary");
+        let sbody = await sinfo.json();
+        expect(sbody.on_probation).toBe(true);
+    }
+
+    // Works if we set trusted = true.
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload3"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [ { id: "RandomDude", trusted: true } ] }));
+    {
+
+        let req = new Request("http://localhost", {
+            method: "POST",
+            body: JSON.stringify({ files: [] })
+        });
+        req.headers.append("Authorization", "Bearer " + setup.mockTokenUser);
+        req.params = { project: "test-upload3", asset: "trust-check", version: "v1" };
+
+        let nb = [];
+        let init = await upload.initializeUploadHandler(req, nb);
+        await init.json();
+
+        let sinfo = await BOUND_BUCKET.get("test-upload3/trust-check/v1/..summary");
+        let sbody = await sinfo.json();
+        expect(sbody.on_probation).toBe(false);
+    }
+
+    // Unless we forcibly enable it.
+    {
+        let req = new Request("http://localhost", {
+            method: "POST",
+            body: JSON.stringify({ files: [], on_probation: true })
+        });
+        req.headers.append("Authorization", "Bearer " + setup.mockTokenUser);
+        req.params = { project: "test-upload3", asset: "trust-check-force", version: "v1" };
+
+        let nb = [];
+        await upload.initializeUploadHandler(req, nb);
+
+        let sinfo = await BOUND_BUCKET.get("test-upload3/trust-check-force/v1/..summary");
+        let sbody = await sinfo.json();
+        expect(sbody.on_probation).toBe(true);
+    }
+})
+
 test("initializeUploadHandler prohibits links to missing files or versions", async () => {
     let payload = await setup.mockProject();
     await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
@@ -522,6 +595,40 @@ test("completeUploadHandler checks that all uploads are present", async () => {
 
     let nb = [];
     await setup.expectError(upload.completeUploadHandler(req, nb), "should not have a file");
+})
+
+test("completeUploadHandler respects the probation status", async () => {
+    let payload = await setup.mockProject();
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
+
+    // Setting up the state.
+    let params = { project: "test-upload", asset: "blob", version: "v0" };
+    let key;
+    {
+        let req = new Request("http://localhost", {
+            method: "POST",
+            body: JSON.stringify({ files: [], on_probation: true })
+        })
+        req.params = params;
+        req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
+
+        let nb = [];
+        let init = await (await upload.initializeUploadHandler(req, nb)).json();
+        key = init.session_token;
+    }
+
+    // Running completion.
+    let req = new Request("http://localhost", { method: "POST", body: "{}" });
+    req.params = params;
+    req.query = {};
+    req.headers.append("Authorization", "Bearer " + key);
+
+    let nb = [];
+    await upload.completeUploadHandler(req, nb);
+
+    let sinfo = await BOUND_BUCKET.get("test-upload/blob/v0/..summary");
+    let sbody = await sinfo.json();
+    expect(sbody.on_probation).toBe(true);
 })
 
 /******* Abort upload checks *******/
