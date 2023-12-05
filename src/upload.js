@@ -48,7 +48,7 @@ function splitByUploadType(files) {
             }
 
         } else if (f.type == "link") {
-            if (!("link" in f) || !(utils.isJsonObject(f.link)) {
+            if (!("link" in f) || !utils.isJsonObject(f.link)) {
                 throw new utils.HttpError("'files.link' should be an object", 400);
             }
             let target = f.link;
