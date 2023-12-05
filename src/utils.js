@@ -23,6 +23,10 @@ export async function bodyToJson(req) {
     }
 }
 
+export function isJsonObject(x) {
+    return (typeof x == "object") && !(x instanceof Array) && (x !== null)
+}
+
 export function quickCacheJsonText(cache, key, value, expires) {
     let headers = {
         "Cache-Control": "max-age=" + String(expires),

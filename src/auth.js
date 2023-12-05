@@ -143,7 +143,7 @@ export function getAdmins() {
  ******************************************/
 
 export function validatePermissions(body, required) {
-    if (!(body instanceof Object)) {
+    if (!utils.isJsonObject(body)) {
         throw new utils.HttpError("expected permissions to be a JSON object", 400);
     }
 
@@ -167,7 +167,7 @@ export function validatePermissions(body, required) {
             throw new utils.HttpError("expected 'uploaders' to be an array", 400);
         }
         for (const entry of uploaders) {
-            if (!(entry instanceof Object)) {
+            if (!utils.isJsonObject(entry)) {
                 throw new utils.HttpError("expected 'uploaders' to be an array of objects", 400);
             }
 
