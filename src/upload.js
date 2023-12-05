@@ -14,7 +14,7 @@ function splitByUploadType(files) {
 
     let all_paths = new Set;
     for (const f of files) {
-        if (typeof f != "object") {
+        if (!utils.isJsonObject(f)) {
             throw new utils.HttpError("'files' should be an array of objects", 400);
         }
 
@@ -48,7 +48,7 @@ function splitByUploadType(files) {
             }
 
         } else if (f.type == "link") {
-            if (!("link" in f) || !(f.link instanceof Object)) {
+            if (!("link" in f) || !utils.isJsonObject(f.link)) {
                 throw new utils.HttpError("'files.link' should be an object", 400);
             }
             let target = f.link;
@@ -178,7 +178,7 @@ export async function initializeUploadHandler(request, nonblockers) {
     }
 
     let body = await utils.bodyToJson(request);
-    if (!(body instanceof Object)) {
+    if (!utils.isJsonObject(body)) {
         throw new utils.HttpError("expected request body to be a JSON object", 400);
     }
     let probation = false;
