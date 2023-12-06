@@ -136,6 +136,10 @@ async function checkLinks(linked, project, asset, version, bound_bucket, manifes
 
     for (const f of linked) {
         let key = f.link.project + "/" + f.link.asset + "/" + f.link.version;
+        if (f.link.project == project && f.link.asset == asset && f.link.version == version) {
+            throw new utils.HttpError("detected circular link from '" + f.path + "' to '" + key + "/" + f.link.path + "'", 400);
+        }
+
         if (!(key in all_manifests)) {
             all_manifests[key] = getVersionManifest(f.link.project, f.link.asset, f.link.version, bound_bucket, manifest_cache);
             all_targets[key] = [];

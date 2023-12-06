@@ -386,6 +386,23 @@ test("initializeUploadHandler prohibits links to missing files or versions", asy
         let nb = [];
         await setup.expectError(upload.initializeUploadHandler(req, nb), "no manifest available");
     }
+
+    // Links back to ourselves.
+    {
+        let req = new Request("http://localhost", {
+            method: "POST",
+            body: JSON.stringify({ 
+                files: [
+                    { type: "link", path: "pet/rabbit.txt", link: { project: "test", asset: "blob", version: "v2", path: "foo/bar.txt" } }
+                ]
+            })
+        });
+        req.params = { project: "test", asset: "blob", version: "v2" };
+        req.headers.append("Authorization", "Bearer " + setup.mockTokenOwner);
+
+        let nb = [];
+        await setup.expectError(upload.initializeUploadHandler(req, nb), "circular link");
+    }
 })
 
 test("initializeUploadHandler prohibits duplicate files", async () => {
