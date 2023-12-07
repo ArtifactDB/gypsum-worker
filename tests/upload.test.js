@@ -467,9 +467,19 @@ test("uploadPresignedFileHandler works as expected", async () => {
 
 /******* Complete uploads checks *******/
 
+function createCompleteTestPayloads() {
+    return { 
+        "makoto": "Minami Shinoda",
+        "akane": "Kana Aoi",
+        "chito": "Ai Kayano"
+    };
+}
+
 test("completeUploadHandler works correctly", async () => {
-    let payload = await setup.mockProject();
+    await setup.mockProject();
     await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
+
+    let payload = createCompleteTestPayloads();
 
     // Setting up the state.
     let params = { project: "test-upload", asset: "blob", version: "v0" };
@@ -479,13 +489,13 @@ test("completeUploadHandler works correctly", async () => {
             method: "POST",
             body: JSON.stringify({ 
                 files: [
-                    { type: "simple", path: "witch/makoto.csv", md5sum: "a4caf5afa851da451e2161a4c3ac46bb", size: 100 },
-                    { type: "simple", path: "witch/akane.csv", md5sum: "3f8aaed3d149be552fc2ec47ae2d1e57", size: 218 },
+                    { type: "simple", path: "witch/makoto.csv", md5sum: "a4caf5afa851da451e2161a4c3ac46bb", size: payload["makoto"].length },
+                    { type: "simple", path: "witch/akane.csv", md5sum: "3f8aaed3d149be552fc2ec47ae2d1e57", size: payload["akane"].length },
                     { type: "link", path: "human/chinatsu.txt", link: { project: "test", asset: "blob", version: "v1", path: "foo/bar.txt" } },
                     { type: "link", path: "human/nao.txt", link: { project: "test", asset: "blob", version: "v1", path: "whee.txt" } },
                     { type: "link", path: "haru-no-hakobiya", link: { project: "test", asset: "blob", version: "v1", path: "blah.txt" } },
                     { type: "link", path: "animal/cat/kenny.txt", link: { project: "test", asset: "blob", version: "v1", path: "foo/bar.txt" } },
-                    { type: "simple", path: "animal/cat/chito.txt", md5sum: "4ba0e96c086a229b4f39e544e2fa7873", size: 92 }, 
+                    { type: "simple", path: "animal/cat/chito.txt", md5sum: "4ba0e96c086a229b4f39e544e2fa7873", size: payload["chito"].length }, 
                 ]
             })
         });
@@ -498,9 +508,9 @@ test("completeUploadHandler works correctly", async () => {
     }
 
     // Now we do the two uploads that we're obliged to do.
-    await BOUND_BUCKET.put("test-upload/blob/v0/witch/makoto.csv", "Minami Shinoda");
-    await BOUND_BUCKET.put("test-upload/blob/v0/witch/akane.csv", "Kana Aoi");
-    await BOUND_BUCKET.put("test-upload/blob/v0/animal/cat/chito.txt", "Ai Kayano");
+    await BOUND_BUCKET.put("test-upload/blob/v0/witch/makoto.csv", payload["makoto"]);
+    await BOUND_BUCKET.put("test-upload/blob/v0/witch/akane.csv", payload["akane"]);
+    await BOUND_BUCKET.put("test-upload/blob/v0/animal/cat/chito.txt", payload["chito"]);
 
     // Completing the upload.
     let req = new Request("http://localhost", { method: "POST", body: "{}" });
@@ -543,6 +553,7 @@ test("completeUploadHandler works correctly", async () => {
 
 test("completeUploadHandler checks that all uploads are present", async () => {
     await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
+    let payload = createCompleteTestPayloads();
 
     // Setting up the state.
     let params = { project: "test-upload", asset: "blob", version: "v0" };
@@ -552,9 +563,9 @@ test("completeUploadHandler checks that all uploads are present", async () => {
             method: "POST",
             body: JSON.stringify({ 
                 files: [
-                    { type: "simple", path: "witch/makoto.csv", md5sum: "a4caf5afa851da451e2161a4c3ac46bb", size: 100 },
-                    { type: "simple", path: "witch/akane.csv", md5sum: "3f8aaed3d149be552fc2ec47ae2d1e57", size: 218 },
-                    { type: "simple", path: "animal/cat/chito.txt", md5sum: "4ba0e96c086a229b4f39e544e2fa7873", size: 92 }, 
+                    { type: "simple", path: "witch/makoto.csv", md5sum: "a4caf5afa851da451e2161a4c3ac46bb", size: payload["makoto"].length },
+                    { type: "simple", path: "witch/akane.csv", md5sum: "3f8aaed3d149be552fc2ec47ae2d1e57", size: payload["akane"].length },
+                    { type: "simple", path: "animal/cat/chito.txt", md5sum: "4ba0e96c086a229b4f39e544e2fa7873", size: payload["chito"].length }, 
                 ]
             })
         });
@@ -576,7 +587,48 @@ test("completeUploadHandler checks that all uploads are present", async () => {
     await setup.expectError(upload.completeUploadHandler(req, nb), "should have a file");
 })
 
-test("completeUploadHandler checks that all uploads are present", async () => {
+test("completeUploadHandler checks that all uploads have the same size", async () => {
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
+    let payload = createCompleteTestPayloads();
+
+    // Setting up the state.
+    let params = { project: "test-upload", asset: "blob", version: "v0" };
+    let key;
+    {
+        let req = new Request("http://localhost", {
+            method: "POST",
+            body: JSON.stringify({ 
+                files: [
+                    { type: "simple", path: "witch/makoto.csv", md5sum: "a4caf5afa851da451e2161a4c3ac46bb", size: payload["makoto"].length + 1000 },
+                    { type: "simple", path: "witch/akane.csv", md5sum: "3f8aaed3d149be552fc2ec47ae2d1e57", size: payload["akane"].length + 1000 },
+                    { type: "simple", path: "animal/cat/chito.txt", md5sum: "4ba0e96c086a229b4f39e544e2fa7873", size: payload["chito"].length + 1000 }, 
+                ]
+            })
+        });
+        req.params = params;
+        req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
+
+        let nb = [];
+        let init = await (await upload.initializeUploadHandler(req, nb)).json();
+        key = init.session_token;
+    }
+
+    // Now we do the two uploads that we're obliged to do.
+    await BOUND_BUCKET.put("test-upload/blob/v0/witch/makoto.csv", payload["makoto"]);
+    await BOUND_BUCKET.put("test-upload/blob/v0/witch/akane.csv", payload["akane"]);
+    await BOUND_BUCKET.put("test-upload/blob/v0/animal/cat/chito.txt", payload["chito"]);
+
+    // Upload fails due to missing files.
+    let req = new Request("http://localhost", { method: "POST", body: "{}" });
+    req.params = params;
+    req.query = {};
+    req.headers.append("Authorization", "Bearer " + key);
+
+    let nb = [];
+    await setup.expectError(upload.completeUploadHandler(req, nb), "reported size");
+})
+
+test("completeUploadHandler checks that there are no files at the links", async () => {
     let payload = await setup.mockProject();
     await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
 

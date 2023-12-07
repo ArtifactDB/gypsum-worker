@@ -320,9 +320,13 @@ export async function completeUploadHandler(request, nonblockers) {
     await lock.checkLock(project, asset, version, auth.extractBearerToken(request));
 
     let list_promise = new Promise(resolve => {
-        let all_files = new Set;
+        let all_files = new Map;
         let prefix = project + "/" + asset + "/" + version + "/";
-        s3.listApply(prefix, fname => all_files.add(fname)).then(x => resolve(all_files));
+        s3.listApply(
+            prefix, 
+            f => { all_files.set(f.key.slice(prefix.length), f.size); },
+            { namesOnly: false }
+        ).then(x => resolve(all_files));
     });
 
     let bound_bucket = s3.getR2Binding();
@@ -338,8 +342,11 @@ export async function completeUploadHandler(request, nonblockers) {
     let manifest = await assets.manifest;
     let linkable = {};
     for (const [k, v] of Object.entries(manifest)) {
+        let s = assets.listing.get(k);
+        let found = (typeof s != "undefined");
+
         if ("link" in v) {
-            if (assets.listing.has(k)) {
+            if (found) {
                 throw new http.HttpError("linked-from path '" + k + "' in manifest should not have a file", 500);
             }
             let i = k.lastIndexOf("/");
@@ -353,9 +360,12 @@ export async function completeUploadHandler(request, nonblockers) {
                 linkable[hostdir] = {};
             }
             linkable[hostdir][fname] = v.link;
+
         } else {
-            if (!assets.listing.has(k)) {
+            if (!found) {
                 throw new http.HttpError("path '" + k + "' in manifest should have a file", 400);
+            } else if (s != v.size) {
+                throw new http.HttpError("actual size of '" + k + "' does not match its reported size in the manifest", 400);
             }
         }
     }
