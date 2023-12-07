@@ -10,8 +10,8 @@ export function versionManifest(project, asset, version) {
     return project + "/" + asset + "/" + version + "/..manifest";
 }
 
-export function lock(project, asset) {
-    return project + "/" + asset + "/..LOCK";
+export function lock(project) {
+    return project + "/..LOCK";
 }
 
 export function latestVersion(project, asset) {

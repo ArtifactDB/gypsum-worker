@@ -156,7 +156,7 @@ test("initializeUploadHandler works correctly for simple uploads", async () => {
     expect(body.abort_url).toMatch(/abort.*test-upload/);
 
     // Check that a lock file was correctly created.
-    let lckinfo = await BOUND_BUCKET.get("test-upload/blob/..LOCK");
+    let lckinfo = await BOUND_BUCKET.get("test-upload/..LOCK");
     let lckbody = await lckinfo.json();
     expect(typeof lckbody.user_name).toEqual("string");
     expect(lckbody.version).toEqual("v0");
@@ -279,8 +279,8 @@ test("initializeUploadHandler works correctly for link-based deduplication", asy
 })
 
 test("initializeUploadHandler does not trust uploaders unless instructed to", async () => {
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload1"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [ { id: "RandomDude" } ] }));
     {
-        await BOUND_BUCKET.put(pkeys.permissions("test-upload1"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [ { id: "RandomDude" } ] }));
         let req = new Request("http://localhost", {
             method: "POST",
             body: JSON.stringify({ files: [] })
@@ -296,8 +296,8 @@ test("initializeUploadHandler does not trust uploaders unless instructed to", as
         expect(sbody.on_probation).toBe(true);
     }
 
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload2"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [ { id: "RandomDude", trusted: false } ] }));
     {
-        await BOUND_BUCKET.put(pkeys.permissions("test-upload2"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [ { id: "RandomDude", trusted: false } ] }));
         let req = new Request("http://localhost", {
             method: "POST",
             body: JSON.stringify({ files: [] })
@@ -334,18 +334,19 @@ test("initializeUploadHandler does not trust uploaders unless instructed to", as
     }
 
     // Unless we forcibly enable it.
+    await BOUND_BUCKET.put(pkeys.permissions("test-upload4"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [ { id: "RandomDude", trusted: true } ] }));
     {
         let req = new Request("http://localhost", {
             method: "POST",
             body: JSON.stringify({ files: [], on_probation: true })
         });
         req.headers.append("Authorization", "Bearer " + setup.mockTokenUser);
-        req.params = { project: "test-upload3", asset: "trust-check-force", version: "v1" };
+        req.params = { project: "test-upload4", asset: "trust-check-force", version: "v1" };
 
         let nb = [];
         await upload.initializeUploadHandler(req, nb);
 
-        let sinfo = await BOUND_BUCKET.get("test-upload3/trust-check-force/v1/..summary");
+        let sinfo = await BOUND_BUCKET.get("test-upload4/trust-check-force/v1/..summary");
         let sbody = await sinfo.json();
         expect(sbody.on_probation).toBe(true);
     }
@@ -513,7 +514,7 @@ test("completeUploadHandler works correctly", async () => {
     await upload.completeUploadHandler(req, nb);
 
     // Checking that the lock on the folder has been removed.
-    let lckinfo = await BOUND_BUCKET.head("test-upload/blob/..LOCK");
+    let lckinfo = await BOUND_BUCKET.head("test-upload/..LOCK");
     expect(lckinfo).toBeNull();
 
     // Check that an updated summary file was posted to the bucket.

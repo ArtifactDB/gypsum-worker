@@ -266,7 +266,7 @@ export async function initializeUploadHandler(request, nonblockers) {
 
         // Unlocking the project if the upload init failed, then users can try again without penalty.
         await s3.quickRecursiveDelete(project + "/" + asset + "/" + version + "/");
-        await lock.unlockProject(project, asset, version);
+        await lock.unlockProject(project);
         throw e;
     }
 
@@ -387,7 +387,7 @@ export async function completeUploadHandler(request, nonblockers) {
     }
 
     // Release lock once we're clear.
-    await lock.unlockProject(project, asset);
+    await lock.unlockProject(project);
     return new Response(null, { status: 200 });
 }
 
@@ -404,6 +404,6 @@ export async function abortUploadHandler(request, nonblockers) {
     await s3.quickRecursiveDelete(project + "/" + asset + "/" + version + "/");
 
     // Release lock once we're clear.
-    await lock.unlockProject(project, asset);
+    await lock.unlockProject(project);
     return new Response(null, { status: 200 });
 }
