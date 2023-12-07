@@ -6,7 +6,7 @@ import * as gh from "../src/utils/github.js";
 import * as setup from "./setup.js";
 
 beforeAll(async () => {
-    await setup.mockProject();
+    await setup.simpleMockProject();
     let rigging = gh.enableTestRigging();
     setup.mockGitHubIdentities(rigging);
 })

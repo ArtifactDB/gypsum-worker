@@ -3,7 +3,7 @@ import * as quot from "../../src/utils/quota.js";
 import * as setup from "../setup.js";
 
 test("getProjectUsage works correctly", async () => {
-    await setup.mockProject();
+    await setup.simpleMockProject();
 
     let raw_manifest = await BOUND_BUCKET.get("test/blob/v1/..manifest");
     let manifest = await raw_manifest.json();

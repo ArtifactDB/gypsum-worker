@@ -19,7 +19,8 @@ afterAll(() => {
 /******* Basic checks *******/
 
 test("initializeUploadHandler throws the right errors related to formatting", async () => {
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
+    await setup.createMockProject("test-upload");
+
     let nb = [];
     let req = new Request("http://localhost");
 
@@ -101,9 +102,7 @@ test("initializeUploadHandler throws the right errors related to formatting", as
 })
 
 test("initializeUploadHandler throws the right errors for permission-related errors", async () => {
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
-    await BOUND_BUCKET.put(pkeys.quota("test-upload"), JSON.stringify({ baseline: 1000, growth_rate: 10, usage: 999 }));
-
+    await setup.createMockProject("test-upload");
     let options = { method: "POST", body: JSON.stringify({ files: [] }) };
 
     {
@@ -132,8 +131,7 @@ test("initializeUploadHandler throws the right errors for permission-related err
 })
 
 test("initializeUploadHandler works correctly for simple uploads", async () => {
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
-    await BOUND_BUCKET.put(pkeys.quota("test-upload"), JSON.stringify({ baseline: 1000, growth_rate: 10, usage: 999 }));
+    await setup.createMockProject("test-upload");
 
     let req = new Request("http://localhost", {
         method: "POST",
@@ -185,8 +183,7 @@ test("initializeUploadHandler works correctly for simple uploads", async () => {
 })
 
 test("initializeUploadHandler converts MD5'able files to simple uploads if no prior version exists", async () => {
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
-    await BOUND_BUCKET.put(pkeys.quota("test-upload"), JSON.stringify({ baseline: 1000, growth_rate: 10, usage: 999 }));
+    await setup.createMockProject("test-upload");
 
     let req = new Request("http://localhost", {
         method: "POST",
@@ -211,7 +208,9 @@ test("initializeUploadHandler converts MD5'able files to simple uploads if no pr
 })
 
 test("initializeUploadHandler works correctly for MD5'able uploads with a prior version", async () => {
-    let payload = await setup.mockProjectRaw("test-upload", "linker", "v0");
+    await setup.createMockProject("test-upload");
+    let payload = await setup.mockProjectVersion("test-upload", "linker", "v0");
+
     let whee_md5 = setup.computeHash(payload["whee.txt"]);
     let whee_size = payload["whee.txt"].length;
     let blah_md5 = setup.computeHash(payload["blah.txt"]);
@@ -252,7 +251,7 @@ test("initializeUploadHandler works correctly for MD5'able uploads with a prior 
 })
 
 test("initializeUploadHandler works correctly for link-based deduplication", async () => {
-    let payload = await setup.mockProject();
+    let payload = await setup.simpleMockProject();
     let whee_md5 = setup.computeHash(payload["whee.txt"]);
     let whee_size = payload["whee.txt"].length;
     let blah_md5 = setup.computeHash(payload["blah.txt"]);
@@ -261,8 +260,7 @@ test("initializeUploadHandler works correctly for link-based deduplication", asy
     let foobar_size = payload["foo/bar.txt"].length;
 
     // Performing a new upload.
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
-    await BOUND_BUCKET.put(pkeys.quota("test-upload"), JSON.stringify({ baseline: 1000, growth_rate: 10, usage: 999 }));
+    await setup.createMockProject("test-upload");
 
     let req = new Request("http://localhost", {
         method: "POST",
@@ -292,8 +290,7 @@ test("initializeUploadHandler works correctly for link-based deduplication", asy
 })
 
 test("initializeUploadHandler fails if the quota is exceeded", async () => {
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [ { id: "RandomDude" } ] }));
-    await BOUND_BUCKET.put(pkeys.quota("test-upload"), JSON.stringify({ baseline: 1000, growth_rate: 0, usage: 100, year: 2023 }));
+    await setup.createMockProject("test-upload", { quota: { baseline: 1000, growth_rate: 0, usage: 100, year: 2023 } });
 
     let req = new Request("http://localhost", {
         method: "POST",
@@ -311,9 +308,7 @@ test("initializeUploadHandler fails if the quota is exceeded", async () => {
 })
 
 test("initializeUploadHandler does not trust uploaders unless instructed to", async () => {
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload1"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [ { id: "RandomDude" } ] }));
-    await BOUND_BUCKET.put(pkeys.quota("test-upload1"), JSON.stringify({ baseline: 1000, growth_rate: 10, usage: 999 }));
-
+    await setup.createMockProject("test-upload1", { permissions: { "owners": [ "ProjectOwner" ], uploaders: [ { id: "RandomDude" } ] } })
     {
         let req = new Request("http://localhost", {
             method: "POST",
@@ -330,8 +325,7 @@ test("initializeUploadHandler does not trust uploaders unless instructed to", as
         expect(sbody.on_probation).toBe(true);
     }
 
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload2"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [ { id: "RandomDude", trusted: false } ] }));
-    await BOUND_BUCKET.put(pkeys.quota("test-upload2"), JSON.stringify({ baseline: 1000, growth_rate: 10, usage: 999 }));
+    await setup.createMockProject("test-upload2", { permissions: { "owners": [ "ProjectOwner" ], uploaders: [ { id: "RandomDude", trusted: false } ] } });
     {
         let req = new Request("http://localhost", {
             method: "POST",
@@ -349,10 +343,8 @@ test("initializeUploadHandler does not trust uploaders unless instructed to", as
     }
 
     // Works if we set trusted = true.
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload3"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [ { id: "RandomDude", trusted: true } ] }));
-    await BOUND_BUCKET.put(pkeys.quota("test-upload3"), JSON.stringify({ baseline: 1000, growth_rate: 10, usage: 999 }));
+    await setup.createMockProject("test-upload3", { permissions: { "owners": [ "ProjectOwner" ], uploaders: [ { id: "RandomDude", trusted: true } ] } });
     {
-
         let req = new Request("http://localhost", {
             method: "POST",
             body: JSON.stringify({ files: [] })
@@ -370,8 +362,7 @@ test("initializeUploadHandler does not trust uploaders unless instructed to", as
     }
 
     // Unless we forcibly enable it.
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload4"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [ { id: "RandomDude", trusted: true } ] }));
-    await BOUND_BUCKET.put(pkeys.quota("test-upload4"), JSON.stringify({ baseline: 1000, growth_rate: 10, usage: 999 }));
+    await setup.createMockProject("test-upload4", { permissions: { "owners": [ "ProjectOwner" ], uploaders: [ { id: "RandomDude", trusted: true } ] } });
     {
         let req = new Request("http://localhost", {
             method: "POST",
@@ -390,9 +381,8 @@ test("initializeUploadHandler does not trust uploaders unless instructed to", as
 })
 
 test("initializeUploadHandler prohibits links to missing files or versions", async () => {
-    let payload = await setup.mockProject();
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
-    await BOUND_BUCKET.put(pkeys.quota("test-upload"), JSON.stringify({ baseline: 1000, growth_rate: 10, usage: 99 }));
+    let payload = await setup.simpleMockProject();
+    await setup.createMockProject("test-upload");
 
     {
         let req = new Request("http://localhost", {
@@ -445,8 +435,7 @@ test("initializeUploadHandler prohibits links to missing files or versions", asy
 })
 
 test("initializeUploadHandler prohibits duplicate files", async () => {
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
-    await BOUND_BUCKET.put(pkeys.quota("test-upload"), JSON.stringify({ baseline: 1000, growth_rate: 10, usage: 99 }));
+    await setup.createMockProject("test-upload");
 
     let req = new Request("http://localhost", {
         method: "POST",
@@ -467,8 +456,7 @@ test("initializeUploadHandler prohibits duplicate files", async () => {
 /******* Presigned upload checks *******/
 
 test("uploadPresignedFileHandler works as expected", async () => {
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
-    await BOUND_BUCKET.put(pkeys.quota("test-upload"), JSON.stringify({ baseline: 1000, growth_rate: 10, usage: 99 }));
+    await setup.createMockProject("test-upload");
 
     // Setting up the state.
     let req = new Request("http://localhost", {
@@ -516,10 +504,9 @@ function createCompleteTestPayloads() {
 }
 
 test("completeUploadHandler works correctly", async () => {
-    await setup.mockProject();
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
+    await setup.simpleMockProject();
     let original_size = 999;
-    await BOUND_BUCKET.put(pkeys.quota("test-upload"), JSON.stringify({ baseline: 1000, growth_rate: 10, usage: original_size }));
+    await setup.createMockProject("test-upload", { quota: { baseline: 1000, growth_rate: 10, usage: original_size } });
 
     let payload = createCompleteTestPayloads();
 
@@ -599,9 +586,7 @@ test("completeUploadHandler works correctly", async () => {
 })
 
 test("completeUploadHandler checks that all uploads are present", async () => {
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
-    await BOUND_BUCKET.put(pkeys.quota("test-upload"), JSON.stringify({ baseline: 1000, growth_rate: 10, usage: 999 }));
-
+    await setup.createMockProject("test-upload");
     let payload = createCompleteTestPayloads();
 
     // Setting up the state.
@@ -636,10 +621,8 @@ test("completeUploadHandler checks that all uploads are present", async () => {
     await setup.expectError(upload.completeUploadHandler(req, nb), "should have a file");
 })
 
-test("completeUploadHandler checks that all uploads have the same size", async () => {
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
-    await BOUND_BUCKET.put(pkeys.quota("test-upload"), JSON.stringify({ baseline: 1000, growth_rate: 10, usage: 999 }));
-
+test("completeUploadHandler checks that all uploads have the indicated size", async () => {
+    await setup.createMockProject("test-upload");
     let payload = createCompleteTestPayloads();
 
     // Setting up the state.
@@ -680,10 +663,8 @@ test("completeUploadHandler checks that all uploads have the same size", async (
 })
 
 test("completeUploadHandler checks that there are no files at the links", async () => {
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
-    await BOUND_BUCKET.put(pkeys.quota("test-upload"), JSON.stringify({ baseline: 1000, growth_rate: 10, usage: 999 }));
-
-    let payload = await setup.mockProject();
+    await setup.createMockProject("test-upload");
+    let payload = await setup.simpleMockProject();
 
     // Setting up the state.
     let params = { project: "test-upload", asset: "blob", version: "v0" };
@@ -721,10 +702,8 @@ test("completeUploadHandler checks that there are no files at the links", async 
 })
 
 test("completeUploadHandler respects the probation status", async () => {
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
-    await BOUND_BUCKET.put(pkeys.quota("test-upload"), JSON.stringify({ baseline: 1000, growth_rate: 10, usage: 999 }));
-
-    let payload = await setup.mockProject();
+    await setup.createMockProject("test-upload");
+    let payload = await setup.simpleMockProject();
 
     // Setting up the state.
     let params = { project: "test-upload", asset: "blob", version: "v0" };
@@ -759,8 +738,7 @@ test("completeUploadHandler respects the probation status", async () => {
 /******* Abort upload checks *******/
 
 test("abortUploadHandler works correctly", async () => {
-    await BOUND_BUCKET.put(pkeys.permissions("test-upload"), JSON.stringify({ "owners": [ "ProjectOwner" ], uploaders: [] }));
-    await BOUND_BUCKET.put(pkeys.quota("test-upload"), JSON.stringify({ baseline: 1000, growth_rate: 10, usage: 999 }));
+    await setup.createMockProject("test-upload");
 
     // Setting up the state.
     let req = new Request("http://localhost", {

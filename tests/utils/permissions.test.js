@@ -4,7 +4,7 @@ import * as auth from "../../src/utils/permissions.js";
 import * as setup from "../setup.js";
 
 beforeAll(async () => {
-    await setup.mockProject();
+    await setup.simpleMockProject();
     let rigging = gh.enableTestRigging();
     setup.mockGitHubIdentities(rigging);
 })

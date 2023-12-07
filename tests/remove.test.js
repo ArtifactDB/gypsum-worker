@@ -14,8 +14,9 @@ afterAll(() => {
 })
 
 test("removeProjectHandler works correctly", async () => {
-    await setup.mockProject();
-    await setup.mockProjectRaw("testicle", "blob", "v1");
+    await setup.simpleMockProject();
+    await setup.createMockProject("testicle");
+    await setup.mockProjectVersion("testicle", "blob", "v1");
 
     let req = new Request("http://localhost", { method: "DELETE" });
     req.params = { project: "test" };
@@ -36,8 +37,9 @@ test("removeProjectHandler works correctly", async () => {
 })
 
 test("removeProjectAssetHandler works correctly", async () => {
-    await setup.mockProject();
-    await setup.mockProjectRaw("test", "blobby", "v1");
+    await setup.simpleMockProject();
+    await setup.createMockProject("testicle");
+    await setup.mockProjectVersion("test", "blobby", "v1");
 
     let req = new Request("http://localhost", { method: "DELETE" });
     req.params = { project: "test", asset: "blob" };
@@ -58,9 +60,9 @@ test("removeProjectAssetHandler works correctly", async () => {
 })
 
 test("removeProjectAssetVersionHandler works correctly in the simple case", async () => {
-    await setup.mockProject();
+    await setup.simpleMockProject();
     await new Promise(r => setTimeout(r, 100));
-    await setup.mockProjectRaw("test", "blob", "v2");
+    await setup.mockProjectVersion("test", "blob", "v2");
 
     let req = new Request("http://localhost", { method: "DELETE" });
     req.params = { project: "test", asset: "blob", version: "v1" };
@@ -81,11 +83,11 @@ test("removeProjectAssetVersionHandler works correctly in the simple case", asyn
 })
 
 test("removeProjectAssetVersionHandler handles version updates correctly", async () => {
-    await setup.mockProject();
+    await setup.simpleMockProject();
     await new Promise(r => setTimeout(r, 100));
-    await setup.mockProjectRaw("test", "blob", "v2");
+    await setup.mockProjectVersion("test", "blob", "v2");
     await new Promise(r => setTimeout(r, 100));
-    await setup.mockProjectRaw("test", "blob", "v3");
+    await setup.mockProjectVersion("test", "blob", "v3");
     expect((await (await BOUND_BUCKET.get("test/blob/..latest")).json()).version).toEqual("v3");
 
     let req = new Request("http://localhost", { method: "DELETE" });
@@ -109,14 +111,14 @@ test("removeProjectAssetVersionHandler handles version updates correctly", async
 })
 
 test("removeProjectAssetVersionHandler handles version updates with probational versions", async () => {
-    await setup.mockProject();
+    await setup.simpleMockProject();
     let sumpath = "test/blob/v1/..summary";
     let existing = await (await BOUND_BUCKET.get(sumpath)).json();
     existing.on_probation = true;
     await BOUND_BUCKET.put(sumpath, JSON.stringify(existing), setup.jsonmeta);
 
     await new Promise(r => setTimeout(r, 100));
-    await setup.mockProjectRaw("test", "blob", "v2");
+    await setup.mockProjectVersion("test", "blob", "v2");
 
     let req = new Request("http://localhost", { method: "DELETE" });
     req.query = {};

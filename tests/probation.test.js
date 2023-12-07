@@ -6,6 +6,7 @@ import * as gh from "../src/utils/github.js";
 import * as setup from "./setup.js";
 
 beforeAll(async () => {
+    await setup.simpleMockProject();
     let rigging = gh.enableTestRigging();
     setup.mockGitHubIdentities(rigging);
 })
@@ -15,7 +16,6 @@ afterAll(() => {
 })
 
 test("probation approval works as expected", async () => {
-    await setup.mockProject();
     let sumpath = "test/blob/v1/..summary";
     let existing = await (await BOUND_BUCKET.get(sumpath)).json();
     existing.on_probation = true;
@@ -44,8 +44,6 @@ test("probation approval works as expected", async () => {
 })
 
 test("probation rejection works as expected", async () => {
-    await setup.mockProject();
-
     let req = new Request("http://localhost", { method: "DELETE" });
     req.params = { project: "test", asset: "blob", version: "v1" };
     req.query = {};

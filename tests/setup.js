@@ -53,7 +53,21 @@ export const jsonmeta = {
     httpMetadata: { contentType: "application/json" }
 };
 
-export async function mockProjectRaw(project, asset, version) {
+export async function createMockProject(project, { permissions = null, quota = null } = {}) {
+    let permpath = project + "/..permissions";
+    if (permissions == null) {
+        permissions = { owners: ["ProjectOwner"], uploaders: [] };
+    }
+    await BOUND_BUCKET.put(permpath, JSON.stringify(permissions), jsonmeta);
+
+    let qpath = project + "/..quota";
+    if (quota == null) {
+        quota = { baseline: 1000, growth_rate: 100, usage: 0 };
+    }
+    await BOUND_BUCKET.put(qpath, JSON.stringify(quota), jsonmeta);
+}
+
+export async function mockProjectVersion(project, asset, version) {
     let contents = "";
     for (var i = 1; i <= 100; i++) {
         contents += String(i) + "\n";
@@ -81,30 +95,23 @@ export async function mockProjectRaw(project, asset, version) {
         }),
         jsonmeta
     );
+
     await BOUND_BUCKET.put(base + "/..manifest", JSON.stringify(manifest), jsonmeta);
+
+    let qpath = project + "/..quota";
+    let quota = await (await BOUND_BUCKET.get(qpath)).json();
+    for (const x of Object.values(files)) {
+        quota.usage += x.length;
+    }
+    await BOUND_BUCKET.put(qpath, JSON.stringify(quota), jsonmeta);
 
     let latest = { version: version };
     await BOUND_BUCKET.put(project + "/" + asset + "/..latest", JSON.stringify(latest), jsonmeta);
 
-    let permpath = project + "/..permissions";
-    if ((await BOUND_BUCKET.head(permpath)) == null) {
-        let perms = { owners: ["ProjectOwner"], uploaders: [] };
-        await BOUND_BUCKET.put(permpath, JSON.stringify(perms), jsonmeta);
-    }
-
-    let qpath = project + "/..quota";
-    if ((await BOUND_BUCKET.head(qpath)) == null) {
-        let total = 0;
-        for (const x of Object.values(files)) {
-            total += x.length;
-        }
-        let quota = { baseline: 1000, growth_rate: 100, usage: total };
-        await BOUND_BUCKET.put(qpath, JSON.stringify(quota), jsonmeta);
-    }
-
     return files;
 }
 
-export async function mockProject() {
-    return mockProjectRaw("test", "blob", "v1");
+export async function simpleMockProject() {
+    await createMockProject("test");
+    return mockProjectVersion("test", "blob", "v1");
 }
