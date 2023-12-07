@@ -9,12 +9,18 @@ import * as s3 from "./utils/s3.js";
 
 /**************** Initialize uploads ***************/
 
+const object_file = "OBJECT";
+const metadata_file = "_metadata.csv";
+
 function splitByUploadType(files) {
     let simple = [];
     let dedup = [];
     let linked = [];
 
     let all_paths = new Set;
+    let all_objects = new Set;
+    let all_metadata = [];
+
     for (const f of files) {
         if (!misc.isJsonObject(f)) {
             throw new http.HttpError("'files' should be an array of objects", 400);
@@ -34,6 +40,18 @@ function splitByUploadType(files) {
 
         if (!("type" in f) || typeof f.type != "string") {
             throw new http.HttpError("'files.type' should be a string", 400);
+        }
+
+        if (fname == object_file) {
+            all_objects.push("");
+        } else if (fname.endsWith("/" + object_file)) {
+            all_objects.push(fname.slice(0, x.path.length - object_file.length - 1));
+        }
+
+        if (fname == metadata_file) {
+            all_metadata.push("");
+        } else if (fname.endsWith("/" + metadata_file)) {
+            all_metadata.push(fname.slice(0, x.path.length - metadata_file.length - 1));
         }
 
         if (f.type === "simple" || f.type == "dedup") {
@@ -70,6 +88,12 @@ function splitByUploadType(files) {
 
         } else {
             throw new http.HttpError("invalid 'files.type'", 400);
+        }
+    }
+
+    for (const m of all_metadata) {
+        if (!all_objects.has(m)) {
+            throw new http.HttpError("each '" + metadata_file + "' file must be accompanied by an '" + object_file + "' (missing at '" + m + "')");
         }
     }
 
