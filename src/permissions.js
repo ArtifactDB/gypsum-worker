@@ -1,8 +1,8 @@
-import * as utils from "./utils.js";
-import * as auth from "./auth.js";
-import * as pkeys from "./internal.js";
-import * as s3 from "./s3.js";
-import * as gh from "./github.js";
+import * as http from "./utils/http.js";
+import * as auth from "./utils/permissions.js";
+import * as pkeys from "./utils/internal.js";
+import * as s3 from "./utils/s3.js";
+import * as gh from "./utils/github.js";
 
 export async function setPermissionsHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
@@ -17,16 +17,16 @@ export async function setPermissionsHandler(request, nonblockers) {
     let path = pkeys.permissions(project);
     let res = await bound_bucket.get(path);
     if (res == null) {
-        throw new utils.HttpError("requested project does not exist", 404);
+        throw new http.HttpError("requested project does not exist", 404);
     }
 
     let perms = await res.json();
     if (!auth.isOneOf(user, perms.owners) && !auth.isOneOf(user, auth.getAdmins())) {
-        throw new utils.HttpError("user does not own project '" + project + "'", 403);
+        throw new http.HttpError("user does not own project '" + project + "'", 403);
     }
 
     // Checking validity of request body. 
-    let new_perms = await utils.bodyToJson(request);
+    let new_perms = await http.bodyToJson(request);
     auth.validatePermissions(new_perms);
 
     // Updating everything on top of the existing permissions.
@@ -37,7 +37,7 @@ export async function setPermissionsHandler(request, nonblockers) {
     }
     let perm_promise = bound_bucket.put(path, JSON.stringify(perms));
     if ((await perm_promise) == null) {
-        throw new utils.HttpError("failed to upload new permissions to the bucket", 500);
+        throw new http.HttpError("failed to upload new permissions to the bucket", 500);
     }
 
     // Clearing the cached permissions to trigger a reload on the next getPermissions() call.
@@ -47,9 +47,9 @@ export async function setPermissionsHandler(request, nonblockers) {
 }
 
 export function fetchS3Credentials(request, nonblockers) {
-    return new utils.jsonResponse(s3.getPublicS3Credentials(), 200, { 'Access-Control-Allow-Origin': '*' }); 
+    return new http.jsonResponse(s3.getPublicS3Credentials(), 200, { 'Access-Control-Allow-Origin': '*' }); 
 }
 
 export function fetchGitHubCredentials(request, nonblockers) {
-    return new utils.jsonResponse(gh.getGitHubAppCredentials(), 200, { 'Access-Control-Allow-Origin': '*' });
+    return new http.jsonResponse(gh.getGitHubAppCredentials(), 200, { 'Access-Control-Allow-Origin': '*' });
 }

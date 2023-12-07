@@ -1,7 +1,7 @@
 import * as f_ from "../src/index.js"; // need this to set the bucket bindings.
 import * as perm from "../src/permissions.js";
-import * as s3 from "../src/s3.js";
-import * as gh from "../src/github.js";
+import * as s3 from "../src/utils/s3.js";
+import * as gh from "../src/utils/github.js";
 import * as setup from "./setup.js";
 
 beforeAll(async () => {

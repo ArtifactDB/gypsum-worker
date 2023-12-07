@@ -1,7 +1,7 @@
-import * as f_ from "../src/index.js"; // need this to set the bucket bindings.
-import * as gh from "../src/github.js";
-import * as auth from "../src/auth.js";
-import * as setup from "./setup.js";
+import * as f_ from "../../src/index.js"; // need this to set the bucket bindings.
+import * as gh from "../../src/utils/github.js";
+import * as auth from "../../src/utils/permissions.js";
+import * as setup from "../setup.js";
 
 beforeAll(async () => {
     await setup.mockProject();

@@ -1,9 +1,9 @@
 import * as f_ from "../src/index.js";
 import * as upload from "../src/upload.js";
 import * as create from "../src/create.js";
-import * as pkeys from "../src/internal.js";
-import * as gh from "../src/github.js";
-import * as s3 from "../src/s3.js";
+import * as pkeys from "../src/utils/internal.js";
+import * as gh from "../src/utils/github.js";
+import * as s3 from "../src/utils/s3.js";
 import * as setup from "./setup.js";
 
 beforeAll(async () => {

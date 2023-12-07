@@ -1,6 +1,6 @@
-import * as auth from "../src/auth.js";
-import * as gh from "../src/github.js";
-import * as setup from "./setup.js";
+import * as auth from "../../src/utils/permissions.js";
+import * as gh from "../../src/utils/github.js";
+import * as setup from "../setup.js";
 
 beforeAll(async () => {
     gh.enableTestRigging(false);

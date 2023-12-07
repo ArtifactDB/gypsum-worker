@@ -1,8 +1,8 @@
 import * as f_ from "../src/index.js";
 import * as prob from "../src/probation.js";
-import * as auth from "../src/auth.js";
-import * as s3 from "../src/s3.js";
-import * as gh from "../src/github.js";
+import * as auth from "../src/utils/permissions.js";
+import * as s3 from "../src/utils/s3.js";
+import * as gh from "../src/utils/github.js";
 import * as setup from "./setup.js";
 
 beforeAll(async () => {

@@ -1,14 +1,14 @@
 import { Router } from 'itty-router'
 
-import * as gh from "./github.js";
-import * as auth from "./auth.js";
 import * as upload from "./upload.js";
 import * as create from "./create.js";
 import * as remove from "./remove.js";
 import * as permissions from "./permissions.js";
 import * as probation from "./probation.js";
-import * as utils from "./utils.js";
-import * as s3 from "./s3.js";
+import * as gh from "./utils/github.js";
+import * as auth from "./utils/permissions.js";
+import * as http from "./utils/http.js";
+import * as s3 from "./utils/s3.js";
 
 // Variables in the wrangler.toml.
 if (ADMIN_ACCOUNTS !== "") {
@@ -146,10 +146,10 @@ addEventListener('fetch', event => {
     let resp = router
         .handle(request, nonblockers)
         .catch(error => {
-            if (error instanceof utils.HttpError) {
-                return utils.errorResponse(error.message, error.statusCode);
+            if (error instanceof http.HttpError) {
+                return http.errorResponse(error.message, error.statusCode);
             } else {
-                return utils.errorResponse(error.message, 500);
+                return http.errorResponse(error.message, 500);
             }
         });
 

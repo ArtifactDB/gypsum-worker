@@ -1,7 +1,7 @@
-import * as utils from "./utils.js";
-import * as auth from "./auth.js";
-import * as pkeys from "./internal.js";
-import * as s3 from "./s3.js";
+import * as http from "./utils/http.js";
+import * as auth from "./utils/permissions.js";
+import * as pkeys from "./utils/internal.js";
+import * as s3 from "./utils/s3.js";
 
 export async function removeProjectHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
@@ -9,12 +9,12 @@ export async function removeProjectHandler(request, nonblockers) {
     let token = auth.extractBearerToken(request);
     let user = await auth.findUser(token, nonblockers);
     if (!auth.isOneOf(user, auth.getAdmins())) {
-        throw new utils.HttpError("user does not have the right to delete", 403);
+        throw new http.HttpError("user does not have the right to delete", 403);
     }
 
     // Loop through all resources and delete them all. Make sure to add the trailing
     // slash to ensure that we don't delete a project that starts with 'project'.
-    await utils.quickRecursiveDelete(project + "/");
+    await s3.quickRecursiveDelete(project + "/");
     return new Response(null, { status: 200 });
 }
 
@@ -25,12 +25,12 @@ export async function removeProjectAssetHandler(request, nonblockers) {
     let token = auth.extractBearerToken(request);
     let user = await auth.findUser(token, nonblockers);
     if (!auth.isOneOf(user, auth.getAdmins())) {
-        throw new utils.HttpError("user does not have the right to delete", 403);
+        throw new http.HttpError("user does not have the right to delete", 403);
     }
 
     // Loop through all resources and delete them all. Make sure to add the trailing
     // slash to ensure that we don't delete an asset that starts with 'asset'.
-    await utils.quickRecursiveDelete(project + "/" + asset + "/");
+    await s3.quickRecursiveDelete(project + "/" + asset + "/");
     return new Response(null, { status: 200 });
 }
 
@@ -42,12 +42,12 @@ export async function removeProjectAssetVersionHandler(request, nonblockers) {
     let token = auth.extractBearerToken(request);
     let user = await auth.findUser(token, nonblockers);
     if (!auth.isOneOf(user, auth.getAdmins())) {
-        throw new utils.HttpError("user does not have the right to delete", 403);
+        throw new http.HttpError("user does not have the right to delete", 403);
     }
 
     // Loop through all resources and delete them all. Make sure to add the trailing
     // slash to ensure that we don't delete a version that starts with 'version'.
-    await utils.quickRecursiveDelete(project + "/" + asset + "/" + version + "/");
+    await s3.quickRecursiveDelete(project + "/" + asset + "/" + version + "/");
 
     // Need to go through and update the latest version of the asset, in case
     // we just deleted the latest version.
@@ -60,7 +60,7 @@ export async function removeProjectAssetVersionHandler(request, nonblockers) {
         let prefix = project + "/" + asset + "/";
         let summaries = [];
         let versions = [];
-        await utils.listApply(
+        await s3.listApply(
             prefix, 
             name => {
                 if (!name.startsWith("..")) {
@@ -89,8 +89,8 @@ export async function removeProjectAssetVersionHandler(request, nonblockers) {
             // just clear out the latest specifier.
             await bound_bucket.delete(lpath);
         } else {
-            if ((await utils.quickUploadJson(lpath, { "version": best_version })) == null) {
-                throw new utils.HttpError("failed to update the latest version", 500);
+            if ((await s3.quickUploadJson(lpath, { "version": best_version })) == null) {
+                throw new http.HttpError("failed to update the latest version", 500);
             }
         }
     }

@@ -1,4 +1,4 @@
-import * as utils from "./utils.js";
+import * as uh from "./http.js";
 
 const api = "https://api.github.com";
 var user_agent = "placeholder";
@@ -36,7 +36,7 @@ async function propagate_github_error(res, base_txt, base_code) {
         }
     } catch (e) {}
 
-    throw new utils.HttpError(base_txt, base_code);
+    throw new uh.HttpError(base_txt, base_code);
 }
 
 export async function identifyUser(token) {

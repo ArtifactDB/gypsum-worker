@@ -1,6 +1,6 @@
-import * as f_ from "../src/index.js";
-import * as lock from "../src/lock.js";
-import * as setup from "./setup.js";
+import * as f_ from "../../src/index.js";
+import * as lock from "../../src/utils/lock.js";
+import * as setup from "../setup.js";
 
 test("project locking works as expected", async () => {
     await lock.lockProject("test-lock-test", "locker", "v1", "chihaya-kisaragi");

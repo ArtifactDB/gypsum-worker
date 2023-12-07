@@ -1,4 +1,4 @@
-import * as utils from "./utils.js";
+import * as http from "./http.js";
 import * as pkeys from "./internal.js";
 import * as s3 from "./s3.js";
 
@@ -8,7 +8,7 @@ export async function lockProject(project, asset, version, user_name) {
 
     let h = await bound_bucket.head(lck);
     if (h !== null) {
-        throw new utils.HttpError("project asset has already been locked", 403);
+        throw new http.HttpError("project asset has already been locked", 403);
     }
 
     await bound_bucket.put(lck, JSON.stringify({ user_name: user_name, version: version }));
@@ -27,15 +27,15 @@ export async function checkLock(project, asset, version, user_name) {
 
     let g = await bound_bucket.get(lck);
     if (g == null) {
-        throw new utils.HttpError("project asset has not been previously locked for upload", 403);
+        throw new http.HttpError("project asset has not been previously locked for upload", 403);
     }
 
     let body = await g.json();
     if (body.user_name !== user_name) {
-        throw new utils.HttpError("project asset was locked for upload by a different user", 403);
+        throw new http.HttpError("project asset was locked for upload by a different user", 403);
     }
     if (body.version !== version) {
-        throw new utils.HttpError("project asset was locked for upload of a different version", 403);
+        throw new http.HttpError("project asset was locked for upload of a different version", 403);
     }
 
     return;

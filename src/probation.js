@@ -1,8 +1,8 @@
-import * as utils from "./utils.js";
-import * as auth from "./auth.js";
-import * as s3 from "./s3.js";
-import * as pkeys from "./internal.js";
-import * as lock from "./lock.js";
+import * as http from "./utils/http.js";
+import * as auth from "./utils/permissions.js";
+import * as s3 from "./utils/s3.js";
+import * as pkeys from "./utils/internal.js";
+import * as lock from "./utils/lock.js";
 
 export async function approveProbationHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
@@ -20,18 +20,18 @@ export async function approveProbationHandler(request, nonblockers) {
         let sumpath = pkeys.versionSummary(project, asset, version);
         let raw_info = await bound_bucket.get(sumpath);
         if (raw_info == null) {
-            throw new utils.HttpError("probational version does not exist", 400);
+            throw new http.HttpError("probational version does not exist", 400);
         }
 
         let info = await raw_info.json();
         if (!("on_probation" in info) || !info.on_probation) {
-            throw new utils.HttpError("cannot approve probation for non-probational version", 400);
+            throw new http.HttpError("cannot approve probation for non-probational version", 400);
         }
         delete info.on_probation;
 
-        let summary_update = utils.quickUploadJson(sumpath, info);
+        let summary_update = s3.quickUploadJson(sumpath, info);
         if ((await summary_update) == null) {
-            throw new utils.HttpError("failed to update version summary", 500);
+            throw new http.HttpError("failed to update version summary", 500);
         }
     } finally {
         await lock.unlockProject(project, asset);
@@ -56,19 +56,19 @@ export async function rejectProbationHandler(request, nonblockers) {
         let sumpath = pkeys.versionSummary(project, asset, version);
         let raw_info = await bound_bucket.get(sumpath);
         if (raw_info == null) {
-            throw new utils.HttpError("probational version does not exist", 400);
+            throw new http.HttpError("probational version does not exist", 400);
         }
 
         let info = await raw_info.json();
         if (!("on_probation" in info) || !info.on_probation) {
-            throw new utils.HttpError("cannot reject probation for non-probational version", 400);
+            throw new http.HttpError("cannot reject probation for non-probational version", 400);
         }
 
         if (!can_manage && user.login !== info.upload_user_id) {
-            throw new utils.HttpError("cannot reject probation for different user", 400);
+            throw new http.HttpError("cannot reject probation for different user", 400);
         }
 
-        await utils.quickRecursiveDelete(project + "/" + asset + "/" + version + "/");
+        await s3.quickRecursiveDelete(project + "/" + asset + "/" + version + "/");
     } finally {
         await lock.unlockProject(project, asset);
     }
