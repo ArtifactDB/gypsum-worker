@@ -37,7 +37,7 @@ export function validateQuota(body) {
         }
     }
 
-    let forbidden = [ "usage", "pending" ];
+    let forbidden = [ "usage", "pending_on_complete_only" ];
     for (const field of forbidden) {
         if (field in body) {
             throw new http.HttpError("cannot directly set the '" + field + "' property", 400);

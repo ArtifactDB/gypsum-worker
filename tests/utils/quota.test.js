@@ -29,7 +29,7 @@ test("validateQuota works correctly", () => {
     expect(() => quot.validateQuota({ year: -1 })).toThrow("'year' to be a non-negative number");
 
     expect(() => quot.validateQuota({ usage: "foo" })).toThrow("cannot directly set the 'usage'");
-    expect(() => quot.validateQuota({ pending: "foo" })).toThrow("cannot directly set the 'pending'");
+    expect(() => quot.validateQuota({ pending_on_complete_only: "foo" })).toThrow("cannot directly set the 'pending_on_complete_only'");
 })
 
 test("computeRemainingSpace works correctly", () => {
