@@ -28,7 +28,8 @@
                                 "type": "object",
                                 "description": "Project creation parameters.",
                                 "properties": {
-                                    "permissions": { "$ref": "#/components/schemas/permissions" }
+                                    "permissions": { "$ref": "#/components/schemas/permissions" },
+                                    "quota": { "$ref": "#/components/schemas/quota" }
                                 }
                             }
                         }
@@ -326,6 +327,7 @@
                 "parameters": [
                     { "$ref": "#/components/parameters/project" }
                 ],
+                "requestBody": {
                     "content": {
                         "application/json": {
                             "schema": { "$ref": "#/components/schemas/permissions" }
@@ -347,6 +349,53 @@
                     "403": { "$ref": "#/components/responses/403" }
                 },
                 "tags": [ "Permissions" ]
+            }
+        },
+
+        "/quota/{project}": {
+            "put": {
+                "summary": "Set the quota for a project. This requires administrator privileges. Properties are only modified if supplied in the request; otherwise, existing values are used.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/project" }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/quota" }
+                        }
+                    }
+                },
+                "security": [ { "admin": [] } ],
+                "responses": {
+                    "200": { "description": "Successful change to the project quota." },
+                    "400": { 
+                        "description": "Incorrectly formatted request.",
+                        "content": { 
+                            "application/json": {
+                                "schema":  { "$ref": "#/components/schemas/error" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/401" },
+                    "403": { "$ref": "#/components/responses/403" }
+                },
+                "tags": [ "Quota" ]
+            }
+        },
+
+        "/quota/recompute-usage/{project}": {
+            "put": {
+                "summary": "Recompute the used quota for a project, if it gets out of sync. This requires administrator privileges.", 
+                "parameters": [
+                    { "$ref": "#/components/parameters/project" }
+                ],
+                "security": [ { "admin": [] } ],
+                "responses": {
+                    "200": { "description": "Successful recalculation of the project's used quota." },
+                    "401": { "$ref": "#/components/responses/401" },
+                    "403": { "$ref": "#/components/responses/403" }
+                },
+                "tags": [ "Quota" ]
             }
         },
 
@@ -565,6 +614,27 @@
                             }
                         },
                         "default": []
+                    }
+                }
+            },
+            "quota": {
+                "type": "object",
+                "description": "Storage quota for the project.",
+                "properties": {
+                    "baseline": {
+                        "type": "integer",
+                        "description": "Baseline quota for the project, in terms of the number of bytes. This is equivalent to the quota at project creation.",
+                        "default": 10000000000
+                    },
+                    "growth_rate": {
+                        "type": "integer",
+                        "description": "Growth rate for the project, in terms of the number of bytes per year.",
+                        "default": 20000000000
+                    },
+                    "year": {
+                        "type": "integer",
+                        "description": "Year of creation for the project. Defaults to the current calendar year.",
+                        "example": [ 2023 ]
                     }
                 }
             }

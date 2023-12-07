@@ -2,6 +2,7 @@ import * as misc from "./utils/misc.js";
 import * as http from "./utils/http.js";
 import * as s3 from "./utils/s3.js";
 import * as auth from "./utils/permissions.js";
+import * as quot from "./utils/quota.js";
 import * as pkeys from "./utils/internal.js";
 
 export async function createProjectHandler(request, nonblockers) {
@@ -39,8 +40,22 @@ export async function createProjectHandler(request, nonblockers) {
         }
     }
 
-    let info = await s3.quickUploadJson(permpath, new_perms)
-    if (info == null) {
+    if ((await s3.quickUploadJson(permpath, new_perms)) == null) {
+        throw new http.HttpError("failed to upload permissions for project '" + project + "'", 500);
+    }
+
+    let new_quota = quot.defaults();
+    if ('quota' in body) {
+        let req_quota = body.quota;
+        quot.validateQuota(req_quota);
+        for (const field of Object.keys(new_quota)) {
+            if (field in req_quota) {
+                new_quota[field] = req_quota[field];
+            }
+        }
+    }
+
+    if ((await s3.quickUploadJson(pkeys.quota(project), new_quota)) == null) {
         throw new http.HttpError("failed to upload permissions for project '" + project + "'", 500);
     }
 

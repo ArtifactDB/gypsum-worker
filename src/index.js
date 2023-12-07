@@ -4,6 +4,7 @@ import * as upload from "./upload.js";
 import * as create from "./create.js";
 import * as remove from "./remove.js";
 import * as permissions from "./permissions.js";
+import * as quota from "./quota.js";
 import * as probation from "./probation.js";
 import * as gh from "./utils/github.js";
 import * as auth from "./utils/permissions.js";
@@ -126,6 +127,12 @@ router.get("/credentials/github-app", permissions.fetchGitHubCredentials);
 router.post("/probation/approve/:project/:asset/:version", probation.approveProbationHandler);
 
 router.post("/probation/reject/:project/:asset/:version", probation.rejectProbationHandler);
+
+/*** Quota ***/
+
+router.put("/quota/:project", quota.setQuotaHandler);
+
+router.put("/quota/recompute-usage/:project", quota.refreshQuotaHandler);
 
 /*** Setting up the listener ***/
 

@@ -2,6 +2,10 @@ export function permissions(project) {
     return project + "/..permissions";
 }
 
+export function quota(project) {
+    return project + "/..quota";
+}
+
 export function versionSummary(project, asset, version) {
     return project + "/" + asset + "/" + version + "/..summary";
 }

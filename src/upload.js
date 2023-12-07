@@ -1,5 +1,6 @@
 import * as misc from "./utils/misc.js";
 import * as auth from "./utils/permissions.js";
+import * as quot from "./utils/quota.js";
 import * as http from "./utils/http.js";
 import * as gh from "./utils/github.js";
 import * as lock from "./utils/lock.js";
@@ -232,6 +233,24 @@ export async function initializeUploadHandler(request, nonblockers) {
         }
         let link_details = await checkLinks(split.link, project, asset, version, bound_bucket, manifest_cache);
 
+        // Checking that the quota isn't exceeded. Note that 'pending_on_complete_only' 
+        // should only EVER be used by completeUploadHandler, so even if it's non-zero here, 
+        // we just ignore it.
+        let current_usage = 0;
+        for (const s of split.simple) {
+            current_usage += s.size;
+        }
+
+        let qpath = pkeys.quota(project);
+        let raw_quota = await bound_bucket.get(qpath);
+        let quota = await raw_quota.json();
+        if (current_usage >= quot.computeRemainingSpace(quota)) {
+            throw new http.HttpError("upload exceeds the storage quota for this project", 400);
+        }
+
+        quota.pending_on_complete_only = current_usage;
+        preparation.push(s3.quickUploadJson(qpath, quota));
+
         // Build a manifest for inspection.
         let manifest = {};
         for (const s of split.simple) {
@@ -386,6 +405,15 @@ export async function completeUploadHandler(request, nonblockers) {
 
         info.upload_finish = (new Date).toISOString();
         preparation.push(s3.quickUploadJson(sumpath, info));
+
+        // Updating the quota file.
+        let qpath = pkeys.quota(project);
+        let raw_quota = await bound_bucket.get(qpath);
+        let quota = await raw_quota.json();
+        quota.usage += quota.pending_on_complete_only;
+        delete quota.pending_on_complete_only;
+        preparation.push(s3.quickUploadJson(qpath, quota));
+
     } finally {
         // Checking that everything was uploaded correctly.
         let resolved = await Promise.all(preparation);

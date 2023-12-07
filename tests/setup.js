@@ -91,6 +91,17 @@ export async function mockProjectRaw(project, asset, version) {
         let perms = { owners: ["ProjectOwner"], uploaders: [] };
         await BOUND_BUCKET.put(permpath, JSON.stringify(perms), jsonmeta);
     }
+
+    let qpath = project + "/..quota";
+    if ((await BOUND_BUCKET.head(qpath)) == null) {
+        let total = 0;
+        for (const x of Object.values(files)) {
+            total += x.length;
+        }
+        let quota = { baseline: 1000, growth_rate: 100, usage: total };
+        await BOUND_BUCKET.put(qpath, JSON.stringify(quota), jsonmeta);
+    }
+
     return files;
 }
 

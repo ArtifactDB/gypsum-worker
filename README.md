@@ -107,6 +107,13 @@ Uploads from untrusted uploaders are always probational.
 For trusted uploaders or project owners, users can specify whether their upload is probational.
 This is useful for testing before committing to the long-term immutability of the uploaded files. 
 
+### Storage quotas
+
+Each project has a storage quota, and uploads that cause a project to exceed this quota will be declined.
+This allows administrators to control the resource consumption of each project, limiting the potential for abuse by project owners.
+The growth of the quota permits some accumulation of files, e.g., to retain older versions of assets for reproducibility purposes.
+Administrators can customize the quota and its growth rate for each project.
+
 ## Interacting with the API
 
 **gypsum** stores its files in an R2 bucket that can be accessed by any S3-compatible client.
