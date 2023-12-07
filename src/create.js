@@ -23,8 +23,21 @@ export async function createProjectHandler(request, nonblockers) {
         throw new http.HttpError("project '" + project + "' already exists", 400);
     }
 
-    let new_perms = await http.bodyToJson(request);
-    auth.validatePermissions(new_perms);
+    let body = await http.bodyToJson(request);
+    if (!misc.isJsonObject(body)) {
+        throw new http.HttpError("expected a JSON object in the request body", 400);
+    }
+
+    let new_perms = { owners: [], uploaders: [] };
+    if ('permissions' in body) {
+        let req_perms = body.permissions;
+        auth.validatePermissions(req_perms);
+        for (const field of Object.keys(new_perms)) {
+            if (field in req_perms) {
+                new_perms[field] = req_perms[field];
+            }
+        }
+    }
 
     let info = await s3.quickUploadJson(permpath, new_perms)
     if (info == null) {

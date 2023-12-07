@@ -18,7 +18,7 @@ test("createHandler works correctly", async () => {
     {
         let req = new Request("http://localhost", {
             method: "POST",
-            body: JSON.stringify({ owners: [ "foo", "bar"] }),
+            body: JSON.stringify({ permissions: { owners: [ "foo", "bar"] } }),
             headers: { "Content-Type": "application/json" }
         });
         req.params = { project: "stuff" };
@@ -42,7 +42,7 @@ test("createHandler works correctly", async () => {
 test("createHandler breaks correctly if project already exists", async () => {
     let req = new Request("http://localhost", {
         method: "POST",
-        body: JSON.stringify({ owners: ["foo"] }),
+        body: JSON.stringify({ permissions: { owners: ["foo"] } }),
         headers: { "Content-Type": "application/json" }
     });
     req.params = { project: "test" };
@@ -52,11 +52,11 @@ test("createHandler breaks correctly if project already exists", async () => {
     await setup.expectError(create.createProjectHandler(req, nb), "already exists");
 })
 
-test("setPermissionsHandler breaks correctly if the request is invalid", async () => {
+test("createHandler breaks correctly if the request is invalid", async () => {
     {
         let req = new Request("http://localhost", {
             method: "POST",
-            body: JSON.stringify({ owners: ["foo"] }),
+            body: JSON.stringify({ permissions: { owners: ["foo"] } }),
             headers: { "Content-Type": "application/json" }
         });
         req.params = { project: "tes/foo" };
@@ -70,7 +70,7 @@ test("setPermissionsHandler breaks correctly if the request is invalid", async (
     {
         let req = new Request("http://localhost", {
             method: "POST",
-            body: JSON.stringify({ owners: "foo" }),
+            body: JSON.stringify({ permissions: { owners: "foo" } }),
             headers: { "Content-Type": "application/json" }
         });
         req.params = { project: "tesfoo" };
@@ -85,7 +85,7 @@ test("setPermissionsHandler breaks correctly if the request is invalid", async (
 test("createProjectHandler fails correctly if user is not authorized", async () => {
     let req = new Request("http://localhost", {
         method: "POST",
-        body: JSON.stringify({ owners: ["your-mom"] }),
+        body: JSON.stringify({ permissions: { owners: ["your-mom"] } }),
         headers: { "Content-Type": "application/json" }
     });
     req.params = { project: "test2" };

@@ -98,14 +98,12 @@ test("setting admins works correctly", async () => {
 })
 
 test("validatePermissions works correctly", () => {
-    expect(auth.validatePermissions({ owners: ["b"], uploaders: [] }, true)).toBeUndefined();
-    expect(auth.validatePermissions({}, false)).toBeUndefined();
+    expect(auth.validatePermissions({ owners: ["b"], uploaders: [] })).toBeUndefined();
+    expect(auth.validatePermissions({})).toBeUndefined();
 
-    expect(() => auth.validatePermissions({}, true)).toThrow("'owners' property to be present");
     expect(() => auth.validatePermissions({ owners: "b", uploaders: [] }, true)).toThrow("to be an array");
     expect(() => auth.validatePermissions({ owners: [1,2,3], uploaders: [] }, true)).toThrow("array of strings");
 
-    expect(() => auth.validatePermissions({ owners: [] }, true)).toThrow("'uploaders' property to be present");
     expect(() => auth.validatePermissions({ owners: [], uploaders: "asdad"}, true)).toThrow("to be an array");
     expect(() => auth.validatePermissions({ owners: [], uploaders: ["asdsad"]}, true)).toThrow("array of objects");
 

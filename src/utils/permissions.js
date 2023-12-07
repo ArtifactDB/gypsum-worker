@@ -143,7 +143,7 @@ export function getAdmins() {
 /******************************************
  ******************************************/
 
-export function validatePermissions(body, required) {
+export function validatePermissions(body) {
     if (!misc.isJsonObject(body)) {
         throw new http.HttpError("expected permissions to be a JSON object", 400);
     }
@@ -158,8 +158,6 @@ export function validatePermissions(body, required) {
                 throw new http.HttpError("expected 'owners' to be an array of strings", 400);
             }
         }
-    } else if (required) {
-        throw new http.HttpError("expected an 'owners' property to be present", 400);
     }
 
     if ("uploaders" in body) {
@@ -207,8 +205,6 @@ export function validatePermissions(body, required) {
                 }
             }
         }
-    } else if (required) {
-        throw new http.HttpError("expected an 'uploaders' property to be present", 400);
     }
 }
 

@@ -26,11 +26,9 @@
                         "application/json": {
                             "schema": {
                                 "type": "object",
-                                "description": "Permissions for this new project.",
-                                "required": [ "owners", "uploaders" ],
+                                "description": "Project creation parameters.",
                                 "properties": {
-                                    "owners": { "$ref": "#/components/schemas/owners" },
-                                    "uploaders": { "$ref": "#/components/schemas/uploaders" }
+                                    "permissions": { "$ref": "#/components/schemas/permissions" }
                                 }
                             }
                         }
@@ -324,21 +322,13 @@
 
         "/permissions/{project}": {
             "put": {
-                "summary": "Set the permissions for a project. This requires project owner privileges.",
+                "summary": "Set the permissions for a project. This requires project owner privileges. If a property is missing in the response, the value in the existing permissions is used without modification.",
                 "parameters": [
                     { "$ref": "#/components/parameters/project" }
                 ],
-                "requestBody": {
                     "content": {
                         "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "description": "New permissions. If any property is not provided, the value in the current permissions is retained.",
-                                "properties": {
-                                    "owners": { "$ref": "#/components/schemas/owners" },
-                                    "uploaders": { "$ref": "#/components/schemas/uploaders" }
-                                }
-                            }
+                            "schema": { "$ref": "#/components/schemas/permissions" }
                         }
                     }
                 },
@@ -530,43 +520,51 @@
                     }
                 }
             },
-            "owners": {
-                "description": "GitHub logins of the project owners. Names of GitHub organizations are also allowed, in which case all public members of the organization are considered to be owners.",
-                "type": "array",
-                "items": {
-                    "type": "string"
-                }
-            },
-            "uploaders": {
-                "description": "GitHub logins of authorized uploaders. Names of GitHub organizations are also allowed, in which case all public members of the organization are authorized as uploaders.",
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "required": [ "id" ],
-                    "properties": {
-                        "id": {
-                            "type": "string",
-                            "description": "GitHub login or organization name."
+            "permissions": {
+                "type": "object",
+                "description": "Permissions for the project.",
+                "properties": {
+                    "owners": {
+                        "description": "GitHub logins of the project owners. Names of GitHub organizations are also allowed, in which case all public members of the organization are considered to be owners.",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
                         },
-                        "asset": {
-                            "type": "string",
-                            "description": "Name of the asset to limit uploads to. If not provided, uploads can be performed to any asset in the project."
-                        },
-                        "version": {
-                            "type": "string",
-                            "description": "Name of the version to limit uploads to. If not provided, uploads can be performed to any version in the project."
-                        },
-                        "until": {
-                            "type": "string",
-                            "description": "Lifetime of the upload authorization. If not provided, the authorization lasts indefinitely.",
-                            "format": "date-time"
-                        },
-                        "trusted": {
-                            "type": "boolean",
-                            "description": "Whether this uploader is to be trusted. If false, all uploads from this user are probational.",
-                            "default": false
-                        }
+                        "default": []
+                    },
+                    "uploaders": {
+                        "description": "GitHub logins of authorized uploaders. Names of GitHub organizations are also allowed, in which case all public members of the organization are authorized as uploaders.",
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": [ "id" ],
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "description": "GitHub login or organization name."
+                                },
+                                "asset": {
+                                    "type": "string",
+                                    "description": "Name of the asset to limit uploads to. If not provided, uploads can be performed to any asset in the project."
+                                },
+                                "version": {
+                                    "type": "string",
+                                    "description": "Name of the version to limit uploads to. If not provided, uploads can be performed to any version in the project."
+                                },
+                                "until": {
+                                    "type": "string",
+                                    "description": "Lifetime of the upload authorization. If not provided, the authorization lasts indefinitely.",
+                                    "format": "date-time"
+                                },
+                                "trusted": {
+                                    "type": "boolean",
+                                    "description": "Whether this uploader is to be trusted. If false, all uploads from this user are probational.",
+                                    "default": false
+                                }
 
+                            }
+                        },
+                        "default": []
                     }
                 }
             }
