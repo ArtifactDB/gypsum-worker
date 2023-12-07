@@ -39,14 +39,14 @@ test("setQuotaHandler works correctly", async () => {
     }
 })
 
-test("setPermissionsHandler breaks correctly if project doesn't exist", async () => {
+test("setQuotaHandler breaks correctly if project doesn't exist", async () => {
     let req = new Request("http://localhost");
     req.params = { project: "test-foo" };
     req.query = { "owners": [] };
     req.headers.append("Authorization", "Bearer " + setup.mockTokenAdmin);
 
     let nb = [];
-    await setup.expectError(quot.setQuotaHandler(req, nb), "no quota file");
+    await setup.expectError(quot.setQuotaHandler(req, nb), "project does not exist");
 })
 
 test("setQuotaHandler breaks correctly if the request body is invalid", async () => {

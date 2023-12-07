@@ -17,16 +17,15 @@ export async function setQuotaHandler(request, nonblockers) {
 
     let bound_bucket = s3.getR2Binding();
     let qpath = pkeys.quota(project);
-    let res = await bound_bucket.get(qpath);
-    if (res == null) {
-        throw new http.HttpError("no quota file available for this project", 400);
+    let qdata = await s3.quickFetchJson(qpath, null);
+    if (qdata == null) {
+        throw new http.HttpError("project does not exist", 400);
     }
 
-    let qdata = await res.json();
     let new_quota = await http.bodyToJson(request);
-    quot.validateQuota(new_quota, false);
+    quot.validateQuota(new_quota);
     for (const x of Object.keys(qdata)) {
-        if (x != "usage" && x in new_quota) {
+        if (x in new_quota) {
             qdata[x] = new_quota[x];
         }
     }
@@ -44,13 +43,11 @@ export async function refreshQuotaUsageHandler(request, nonblockers) {
         throw new http.HttpError("user is not an administrator", 403);
     }
 
-    let bound_bucket = s3.getR2Binding();
     let qpath = pkeys.quota(project);
-    let res = await bound_bucket.get(qpath);
-    if (res === null) {
-        throw new http.HttpError("no quota file available for this project", 500);
+    let qdata = await s3.quickFetchJson(qpath);
+    if (qdata == null) {
+        throw new http.HttpError("project does not exist", 400);
     }
-    let qdata = await res.json();
 
     // If we want to get the usage, we need to wait until the lock has been acquired.
     // Otherwise, the count will include the in-progress upload.

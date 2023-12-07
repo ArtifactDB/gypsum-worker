@@ -1,5 +1,6 @@
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import * as http from "./http.js";
 
 var r2_bucket_name = "placeholder";
 var s3_object = null;
@@ -71,7 +72,7 @@ export function getPublicS3Credentials() {
     return s3_public_creds;
 }
 
-export function quickUploadJson(path, value, custom = null) {
+export async function quickUploadJson(path, value, custom = null) {
     let meta = {
         httpMetadata: { contentType: "application/json" }
     };
@@ -80,7 +81,27 @@ export function quickUploadJson(path, value, custom = null) {
         meta.customMetadata = custom;
     }
 
-    return r2_binding.put(path, JSON.stringify(value), meta);
+    if ((await r2_binding.put(path, JSON.stringify(value), meta)) == null) {
+        throw new http.HttpError("failed to upload '" + path + "'", 500);
+    }
+}
+
+export async function quickFetchJson(path, mustWork = true) {
+    let payload = await r2_binding.get(path);
+    if (payload == null) {
+        if (mustWork) {
+            // 500 error because these are internal files that SHOULD exist.
+            throw new http.HttpError("no file at '" + path + "'", 500);
+        } else {
+            return null;
+        }
+    }
+
+    try {
+        return await payload.json();
+    } catch (e) {
+        throw new http.HttpError("failed to parse JSON; " + e.message, 500);
+    }
 }
 
 export async function listApply(prefix, op, { namesOnly = true, trimPrefix = true, local = false, list_limit = 1000 } = {}) {

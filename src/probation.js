@@ -18,21 +18,16 @@ export async function approveProbationHandler(request, nonblockers) {
 
     try {
         let sumpath = pkeys.versionSummary(project, asset, version);
-        let raw_info = await bound_bucket.get(sumpath);
-        if (raw_info == null) {
-            throw new http.HttpError("probational version does not exist", 400);
+        let info = await s3.quickFetchJson(sumpath, false);
+        if (info == null) {
+            throw new http.HttpError("version does not exist", 400);
         }
-
-        let info = await raw_info.json();
         if (!("on_probation" in info) || !info.on_probation) {
             throw new http.HttpError("cannot approve probation for non-probational version", 400);
         }
         delete info.on_probation;
 
-        let summary_update = s3.quickUploadJson(sumpath, info);
-        if ((await summary_update) == null) {
-            throw new http.HttpError("failed to update version summary", 500);
-        }
+        await s3.quickUploadJson(sumpath, info);
     } finally {
         await lock.unlockProject(project, asset);
     }
@@ -54,12 +49,10 @@ export async function rejectProbationHandler(request, nonblockers) {
 
     try {
         let sumpath = pkeys.versionSummary(project, asset, version);
-        let raw_info = await bound_bucket.get(sumpath);
-        if (raw_info == null) {
-            throw new http.HttpError("probational version does not exist", 400);
+        let info = await s3.quickFetchJson(sumpath, false);
+        if (info == null) {
+            throw new http.HttpError("version does not exist", 400);
         }
-
-        let info = await raw_info.json();
         if (!("on_probation" in info) || !info.on_probation) {
             throw new http.HttpError("cannot reject probation for non-probational version", 400);
         }

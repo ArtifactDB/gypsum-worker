@@ -39,10 +39,7 @@ export async function createProjectHandler(request, nonblockers) {
             }
         }
     }
-
-    if ((await s3.quickUploadJson(permpath, new_perms)) == null) {
-        throw new http.HttpError("failed to upload permissions for project '" + project + "'", 500);
-    }
+    await s3.quickUploadJson(permpath, new_perms);
 
     let new_quota = quot.defaults();
     if ('quota' in body) {
@@ -54,10 +51,7 @@ export async function createProjectHandler(request, nonblockers) {
             }
         }
     }
-
-    if ((await s3.quickUploadJson(pkeys.quota(project), new_quota)) == null) {
-        throw new http.HttpError("failed to upload permissions for project '" + project + "'", 500);
-    }
+    await s3.quickUploadJson(pkeys.quota(project), new_quota);
 
     return new Response(null, { status: 200 });
 }

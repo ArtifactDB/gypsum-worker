@@ -6,7 +6,6 @@ import * as gh from "./utils/github.js";
 
 export async function setPermissionsHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
-    let bound_bucket = s3.getR2Binding();
 
     // Making sure the user identifies themselves first.
     let token = auth.extractBearerToken(request);
@@ -15,12 +14,10 @@ export async function setPermissionsHandler(request, nonblockers) {
     // Don't use the cache: get the file from storage again,
     // just in case it was updated at some point.
     let path = pkeys.permissions(project);
-    let res = await bound_bucket.get(path);
-    if (res == null) {
-        throw new http.HttpError("requested project does not exist", 404);
+    let perms = await s3.quickFetchJson(path, false);
+    if (perms == null) {
+        throw new http.HttpError("project '" + project + "' does not exist", 404);
     }
-
-    let perms = await res.json();
     if (!auth.isOneOf(user, perms.owners) && !auth.isOneOf(user, auth.getAdmins())) {
         throw new http.HttpError("user does not own project '" + project + "'", 403);
     }
@@ -35,10 +32,7 @@ export async function setPermissionsHandler(request, nonblockers) {
             perms[x] = new_perms[x];
         }
     }
-    let perm_promise = bound_bucket.put(path, JSON.stringify(perms));
-    if ((await perm_promise) == null) {
-        throw new http.HttpError("failed to upload new permissions to the bucket", 500);
-    }
+    await s3.quickUploadJson(path, perms);
 
     // Clearing the cached permissions to trigger a reload on the next getPermissions() call.
     auth.flushCachedPermissions(project, nonblockers);

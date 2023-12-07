@@ -86,6 +86,7 @@ async function getVersionManifest(project, asset, version, bound_bucket, manifes
         return manifest_cache[key];
     }
 
+
     let raw_manifest = await bound_bucket.get(pkeys.versionManifest(project, asset, version));
     if (raw_manifest == null) {
         throw new http.HttpError("no manifest available for link target inside '" + key + "'", 400);
@@ -242,8 +243,7 @@ export async function initializeUploadHandler(request, nonblockers) {
         }
 
         let qpath = pkeys.quota(project);
-        let raw_quota = await bound_bucket.get(qpath);
-        let quota = await raw_quota.json();
+        let quota = await s3.quickFetchJson(qpath);
         if (current_usage >= quot.computeRemainingSpace(quota)) {
             throw new http.HttpError("upload exceeds the storage quota for this project", 400);
         }
@@ -289,13 +289,8 @@ export async function initializeUploadHandler(request, nonblockers) {
         throw e;
     }
 
-    // Checking that everything was uploaded correctly.
-    let resolved = await Promise.all(preparation);
-    for (const r of resolved) {
-        if (r == null) {
-            throw new http.HttpError("failed to upload manifest and/or link files to the bucket", 500);
-        }
-    }
+    // Again, just wait for everything to finish.
+    await Promise.all(preparation);
 
     return output;
 }
@@ -351,8 +346,8 @@ export async function completeUploadHandler(request, nonblockers) {
     let bound_bucket = s3.getR2Binding();
     let sumpath = pkeys.versionSummary(project, asset, version);
     let assets = await misc.namedResolve({
-        manifest: bound_bucket.get(pkeys.versionManifest(project, asset, version)).then(x => x.json()),
-        summary: bound_bucket.get(sumpath).then(x => x.json()),
+        manifest: s3.quickFetchJson(pkeys.versionManifest(project, asset, version)),
+        summary: s3.quickFetchJson(sumpath),
         listing: list_promise,
     });
 
@@ -408,20 +403,13 @@ export async function completeUploadHandler(request, nonblockers) {
 
         // Updating the quota file.
         let qpath = pkeys.quota(project);
-        let raw_quota = await bound_bucket.get(qpath);
-        let quota = await raw_quota.json();
+        let quota = await s3.quickFetchJson(qpath);
         quota.usage += quota.pending_on_complete_only;
         delete quota.pending_on_complete_only;
         preparation.push(s3.quickUploadJson(qpath, quota));
 
     } finally {
-        // Checking that everything was uploaded correctly.
-        let resolved = await Promise.all(preparation);
-        for (const r of resolved) {
-            if (r == null) {
-                throw new http.HttpError("failed to upload manifest and/or link files to the bucket", 500);
-            }
-        }
+        await Promise.all(preparation);
     }
 
     // Release lock once we're clear.

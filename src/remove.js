@@ -51,12 +51,10 @@ export async function removeProjectAssetVersionHandler(request, nonblockers) {
 
     // Need to go through and update the latest version of the asset, in case
     // we just deleted the latest version.
-    let bound_bucket = s3.getR2Binding();
     let lpath = pkeys.latestVersion(project, asset);
-    let lres = await bound_bucket.get(lpath);
-    let linfo = await lres.json();
+    let linfo = await s3.quickFetchJson(lpath, false);
 
-    if (linfo.version == version) {
+    if (linfo !== null && linfo.version == version) {
         let prefix = project + "/" + asset + "/";
         let summaries = [];
         let versions = [];
@@ -64,7 +62,7 @@ export async function removeProjectAssetVersionHandler(request, nonblockers) {
             prefix, 
             name => {
                 if (!name.startsWith("..")) {
-                    summaries.push(bound_bucket.get(pkeys.versionSummary(project, asset, name)));
+                    summaries.push(s3.quickFetchJson(pkeys.versionSummary(project, asset, name)));
                     versions.push(name);
                 }
             }, 
@@ -74,7 +72,7 @@ export async function removeProjectAssetVersionHandler(request, nonblockers) {
         let resolved = await Promise.all(summaries);
         let best_version = null, best_time = null;
         for (var i = 0; i < resolved.length; i++) {
-            let contents = await resolved[i].json();
+            let contents = resolved[i];
             if (!("on_probation" in contents) || !contents.on_probation) {
                 let current = Date.parse(contents.upload_finished);
                 if (best_time == null || current > best_time) {
@@ -87,11 +85,11 @@ export async function removeProjectAssetVersionHandler(request, nonblockers) {
         if (best_version == null) {
             // We just deleted the last (non-probational) version, so we'll
             // just clear out the latest specifier.
+            let bound_bucket = s3.getR2Binding();
             await bound_bucket.delete(lpath);
         } else {
-            if ((await s3.quickUploadJson(lpath, { "version": best_version })) == null) {
-                throw new http.HttpError("failed to update the latest version", 500);
-            }
+            linfo.version = best_version;
+            await s3.quickUploadJson(lpath, linfo);
         }
     }
 
