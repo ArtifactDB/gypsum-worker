@@ -19,7 +19,7 @@ export async function bodyToJson(req) {
     try {
         return await req.json();
     } catch (e) {
-        throw new HttpError("failed to parse JSON body; " + String(e), 400);
+        throw new HttpError("failed to parse JSON body; " + e.message, 400);
     }
 }
 

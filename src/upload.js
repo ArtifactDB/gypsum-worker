@@ -281,7 +281,8 @@ export async function initializeUploadHandler(request, nonblockers) {
 
     } catch (e) {
         // Wait for everything to finish so that deletion catches everything.
-        await Promise.all(preparation);
+        // We don't mind if it fails, just that it was settled.
+        await Promise.allSettled(preparation);
 
         // Unlocking the project if the upload init failed, then users can try again without penalty.
         await s3.quickRecursiveDelete(project + "/" + asset + "/" + version + "/");
