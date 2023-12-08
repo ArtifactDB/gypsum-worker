@@ -27,17 +27,15 @@ test("initializeUploadHandler throws the right errors related to formatting", as
     req.params = { project: "test/upload", asset: "foo", version: "v1" };
     await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot contain");
     req.params = { project: "..test-upload", asset: "foo", version: "v1" };
-    await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot start");
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "start with");
+    req.params = { project: "", asset: "foo", version: "v1" };
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "be empty");
 
     req.params = { project: "test-upload", asset: "foo/bar", version: "v1" };
     await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot contain");
-    req.params = { project: "test-upload", asset: "..foobar", version: "v1" };
-    await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot start");
 
     req.params = { project: "test-upload", asset: "foobar", version: "v/1" };
     await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot contain");
-    req.params = { project: "test-upload", asset: "foobar", version: "..v1" };
-    await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot start");
 
     let create_req = body => {
         let req = new Request("http://localhost", { method: "POST", body: JSON.stringify(body) });

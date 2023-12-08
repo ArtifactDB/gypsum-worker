@@ -24,7 +24,7 @@ function splitByUploadType(files) {
             throw new http.HttpError("'files.path' should be a string", 400);
         }
         let fname = f.path;
-        if (fname.startsWith("..") || fname.includes("/..")) {
+        if (misc.isInternalPath(fname)) {
             throw new http.HttpError("components of 'files.path' cannot start with '..'", 400);
         }
         if (all_paths.has(fname)) {
@@ -166,22 +166,23 @@ async function checkLinks(linked, project, asset, version, bound_bucket, manifes
     return linked_details;
 }
 
+function isBadName(name) {
+    return name.indexOf("/") >= 0 || name.startsWith("..") || name.length == 0;
+}
+
 export async function initializeUploadHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
     let asset = decodeURIComponent(request.params.asset);
     let version = decodeURIComponent(request.params.version);
 
-    if (project.indexOf("/") >= 0) {
-        throw new http.HttpError("project name cannot contain '/'", 400);
+    if (isBadName(project)) {
+        throw new http.HttpError("project name cannot contain '/', start with '..', or be empty", 400);
     }
-    if (asset.indexOf("/") >= 0) {
-        throw new http.HttpError("asset name cannot contain '/'", 400);
+    if (isBadName(asset)) {
+        throw new http.HttpError("asset name cannot contain '/', start with '..', or be empty", 400);
     }
-    if (version.indexOf("/") >= 0) {
-        throw new http.HttpError("version name cannot contain '/'", 400);
-    }
-    if (project.startsWith("..") || asset.startsWith("..") || version.startsWith("..")) {
-        throw new http.HttpError("project, asset and version names cannot start with the reserved '..'", 400);
+    if (isBadName(version)) {
+        throw new http.HttpError("version name cannot contain '/', start with '..', or be empty", 400);
     }
 
     let body = await http.bodyToJson(request);
