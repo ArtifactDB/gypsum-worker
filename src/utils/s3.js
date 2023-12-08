@@ -72,13 +72,13 @@ export function getPublicS3Credentials() {
     return s3_public_creds;
 }
 
-export async function quickUploadJson(path, value, custom = null) {
+export async function quickUploadJson(path, value, { md5sum = null } = {}) {
     let meta = {
         httpMetadata: { contentType: "application/json" }
     };
 
-    if (custom !== null) {
-        meta.customMetadata = custom;
+    if (md5sum !== null) {
+        meta.md5 = md5sum;
     }
 
     if ((await r2_binding.put(path, JSON.stringify(value), meta)) == null) {

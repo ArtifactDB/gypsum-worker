@@ -10,7 +10,7 @@ import * as s3 from "./utils/s3.js";
 /**************** Initialize uploads ***************/
 
 const object_file = "OBJECT";
-const metadata_file = "_metadata.csv";
+const metadata_file = "_metadata.json";
 
 function splitByUploadType(files) {
     let simple = [];
@@ -42,16 +42,11 @@ function splitByUploadType(files) {
             throw new http.HttpError("'files.type' should be a string", 400);
         }
 
-        if (fname == object_file) {
-            all_objects.push("");
-        } else if (fname.endsWith("/" + object_file)) {
-            all_objects.push(fname.slice(0, x.path.length - object_file.length - 1));
-        }
-
-        if (fname == metadata_file) {
-            all_metadata.push("");
-        } else if (fname.endsWith("/" + metadata_file)) {
-            all_metadata.push(fname.slice(0, x.path.length - metadata_file.length - 1));
+        let [ dirname, basename] = misc.splitPath(fname);
+        if (basename == object_file) {
+            all_objects.push(dirname);
+        } else if (basename == metadata_file) {
+            all_metadata.push(dirname);
         }
 
         if (f.type === "simple" || f.type == "dedup") {
@@ -321,6 +316,20 @@ export async function initializeUploadHandler(request, nonblockers) {
 }
 
 /**************** Per-file upload ***************/
+
+export async function uploadIndexableFileHandler(request, nonblockers) {
+    try {
+        var [ project, asset, version, path, md5sum ] = JSON.parse(atob(request.params.slug));
+    } catch (e) {
+        throw new http.HttpError("invalid slug ('" + request.params.slug + "') for the presigned URL endpoint; " + String(e), 400);
+    }
+
+    let values = http.bodyToJson(request);
+    schema.validateMetadata(values);
+    await s3.quickUploadJson(project + "/" + asset + "/" + version + "/" + path, values, { md5sum });
+
+    return new Response(null, { status: 200 });
+}
 
 export async function uploadPresignedFileHandler(request, nonblockers) {
     try {
