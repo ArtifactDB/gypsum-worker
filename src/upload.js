@@ -9,18 +9,12 @@ import * as s3 from "./utils/s3.js";
 
 /**************** Initialize uploads ***************/
 
-const object_file = "OBJECT";
-const metadata_file = "_metadata.json";
-
 function splitByUploadType(files) {
     let simple = [];
     let dedup = [];
     let linked = [];
 
     let all_paths = new Set;
-    let all_objects = new Set;
-    let all_metadata = [];
-
     for (const f of files) {
         if (!misc.isJsonObject(f)) {
             throw new http.HttpError("'files' should be an array of objects", 400);
@@ -40,13 +34,6 @@ function splitByUploadType(files) {
 
         if (!("type" in f) || typeof f.type != "string") {
             throw new http.HttpError("'files.type' should be a string", 400);
-        }
-
-        let [ dirname, basename ] = misc.splitPath(fname);
-        if (basename == object_file) {
-            all_objects.push(dirname);
-        } else if (basename == metadata_file) {
-            all_metadata.push(dirname);
         }
 
         if (f.type === "simple" || f.type == "dedup") {
@@ -83,12 +70,6 @@ function splitByUploadType(files) {
 
         } else {
             throw new http.HttpError("invalid 'files.type'", 400);
-        }
-    }
-
-    for (const m of all_metadata) {
-        if (!all_objects.has(m)) {
-            throw new http.HttpError("each '" + metadata_file + "' file must be accompanied by an '" + object_file + "' (missing at '" + m + "')");
         }
     }
 
@@ -317,20 +298,6 @@ export async function initializeUploadHandler(request, nonblockers) {
 }
 
 /**************** Per-file upload ***************/
-
-export async function uploadIndexableFileHandler(request, nonblockers) {
-    try {
-        var [ project, asset, version, path, md5sum ] = JSON.parse(atob(request.params.slug));
-    } catch (e) {
-        throw new http.HttpError("invalid slug ('" + request.params.slug + "') for the presigned URL endpoint; " + String(e), 400);
-    }
-
-    let values = http.bodyToJson(request);
-    schema.validateMetadata(values);
-    await s3.quickUploadJson(project + "/" + asset + "/" + version + "/" + path, values, { md5sum });
-
-    return new Response(null, { status: 200 });
-}
 
 export async function uploadPresignedFileHandler(request, nonblockers) {
     try {

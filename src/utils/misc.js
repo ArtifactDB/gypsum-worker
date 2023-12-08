@@ -18,12 +18,3 @@ export async function namedResolve(x) {
 
     return output;
 }
-
-export function splitPath(x) {
-    let i = x.lastIndexOf("/");
-    if (i < 0) {
-        return ["", x];
-    } else {
-        return [x.slice(0, i), x.slice(i + 1)];
-    }
-}
