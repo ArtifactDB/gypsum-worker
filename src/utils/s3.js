@@ -1,6 +1,7 @@
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import * as http from "./http.js";
+import * as misc from "./misc.js";
 
 var r2_bucket_name = "placeholder";
 var s3_object = null;
@@ -148,10 +149,17 @@ export async function listApply(prefix, op, { namesOnly = true, trimPrefix = tru
 
 export async function quickRecursiveDelete(prefix, { list_limit = 1000 } = {}) {
     let deletions = [];
+    let freed = 0;
     await listApply(
         prefix, 
-        fname => deletions.push(r2_binding.delete(fname), { trimPrefix: false }), 
-        { list_limit: list_limit, trimPrefix: false }
+        f => {
+            deletions.push(r2_binding.delete(f.key));
+            if (!misc.isInternalPath(f.key)) {
+                freed += f.size;
+            }
+        },
+        { list_limit: list_limit, namesOnly: false }
     );
     await Promise.all(deletions);
+    return freed;
 }

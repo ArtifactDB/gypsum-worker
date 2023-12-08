@@ -51,3 +51,13 @@ export async function computeQuota(project) {
     let quota = await s3.quickFetchJson(pkeys.quota(project));
     return quota.baseline + ((new Date).getFullYear() - quota.year) * quota.growth_rate;
 }
+
+export async function updateQuotaOnDeletion(project, freed) {
+    let usepath = pkeys.usage(project);
+    let usage = await s3.quickFetchJson(usepath);
+    usage.total -= freed;
+    if (usage.total < 0) {
+        usage.total = 0;
+    }
+    await s3.quickUploadJson(usepath, usage);
+}

@@ -73,3 +73,28 @@ test("probation rejection works as expected", async () => {
     req.params = { project: "test", asset: "blob", version: "v2" };
     await setup.expectError(prob.rejectProbationHandler(req, []), "does not exist");
 })
+
+test("probation rejection accurately updates the usage", async () => {
+    // Checking the usage.
+    let original = await (await BOUND_BUCKET.get("test/..usage")).json();
+    expect(original.total).toBeGreaterThan(0);
+
+    await setup.mockProjectVersion("test", "blob", "v2");
+    let usage = await (await BOUND_BUCKET.get("test/..usage")).json();
+    expect(usage.total).toBeGreaterThan(original.total);
+
+    // Setting the probational flag on the second version.
+    let sumpath = "test/blob/v2/..summary";
+    let existing = await (await BOUND_BUCKET.get(sumpath)).json();
+    existing.on_probation = true;
+    await BOUND_BUCKET.put(sumpath, JSON.stringify(existing), setup.jsonmeta);
+
+    let req = new Request("http://localhost", { method: "DELETE" });
+    req.params = { project: "test", asset: "blob", version: "v2" };
+    req.query = {};
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
+    await prob.rejectProbationHandler(req, []);
+
+    usage = await (await BOUND_BUCKET.get("test/..usage")).json(); // quota gets updated.
+    expect(usage.total).toBe(original.total);
+})

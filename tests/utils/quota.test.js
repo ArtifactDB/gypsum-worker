@@ -35,3 +35,15 @@ test("computeQuota works correctly", async () => {
     expect(typeof val).toBe("number"); // can't do better than this as we don't know the year of the CI machine.
     expect(Number.isNaN(val)).toBe(false);
 })
+
+test("updateQuotaOnDeletion works correctly", async () => {
+    await setup.createMockProject("test", { usage: { total: 10 } });
+
+    await quot.updateQuotaOnDeletion("test", 1);
+    let usage = await (await BOUND_BUCKET.get("test/..usage")).json();
+    expect(usage.total).toBe(9);
+
+    await quot.updateQuotaOnDeletion("test", 1000000);
+    usage = await (await BOUND_BUCKET.get("test/..usage")).json();
+    expect(usage.total).toBe(0);
+})

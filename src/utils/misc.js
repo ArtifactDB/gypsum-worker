@@ -2,6 +2,10 @@ export function isJsonObject(x) {
     return (typeof x == "object") && !(x instanceof Array) && (x !== null)
 }
 
+export function isInternalPath(x) {
+    return x.startsWith("..") || x.indexOf("/..") >= 0;
+}
+
 export async function namedResolve(x) {
     let entries = Object.entries(x);
     let promises = entries.map(y => y[1]);
