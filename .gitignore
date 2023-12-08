@@ -4,3 +4,4 @@ node_modules/
 *.swp
 *.h5
 secrets.sh
+package-lock.json
