@@ -121,3 +121,10 @@ export async function simpleMockProject() {
     await createMockProject("test");
     return mockProjectVersion("test", "blob", "v1");
 }
+
+export async function probationalize(project, asset, version) {
+    let sumpath = project + "/" + asset + "/" + version + "/..summary";
+    let existing = await (await BOUND_BUCKET.get(sumpath)).json();
+    existing.on_probation = true;
+    await BOUND_BUCKET.put(sumpath, JSON.stringify(existing), jsonmeta);
+}

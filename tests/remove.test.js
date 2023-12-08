@@ -150,10 +150,7 @@ test("removeProjectAssetVersionHandler handles version updates correctly", async
 
 test("removeProjectAssetVersionHandler handles version updates with probational versions", async () => {
     await setup.simpleMockProject();
-    let sumpath = "test/blob/v1/..summary";
-    let existing = await (await BOUND_BUCKET.get(sumpath)).json();
-    existing.on_probation = true;
-    await BOUND_BUCKET.put(sumpath, JSON.stringify(existing), setup.jsonmeta);
+    await setup.probationalize("test", "blob", "v1");
 
     await new Promise(r => setTimeout(r, 100));
     await setup.mockProjectVersion("test", "blob", "v2");
@@ -165,7 +162,7 @@ test("removeProjectAssetVersionHandler handles version updates with probational 
 
     // Deleting the latest non-probational version wipes the latest, but not the actual contents.
     req.params = { project: "test", asset: "blob", version: "v2" };
-    await remove.removeProjectAssetVersionHandler(req, nb); 
+    await remove.removeProjectAssetVersionHandler(req, nb);
     expect(await BOUND_BUCKET.head("test/blob/..latest")).toBeNull();
-    expect(await BOUND_BUCKET.head(sumpath)).not.toBeNull();
+    expect(await BOUND_BUCKET.head("test/blob/v1/..summary")).not.toBeNull();
 })

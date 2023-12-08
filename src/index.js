@@ -6,6 +6,7 @@ import * as remove from "./remove.js";
 import * as permissions from "./permissions.js";
 import * as quota from "./quota.js";
 import * as probation from "./probation.js";
+import * as version from "./version.js";
 import * as gh from "./utils/github.js";
 import * as auth from "./utils/permissions.js";
 import * as http from "./utils/http.js";
@@ -133,6 +134,10 @@ router.post("/probation/reject/:project/:asset/:version", probation.rejectProbat
 router.put("/quota/:project", quota.setQuotaHandler);
 
 router.put("/quota/recompute-usage/:project", quota.refreshQuotaHandler);
+
+/*** Refresh ***/
+
+router.post("/refresh/latest/:project/:asset", version.refreshLatestVersionHandler);
 
 /*** Setting up the listener ***/
 

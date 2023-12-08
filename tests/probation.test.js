@@ -5,19 +5,12 @@ import * as s3 from "../src/utils/s3.js";
 import * as gh from "../src/utils/github.js";
 import * as setup from "./setup.js";
 
-async function probationalize(project, asset, version) {
-    let sumpath = project + "/" + asset + "/" + version + "/..summary";
-    let existing = await (await BOUND_BUCKET.get(sumpath)).json();
-    existing.on_probation = true;
-    await BOUND_BUCKET.put(sumpath, JSON.stringify(existing), setup.jsonmeta);
-}
-
 beforeAll(async () => {
     await setup.simpleMockProject();
     let rigging = gh.enableTestRigging();
     setup.mockGitHubIdentities(rigging);
 
-    await probationalize("test", "blob", "v1");
+    await setup.probationalize("test", "blob", "v1");
     await BOUND_BUCKET.delete("test/blob/..latest");
 })
 
@@ -61,7 +54,7 @@ test("probation approval sets the latest version correctly", async () => {
     }
 
     await setup.mockProjectVersion("test", "blob", "v2");
-    await probationalize("test", "blob", "v2");
+    await setup.probationalize("test", "blob", "v2");
     await BOUND_BUCKET.put(latpath, '{ "version": "v1" }'); // reset the version to v1.
     { 
         let req = new Request("http://localhost", { method: "POST" });
@@ -74,7 +67,7 @@ test("probation approval sets the latest version correctly", async () => {
     }
 
     // Approving an older version does not update the latest version.
-    await probationalize("test", "blob", "v1");
+    await setup.probationalize("test", "blob", "v1");
     { 
         let req = new Request("http://localhost", { method: "POST" });
         req.params = { project: "test", asset: "blob", version: "v1" };

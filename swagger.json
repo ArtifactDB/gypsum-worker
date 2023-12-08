@@ -501,6 +501,46 @@
                 },
                 "tags": [ "Permissions" ]
             }
+        },
+
+        "/refresh/latest/{project}/{asset}": {
+            "post": {
+                "summary": "Recompute the latest version for a project's asset, if it gets out of sync. This requires administrator privileges.", 
+                "parameters": [
+                    { "$ref": "#/components/parameters/project" },
+                    { "$ref": "#/components/parameters/asset" }
+                ],
+                "security": [ { "admin": [] } ],
+                "responses": {
+                    "200": { 
+                        "description": "Successful recalculation of the latest version.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "version": {
+                                            "type": "string",
+                                            "description": "Name of the latest non-probational version. If absent, there are no non-probational versions for this asset."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": { 
+                        "description": "Project does not exist.",
+                        "content": { 
+                            "application/json": {
+                                "schema":  { "$ref": "#/components/schemas/error" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/401" },
+                    "403": { "$ref": "#/components/responses/403" }
+                },
+                "tags": [ "Refresh" ]
+            }
         }
 
     },
