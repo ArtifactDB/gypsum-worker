@@ -5,10 +5,20 @@ import * as s3 from "../src/utils/s3.js";
 import * as gh from "../src/utils/github.js";
 import * as setup from "./setup.js";
 
+async function probationalize(project, asset, version) {
+    let sumpath = project + "/" + asset + "/" + version + "/..summary";
+    let existing = await (await BOUND_BUCKET.get(sumpath)).json();
+    existing.on_probation = true;
+    await BOUND_BUCKET.put(sumpath, JSON.stringify(existing), setup.jsonmeta);
+}
+
 beforeAll(async () => {
     await setup.simpleMockProject();
     let rigging = gh.enableTestRigging();
     setup.mockGitHubIdentities(rigging);
+
+    await probationalize("test", "blob", "v1");
+    await BOUND_BUCKET.delete("test/blob/..latest");
 })
 
 afterAll(() => {
@@ -16,11 +26,6 @@ afterAll(() => {
 })
 
 test("probation approval works as expected", async () => {
-    let sumpath = "test/blob/v1/..summary";
-    let existing = await (await BOUND_BUCKET.get(sumpath)).json();
-    existing.on_probation = true;
-    await BOUND_BUCKET.put(sumpath, JSON.stringify(existing), setup.jsonmeta);
-
     let req = new Request("http://localhost", { method: "DELETE" });
     req.params = { project: "test", asset: "blob", version: "v1" };
     req.query = {};
@@ -32,7 +37,7 @@ test("probation approval works as expected", async () => {
     // Success!
     req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
     await prob.approveProbationHandler(req, []);
-    let refreshed = await (await BOUND_BUCKET.get(sumpath)).json();
+    let refreshed = await (await BOUND_BUCKET.get("test/blob/v1/..summary")).json();
     expect("on_probation" in refreshed).toBe(false);
 
     // Repeated attempt fails.
@@ -41,6 +46,44 @@ test("probation approval works as expected", async () => {
     // Fails if it can't find anything.
     req.params = { project: "test", asset: "blob", version: "v2" };
     await setup.expectError(prob.approveProbationHandler(req, []), "does not exist");
+})
+
+test("probation approval sets the latest version correctly", async () => {
+    let latpath = "test/blob/..latest";
+    { 
+        let req = new Request("http://localhost", { method: "POST" });
+        req.params = { project: "test", asset: "blob", version: "v1" };
+        req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
+        await prob.approveProbationHandler(req, []);
+
+        let latest = await (await BOUND_BUCKET.get(latpath)).json();
+        expect(latest.version).toBe('v1');
+    }
+
+    await setup.mockProjectVersion("test", "blob", "v2");
+    await probationalize("test", "blob", "v2");
+    await BOUND_BUCKET.put(latpath, '{ "version": "v1" }'); // reset the version to v1.
+    { 
+        let req = new Request("http://localhost", { method: "POST" });
+        req.params = { project: "test", asset: "blob", version: "v2" };
+        req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
+        await prob.approveProbationHandler(req, []);
+
+        let latest = await (await BOUND_BUCKET.get(latpath)).json();
+        expect(latest.version).toBe('v2');
+    }
+
+    // Approving an older version does not update the latest version.
+    await probationalize("test", "blob", "v1");
+    { 
+        let req = new Request("http://localhost", { method: "POST" });
+        req.params = { project: "test", asset: "blob", version: "v1" };
+        req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
+        await prob.approveProbationHandler(req, []);
+
+        let latest = await (await BOUND_BUCKET.get(latpath)).json();
+        expect(latest.version).toBe('v2');
+    }
 })
 
 test("probation rejection works as expected", async () => {
