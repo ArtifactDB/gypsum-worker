@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "name": "gypsum-index",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Updating the SQL index for the gypsum API",
+  "main": "index.js",
+  "author": "LTLA <infinite.monkeys.with.keyboards@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.470.0",
+    "ajv": "^8.11.0"
+  }
+}

@@ -1,0 +1,116 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema",
+    "$id": "bioconductor.json",
+    "type": "object",
+    "title": "Bioconductor metadata standards",
+    "properties": {
+        "title": {
+            "type": "string",
+            "description": "Title of the object."
+        },
+
+        "description": {
+            "type": "string",
+            "description": "Description of the object."
+        },
+
+        "bioconductor_version": {
+            "type": "string",
+            "description": "Version of Bioconductor used to generate the object.",
+            "pattern": "^[1-9][0-9]*\\.[1-9][0-9]*$"
+        },
+
+        "taxonomy_id": {
+            "type": "array",
+            "description": "NCBI taxonomy ID. Multiple entries may be supplied if multiple organisms are present.",
+            "items": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]*$"
+            },
+            "uniqueItems": true
+        },
+
+        "genome": {
+            "type": "array",
+            "description": "Ensembl genome build identifiers. Multiple entries may be supplied if multiple organisms are present.",
+            "items": {
+                "type": "string",
+                "enum": [ 
+                    "GRCm38", 
+                    "GRCm39",
+                    "GRCh38", 
+                    "TAIR10", 
+                    "CanFam3.1", 
+                    "BDGP6",
+                    "GRCz10",
+                    "GRCz11",
+                    "Rnor_5.0",
+                    "Rnor_6.0"
+                ]
+            },
+            "uniqueItems": true
+        },
+
+        "source": {
+            "type": "object",
+            "description": "Data source for this object.",
+            "properties": {
+                "provider": {
+                    "type": "string",
+                    "description": "Name of the data provider.",
+                    "enum": [ "GEO", "ArrayExpress", "PubMed", "other" ]
+                },
+                "id": {
+                    "type": "string",
+                    "description": "Provider-specific identifier for the data source."
+                }
+            },
+            "required": [ "provider", "id" ],
+            "additionalProperties": false,
+            "allOf": [
+                {
+                    "if": { "properties": { "provider": { "const": "GEO" } } },
+                    "else": { "properties": { "id": { "pattern": "^GSE[0-9]+$" } } }
+                },
+                {
+                    "if": { "properties": { "provider": { "const": "ArrayExpress" } } },
+                    "else": { "properties": { "id": { "pattern": "^E-MTAB-[0-9]+$" } } }
+                },
+                {
+                    "if": { "properties": { "provider": { "const": "PubMed" } } },
+                    "else": { "properties": { "id": { "pattern": "^[1-9][0-9]+$" } } }
+                },
+                {
+                    "if": { "properties": { "provider": { "const": "other" } } },
+                    "else": { "properties": { "id": { "pattern": "^https?://[^\\s]+$" } } }
+                }
+            ]
+        },
+
+        "maintainer": {
+            "type": "object",
+            "description": "Identity and contact details of the maintainer.",
+            "properties": {
+                "name": {
+                    "type": "array",
+                    "description": "First, middle and last names of the maintainer.",
+                    "items": {
+                        "type": "string",
+                        "pattern": "^[\\s]+$"
+                    },
+                    "minItems": 2
+                },
+                "email": {
+                    "type": "string",
+                    "description": "Email address of the maintainer.",
+                    "pattern": "^[^@]+@[^@\\.]+\\.[^@\\.]+"
+                }
+            },
+            "required": ["name", "email"],
+            "additionalProperties": false
+        }
+    },
+
+    "required": ["title", "description", "bioconductor_version", "taxonomy_id", "genome", "source", "maintainer" ],
+    "additionalProperties": false
+}
