@@ -93,11 +93,10 @@ test("refreshQuotaUsageHandler works correctly", async () => {
         headers: { "Content-Type": "application/json" }
     });
     req.params = { project: "test" };
-    req.query = {};
-
-    let nb = [];
     req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
-    let res = await quot.refreshQuotaUsageHandler(req, nb);
+
+    let res = await quot.refreshQuotaUsageHandler(req, []);
+    expect((await res.json()).total).toBeLessThan(999999);
 
     let bucket = s3.getR2Binding();
     let info = await bucket.get("test/..usage");
@@ -105,15 +104,16 @@ test("refreshQuotaUsageHandler works correctly", async () => {
     expect(body.total).toBeLessThan(999999);
 })
 
-test("refreshQuotaUsageHandler works correctly if user is not authorized", async () => {
+test("refreshQuotaUsageHandler fails correctly", async () => {
     let req = new Request("http://localhost", {
-        method: "PUT",
+        method: "POST",
         headers: { "Content-Type": "application/json" }
     });
     req.params = { project: "test" };
-    req.query = {};
-
-    let nb = [];
     req.headers.set("Authorization", "Bearer " + setup.mockTokenUser);
-    await setup.expectError(quot.refreshQuotaUsageHandler(req, nb), "not an administrator");
+    await setup.expectError(quot.refreshQuotaUsageHandler(req, []), "not an administrator");
+
+    req.params = { project: "test2" };
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
+    await setup.expectError(quot.refreshQuotaUsageHandler(req, []), "does not exist");
 })

@@ -60,5 +60,5 @@ export async function refreshQuotaUsageHandler(request, nonblockers) {
         await lock.unlockProject(project);
     }
 
-    return new Response(null, { status: 200 });
+    return new http.jsonResponse(udata, 200);
 }

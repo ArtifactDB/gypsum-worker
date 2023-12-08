@@ -119,6 +119,8 @@ router.post("/upload/abort/:project/:asset/:version", upload.abortUploadHandler)
 
 router.put("/permissions/:project", permissions.setPermissionsHandler);
 
+router.put("/quota/:project", quota.setQuotaHandler);
+
 router.get("/credentials/s3-api", permissions.fetchS3Credentials);
 
 router.get("/credentials/github-app", permissions.fetchGitHubCredentials);
@@ -129,15 +131,11 @@ router.post("/probation/approve/:project/:asset/:version", probation.approveProb
 
 router.post("/probation/reject/:project/:asset/:version", probation.rejectProbationHandler);
 
-/*** Quota ***/
-
-router.put("/quota/:project", quota.setQuotaHandler);
-
-router.put("/quota/recompute-usage/:project", quota.refreshQuotaHandler);
-
 /*** Refresh ***/
 
 router.post("/refresh/latest/:project/:asset", version.refreshLatestVersionHandler);
+
+router.post("/refresh/usage/:project", quota.refreshQuotaHandler);
 
 /*** Setting up the listener ***/
 

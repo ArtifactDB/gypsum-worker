@@ -379,23 +379,7 @@
                     "401": { "$ref": "#/components/responses/401" },
                     "403": { "$ref": "#/components/responses/403" }
                 },
-                "tags": [ "Quota" ]
-            }
-        },
-
-        "/quota/recompute-usage/{project}": {
-            "put": {
-                "summary": "Recompute the used quota for a project, if it gets out of sync. This requires administrator privileges.", 
-                "parameters": [
-                    { "$ref": "#/components/parameters/project" }
-                ],
-                "security": [ { "admin": [] } ],
-                "responses": {
-                    "200": { "description": "Successful recalculation of the project's used quota." },
-                    "401": { "$ref": "#/components/responses/401" },
-                    "403": { "$ref": "#/components/responses/403" }
-                },
-                "tags": [ "Quota" ]
+                "tags": [ "Permissions" ]
             }
         },
 
@@ -533,6 +517,39 @@
                         "content": { 
                             "application/json": {
                                 "schema":  { "$ref": "#/components/schemas/error" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/401" },
+                    "403": { "$ref": "#/components/responses/403" }
+                },
+                "tags": [ "Refresh" ]
+            }
+        },
+
+        "/refresh/usage/{project}": {
+            "post": {
+                "summary": "Recompute the used quota for a project, if it gets out of sync. This requires administrator privileges.", 
+                "parameters": [
+                    { "$ref": "#/components/parameters/project" }
+                ],
+                "security": [ { "admin": [] } ],
+                "responses": {
+                    "200": { "description": "Successful recalculation of the project's usage." },
+                    "400": { 
+                        "description": "Project does not exist.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [ "total" ],
+                                    "properties": {
+                                        "total": {
+                                            "type": "integer",
+                                            "description": "Total usage of this project, in bytes."
+                                        }
+                                    }
+                                }
                             }
                         }
                     },
