@@ -53,5 +53,7 @@ export async function createProjectHandler(request, nonblockers) {
     }
     await s3.quickUploadJson(pkeys.quota(project), new_quota);
 
+    await s3.quickUploadJson(pkeys.usage(project), { total: 0 });
+
     return new Response(null, { status: 200 });
 }

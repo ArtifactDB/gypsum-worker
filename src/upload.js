@@ -242,14 +242,14 @@ export async function initializeUploadHandler(request, nonblockers) {
             current_usage += s.size;
         }
 
-        let qpath = pkeys.quota(project);
-        let quota = await s3.quickFetchJson(qpath);
-        if (current_usage >= quot.computeRemainingSpace(quota)) {
+        let upath = pkeys.usage(project);
+        let usage = await s3.quickFetchJson(upath);
+        if (usage.total + current_usage >= (await quot.computeQuota(project))) {
             throw new http.HttpError("upload exceeds the storage quota for this project", 400);
         }
 
-        quota.pending_on_complete_only = current_usage;
-        preparation.push(s3.quickUploadJson(qpath, quota));
+        usage.pending_on_complete_only = current_usage;
+        preparation.push(s3.quickUploadJson(upath, usage));
 
         // Build a manifest for inspection.
         let manifest = {};
@@ -402,12 +402,12 @@ export async function completeUploadHandler(request, nonblockers) {
         info.upload_finish = (new Date).toISOString();
         preparation.push(s3.quickUploadJson(sumpath, info));
 
-        // Updating the quota file.
-        let qpath = pkeys.quota(project);
-        let quota = await s3.quickFetchJson(qpath);
-        quota.usage += quota.pending_on_complete_only;
-        delete quota.pending_on_complete_only;
-        preparation.push(s3.quickUploadJson(qpath, quota));
+        // Updating the usage file.
+        let upath = pkeys.usage(project);
+        let usage = await s3.quickFetchJson(upath);
+        usage.total += usage.pending_on_complete_only;
+        delete usage.pending_on_complete_only;
+        preparation.push(s3.quickUploadJson(upath, usage));
 
     } finally {
         await Promise.all(preparation);

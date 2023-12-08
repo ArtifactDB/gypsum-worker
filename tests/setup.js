@@ -53,7 +53,7 @@ export const jsonmeta = {
     httpMetadata: { contentType: "application/json" }
 };
 
-export async function createMockProject(project, { permissions = null, quota = null } = {}) {
+export async function createMockProject(project, { permissions = null, quota = null, usage = null } = {}) {
     let permpath = project + "/..permissions";
     if (permissions == null) {
         permissions = { owners: ["ProjectOwner"], uploaders: [] };
@@ -62,9 +62,15 @@ export async function createMockProject(project, { permissions = null, quota = n
 
     let qpath = project + "/..quota";
     if (quota == null) {
-        quota = { baseline: 1000, growth_rate: 100, usage: 0 };
+        quota = { baseline: 1000, growth_rate: 100, year: (new Date).getFullYear() };
     }
     await BOUND_BUCKET.put(qpath, JSON.stringify(quota), jsonmeta);
+
+    let upath = project + "/..usage";
+    if (usage == null) {
+        usage = { total : 0 };
+    }
+    await BOUND_BUCKET.put(upath, JSON.stringify(usage), jsonmeta);
 }
 
 export async function mockProjectVersion(project, asset, version) {
@@ -98,12 +104,12 @@ export async function mockProjectVersion(project, asset, version) {
 
     await BOUND_BUCKET.put(base + "/..manifest", JSON.stringify(manifest), jsonmeta);
 
-    let qpath = project + "/..quota";
-    let quota = await (await BOUND_BUCKET.get(qpath)).json();
+    let upath = project + "/..usage";
+    let usage = await (await BOUND_BUCKET.get(upath)).json();
     for (const x of Object.values(files)) {
-        quota.usage += x.length;
+        usage.total += x.length;
     }
-    await BOUND_BUCKET.put(qpath, JSON.stringify(quota), jsonmeta);
+    await BOUND_BUCKET.put(upath, JSON.stringify(usage), jsonmeta);
 
     let latest = { version: version };
     await BOUND_BUCKET.put(project + "/" + asset + "/..latest", JSON.stringify(latest), jsonmeta);

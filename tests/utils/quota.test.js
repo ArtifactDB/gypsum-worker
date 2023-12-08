@@ -27,13 +27,11 @@ test("validateQuota works correctly", () => {
     expect(() => quot.validateQuota({ growth_rate: -1 })).toThrow("'growth_rate' to be a non-negative number");
     expect(() => quot.validateQuota({ year: "foo" })).toThrow("'year' to be a number");
     expect(() => quot.validateQuota({ year: -1 })).toThrow("'year' to be a non-negative number");
-
-    expect(() => quot.validateQuota({ usage: "foo" })).toThrow("cannot directly set the 'usage'");
-    expect(() => quot.validateQuota({ pending_on_complete_only: "foo" })).toThrow("cannot directly set the 'pending_on_complete_only'");
 })
 
-test("computeRemainingSpace works correctly", () => {
-    let val = quot.computeRemainingSpace({ baseline: 1000, growth_rate: 100, usage: 200, year: 2019 });
+test("computeQuota works correctly", async () => {
+    await setup.createMockProject("test");
+    let val = await quot.computeQuota("test");
     expect(typeof val).toBe("number"); // can't do better than this as we don't know the year of the CI machine.
     expect(Number.isNaN(val)).toBe(false);
 })

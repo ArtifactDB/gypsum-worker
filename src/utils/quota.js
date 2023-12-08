@@ -2,6 +2,7 @@ import * as s3 from "./s3.js";
 import * as misc from "./misc.js";
 import * as http from "./http.js";
 import * as lock from "./lock.js";
+import * as pkeys from "./internal.js";
 
 export async function getProjectUsage(project) {
     let total = 0;
@@ -36,24 +37,17 @@ export function validateQuota(body) {
             }
         }
     }
-
-    let forbidden = [ "usage", "pending_on_complete_only" ];
-    for (const field of forbidden) {
-        if (field in body) {
-            throw new http.HttpError("cannot directly set the '" + field + "' property", 400);
-        }
-    }
 }
 
 export function defaults() {
     return { 
         baseline: 10 * 10 ** 9,
         growth_rate: 20 * 10**9,
-        year: (new Date()).getFullYear(),
-        usage: 0
+        year: (new Date()).getFullYear()
     };
 }
 
-export function computeRemainingSpace(quota) {
-    return quota.baseline + ((new Date).getFullYear() - quota.year) * quota.growth_rate - quota.usage;
+export async function computeQuota(project) {
+    let quota = await s3.quickFetchJson(pkeys.quota(project));
+    return quota.baseline + ((new Date).getFullYear() - quota.year) * quota.growth_rate;
 }
