@@ -6,6 +6,7 @@ import * as remove from "./remove.js";
 import * as permissions from "./permissions.js";
 import * as quota from "./quota.js";
 import * as probation from "./probation.js";
+import * as version from "./version.js";
 import * as gh from "./utils/github.js";
 import * as auth from "./utils/permissions.js";
 import * as http from "./utils/http.js";
@@ -118,6 +119,8 @@ router.post("/upload/abort/:project/:asset/:version", upload.abortUploadHandler)
 
 router.put("/permissions/:project", permissions.setPermissionsHandler);
 
+router.put("/quota/:project", quota.setQuotaHandler);
+
 router.get("/credentials/s3-api", permissions.fetchS3Credentials);
 
 router.get("/credentials/github-app", permissions.fetchGitHubCredentials);
@@ -128,11 +131,11 @@ router.post("/probation/approve/:project/:asset/:version", probation.approveProb
 
 router.post("/probation/reject/:project/:asset/:version", probation.rejectProbationHandler);
 
-/*** Quota ***/
+/*** Refresh ***/
 
-router.put("/quota/:project", quota.setQuotaHandler);
+router.post("/refresh/latest/:project/:asset", version.refreshLatestVersionHandler);
 
-router.put("/quota/recompute-usage/:project", quota.refreshQuotaHandler);
+router.post("/refresh/usage/:project", quota.refreshQuotaHandler);
 
 /*** Setting up the listener ***/
 

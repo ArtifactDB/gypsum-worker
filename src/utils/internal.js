@@ -6,6 +6,10 @@ export function quota(project) {
     return project + "/..quota";
 }
 
+export function usage(project) {
+    return project + "/..usage";
+}
+
 export function versionSummary(project, asset, version) {
     return project + "/" + asset + "/" + version + "/..summary";
 }

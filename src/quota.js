@@ -15,9 +15,8 @@ export async function setQuotaHandler(request, nonblockers) {
         throw new http.HttpError("user is not an administrator", 403);
     }
 
-    let bound_bucket = s3.getR2Binding();
     let qpath = pkeys.quota(project);
-    let qdata = await s3.quickFetchJson(qpath, null);
+    let qdata = await s3.quickFetchJson(qpath, false);
     if (qdata == null) {
         throw new http.HttpError("project does not exist", 400);
     }
@@ -43,9 +42,9 @@ export async function refreshQuotaUsageHandler(request, nonblockers) {
         throw new http.HttpError("user is not an administrator", 403);
     }
 
-    let qpath = pkeys.quota(project);
-    let qdata = await s3.quickFetchJson(qpath);
-    if (qdata == null) {
+    let upath = pkeys.usage(project);
+    let udata = await s3.quickFetchJson(upath, false);
+    if (udata == null) {
         throw new http.HttpError("project does not exist", 400);
     }
 
@@ -55,11 +54,11 @@ export async function refreshQuotaUsageHandler(request, nonblockers) {
     await lock.lockProject(project, "placeholder", "placeholder", session_key);
 
     try {
-        qdata.usage = await quot.getProjectUsage(project);
-        await s3.quickUploadJson(qpath, qdata);
+        udata.total = await quot.getProjectUsage(project);
+        await s3.quickUploadJson(upath, udata);
     } finally {
         await lock.unlockProject(project);
     }
 
-    return new Response(null, { status: 200 });
+    return new http.jsonResponse(udata, 200);
 }

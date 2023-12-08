@@ -27,17 +27,15 @@ test("initializeUploadHandler throws the right errors related to formatting", as
     req.params = { project: "test/upload", asset: "foo", version: "v1" };
     await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot contain");
     req.params = { project: "..test-upload", asset: "foo", version: "v1" };
-    await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot start");
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "start with");
+    req.params = { project: "", asset: "foo", version: "v1" };
+    await setup.expectError(upload.initializeUploadHandler(req, nb), "be empty");
 
     req.params = { project: "test-upload", asset: "foo/bar", version: "v1" };
     await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot contain");
-    req.params = { project: "test-upload", asset: "..foobar", version: "v1" };
-    await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot start");
 
     req.params = { project: "test-upload", asset: "foobar", version: "v/1" };
     await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot contain");
-    req.params = { project: "test-upload", asset: "foobar", version: "..v1" };
-    await setup.expectError(upload.initializeUploadHandler(req, nb), "cannot start");
 
     let create_req = body => {
         let req = new Request("http://localhost", { method: "POST", body: JSON.stringify(body) });
@@ -163,10 +161,10 @@ test("initializeUploadHandler works correctly for simple uploads", async () => {
     expect(typeof lckbody.user_name).toEqual("string");
     expect(lckbody.version).toEqual("v0");
 
-    // Check that the quota file was updated.
-    let quotinfo = await BOUND_BUCKET.get("test-upload/..quota");
-    let quotbody = await quotinfo.json();
-    expect(quotbody.pending_on_complete_only).toEqual(123);
+    // Check that the usage file was updated.
+    let usinfo = await BOUND_BUCKET.get("test-upload/..usage");
+    let usbody = await usinfo.json();
+    expect(usbody.pending_on_complete_only).toEqual(123);
 
     // Check that a version summary file was posted to the bucket.
     let sinfo = await BOUND_BUCKET.get("test-upload/blob/v0/..summary");
@@ -290,14 +288,14 @@ test("initializeUploadHandler works correctly for link-based deduplication", asy
 })
 
 test("initializeUploadHandler fails if the quota is exceeded", async () => {
-    await setup.createMockProject("test-upload", { quota: { baseline: 1000, growth_rate: 0, usage: 100, year: 2023 } });
+    await setup.createMockProject("test-upload", { quota: { baseline: 1000, growth_rate: 0, year: 2023 } });
 
     let req = new Request("http://localhost", {
         method: "POST",
         body: JSON.stringify({ 
             files: [
                 { type: "dedup", path: "WHEE", md5sum: "a4caf5afa851da451e2161a4c3ac46bb", size: 500 },
-                { type: "dedup", path: "BAR", md5sum: "4209df9c96263664123450aa48fd1bfa", size: 401 }
+                { type: "dedup", path: "BAR", md5sum: "4209df9c96263664123450aa48fd1bfa", size: 501 }
             ]
         })
     });
@@ -506,7 +504,7 @@ function createCompleteTestPayloads() {
 test("completeUploadHandler works correctly", async () => {
     await setup.simpleMockProject();
     let original_size = 999;
-    await setup.createMockProject("test-upload", { quota: { baseline: 1000, growth_rate: 10, usage: original_size } });
+    await setup.createMockProject("test-upload", { quota: { baseline: 10000, growth_rate: 10, year: (new Date).getFullYear() }, usage: { total: original_size } });
 
     let payload = createCompleteTestPayloads();
 
@@ -556,10 +554,10 @@ test("completeUploadHandler works correctly", async () => {
     let lckinfo = await BOUND_BUCKET.head("test-upload/..LOCK");
     expect(lckinfo).toBeNull();
 
-    // Checking that the quota has been updated.
-    let quotinfo = await BOUND_BUCKET.get("test-upload/..quota");
-    let quotbody = await quotinfo.json();
-    expect(quotbody.usage).toBeGreaterThan(original_size);
+    // Checking that the usage has been updated.
+    let usinfo = await BOUND_BUCKET.get("test-upload/..usage");
+    let usbody = await usinfo.json();
+    expect(usbody.total).toBeGreaterThan(original_size);
 
     // Check that an updated summary file was posted to the bucket.
     let sinfo = await BOUND_BUCKET.get("test-upload/blob/v0/..summary");
@@ -622,7 +620,7 @@ test("completeUploadHandler checks that all uploads are present", async () => {
 })
 
 test("completeUploadHandler checks that all uploads have the indicated size", async () => {
-    await setup.createMockProject("test-upload");
+    await setup.createMockProject("test-upload", { quota: { baseline: 100000, growth_rate: 10, year: (new Date).getFullYear() } });
     let payload = createCompleteTestPayloads();
 
     // Setting up the state.

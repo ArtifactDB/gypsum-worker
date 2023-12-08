@@ -35,7 +35,7 @@ test("setQuotaHandler works correctly", async () => {
         let body = await info.json();
         expect(body.baseline).toEqual(1234);
         expect(body.growth_rate).toEqual(4567);
-        expect(body.usage).toBeGreaterThan(0);
+        expect(Number.isInteger(body.year)).toBe(true);
     }
 })
 
@@ -86,36 +86,34 @@ test("setQuotaHandler fails correctly if user is not authorized", async () => {
 })
 
 test("refreshQuotaUsageHandler works correctly", async () => {
-    await BOUND_BUCKET.put(pkeys.quota("test"), JSON.stringify({ baseline: 1234, growth_rate: 5678, usage: 999999 }));
+    await BOUND_BUCKET.put(pkeys.usage("test"), JSON.stringify({ total: 999999 }));
 
     let req = new Request("http://localhost", {
         method: "PUT",
         headers: { "Content-Type": "application/json" }
     });
     req.params = { project: "test" };
-    req.query = {};
-
-    let nb = [];
     req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
-    let res = await quot.refreshQuotaUsageHandler(req, nb);
+
+    let res = await quot.refreshQuotaUsageHandler(req, []);
+    expect((await res.json()).total).toBeLessThan(999999);
 
     let bucket = s3.getR2Binding();
-    let info = await bucket.get("test/..quota");
+    let info = await bucket.get("test/..usage");
     let body = await info.json();
-    expect(body.baseline).toEqual(1234);
-    expect(body.growth_rate).toEqual(5678);
-    expect(body.usage).toBeLessThan(999999);
+    expect(body.total).toBeLessThan(999999);
 })
 
-test("refreshQuotaUsageHandler works correctly if user is not authorized", async () => {
+test("refreshQuotaUsageHandler fails correctly", async () => {
     let req = new Request("http://localhost", {
-        method: "PUT",
+        method: "POST",
         headers: { "Content-Type": "application/json" }
     });
     req.params = { project: "test" };
-    req.query = {};
-
-    let nb = [];
     req.headers.set("Authorization", "Bearer " + setup.mockTokenUser);
-    await setup.expectError(quot.refreshQuotaUsageHandler(req, nb), "not an administrator");
+    await setup.expectError(quot.refreshQuotaUsageHandler(req, []), "not an administrator");
+
+    req.params = { project: "test2" };
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
+    await setup.expectError(quot.refreshQuotaUsageHandler(req, []), "does not exist");
 })

@@ -30,7 +30,7 @@ function splitByUploadType(files) {
             throw new http.HttpError("'files.path' should be a string", 400);
         }
         let fname = f.path;
-        if (fname.startsWith("..") || fname.includes("/..")) {
+        if (misc.isInternalPath(fname)) {
             throw new http.HttpError("components of 'files.path' cannot start with '..'", 400);
         }
         if (all_paths.has(fname)) {
@@ -185,22 +185,23 @@ async function checkLinks(linked, project, asset, version, bound_bucket, manifes
     return linked_details;
 }
 
+function isBadName(name) {
+    return name.indexOf("/") >= 0 || name.startsWith("..") || name.length == 0;
+}
+
 export async function initializeUploadHandler(request, nonblockers) {
     let project = decodeURIComponent(request.params.project);
     let asset = decodeURIComponent(request.params.asset);
     let version = decodeURIComponent(request.params.version);
 
-    if (project.indexOf("/") >= 0) {
-        throw new http.HttpError("project name cannot contain '/'", 400);
+    if (isBadName(project)) {
+        throw new http.HttpError("project name cannot contain '/', start with '..', or be empty", 400);
     }
-    if (asset.indexOf("/") >= 0) {
-        throw new http.HttpError("asset name cannot contain '/'", 400);
+    if (isBadName(asset)) {
+        throw new http.HttpError("asset name cannot contain '/', start with '..', or be empty", 400);
     }
-    if (version.indexOf("/") >= 0) {
-        throw new http.HttpError("version name cannot contain '/'", 400);
-    }
-    if (project.startsWith("..") || asset.startsWith("..") || version.startsWith("..")) {
-        throw new http.HttpError("project, asset and version names cannot start with the reserved '..'", 400);
+    if (isBadName(version)) {
+        throw new http.HttpError("version name cannot contain '/', start with '..', or be empty", 400);
     }
 
     let body = await http.bodyToJson(request);
@@ -261,14 +262,14 @@ export async function initializeUploadHandler(request, nonblockers) {
             current_usage += s.size;
         }
 
-        let qpath = pkeys.quota(project);
-        let quota = await s3.quickFetchJson(qpath);
-        if (current_usage >= quot.computeRemainingSpace(quota)) {
+        let upath = pkeys.usage(project);
+        let usage = await s3.quickFetchJson(upath);
+        if (usage.total + current_usage >= (await quot.computeQuota(project))) {
             throw new http.HttpError("upload exceeds the storage quota for this project", 400);
         }
 
-        quota.pending_on_complete_only = current_usage;
-        preparation.push(s3.quickUploadJson(qpath, quota));
+        usage.pending_on_complete_only = current_usage;
+        preparation.push(s3.quickUploadJson(upath, usage));
 
         // Build a manifest for inspection.
         let manifest = {};
@@ -435,12 +436,12 @@ export async function completeUploadHandler(request, nonblockers) {
         info.upload_finish = (new Date).toISOString();
         preparation.push(s3.quickUploadJson(sumpath, info));
 
-        // Updating the quota file.
-        let qpath = pkeys.quota(project);
-        let quota = await s3.quickFetchJson(qpath);
-        quota.usage += quota.pending_on_complete_only;
-        delete quota.pending_on_complete_only;
-        preparation.push(s3.quickUploadJson(qpath, quota));
+        // Updating the usage file.
+        let upath = pkeys.usage(project);
+        let usage = await s3.quickFetchJson(upath);
+        usage.total += usage.pending_on_complete_only;
+        delete usage.pending_on_complete_only;
+        preparation.push(s3.quickUploadJson(upath, usage));
 
     } finally {
         await Promise.all(preparation);

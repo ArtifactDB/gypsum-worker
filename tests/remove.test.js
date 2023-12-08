@@ -59,6 +59,25 @@ test("removeProjectAssetHandler works correctly", async () => {
     expect(await BOUND_BUCKET.head("test/blobby/v1/..summary")).not.toBeNull();
 })
 
+test("removeProjectAssetHandler correctly updates the usage", async () => {
+    await setup.simpleMockProject();
+    await setup.mockProjectVersion("test", "blobby", "v1");
+    let original = await (await BOUND_BUCKET.get("test/..usage")).json();
+    expect(original.total).toBeGreaterThan(0);
+
+    await setup.mockProjectVersion("test", "blobbo", "v1");
+    let usage = await (await BOUND_BUCKET.get("test/..usage")).json();
+    expect(usage.total).toBeGreaterThan(original.total);
+
+    let req = new Request("http://localhost", { method: "DELETE" });
+    req.params = { project: "test", asset: "blobbo" };
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
+    await remove.removeProjectAssetHandler(req, []); 
+
+    usage = await (await BOUND_BUCKET.get("test/..usage")).json(); // quota gets updated.
+    expect(usage.total).toBe(original.total);
+})
+
 test("removeProjectAssetVersionHandler works correctly in the simple case", async () => {
     await setup.simpleMockProject();
     await new Promise(r => setTimeout(r, 100));
@@ -80,6 +99,25 @@ test("removeProjectAssetVersionHandler works correctly in the simple case", asyn
 
     // Avoids removing things with the same prefix.
     expect(await BOUND_BUCKET.head("test/blob/v2/..summary")).not.toBeNull();
+})
+
+test("removeProjectAssetVersionHandler correctly updates the usage", async () => {
+    await setup.simpleMockProject();
+    await setup.mockProjectVersion("test", "blobby", "v1");
+    let original = await (await BOUND_BUCKET.get("test/..usage")).json();
+    expect(original.total).toBeGreaterThan(0);
+
+    await setup.mockProjectVersion("test", "blobby", "v2");
+    let usage = await (await BOUND_BUCKET.get("test/..usage")).json();
+    expect(usage.total).toBeGreaterThan(original.total);
+
+    let req = new Request("http://localhost", { method: "DELETE" });
+    req.params = { project: "test", asset: "blobby", version: "v2" };
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
+    await remove.removeProjectAssetVersionHandler(req, []); 
+
+    usage = await (await BOUND_BUCKET.get("test/..usage")).json(); // quota gets updated.
+    expect(usage.total).toBe(original.total);
 })
 
 test("removeProjectAssetVersionHandler handles version updates correctly", async () => {
@@ -112,10 +150,7 @@ test("removeProjectAssetVersionHandler handles version updates correctly", async
 
 test("removeProjectAssetVersionHandler handles version updates with probational versions", async () => {
     await setup.simpleMockProject();
-    let sumpath = "test/blob/v1/..summary";
-    let existing = await (await BOUND_BUCKET.get(sumpath)).json();
-    existing.on_probation = true;
-    await BOUND_BUCKET.put(sumpath, JSON.stringify(existing), setup.jsonmeta);
+    await setup.probationalize("test", "blob", "v1");
 
     await new Promise(r => setTimeout(r, 100));
     await setup.mockProjectVersion("test", "blob", "v2");
@@ -127,7 +162,7 @@ test("removeProjectAssetVersionHandler handles version updates with probational 
 
     // Deleting the latest non-probational version wipes the latest, but not the actual contents.
     req.params = { project: "test", asset: "blob", version: "v2" };
-    await remove.removeProjectAssetVersionHandler(req, nb); 
+    await remove.removeProjectAssetVersionHandler(req, nb);
     expect(await BOUND_BUCKET.head("test/blob/..latest")).toBeNull();
-    expect(await BOUND_BUCKET.head(sumpath)).not.toBeNull();
+    expect(await BOUND_BUCKET.head("test/blob/v1/..summary")).not.toBeNull();
 })
