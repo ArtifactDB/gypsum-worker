@@ -27,7 +27,3 @@ export function splitPath(x) {
         return [x.slice(0, i), x.slice(i + 1)];
     }
 }
-
-export function isStringOrNull(x) {
-    return x == null || typeof(x) == "string" 
-}

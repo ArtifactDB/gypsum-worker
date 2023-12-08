@@ -42,7 +42,7 @@ function splitByUploadType(files) {
             throw new http.HttpError("'files.type' should be a string", 400);
         }
 
-        let [ dirname, basename] = misc.splitPath(fname);
+        let [ dirname, basename ] = misc.splitPath(fname);
         if (basename == object_file) {
             all_objects.push(dirname);
         } else if (basename == metadata_file) {

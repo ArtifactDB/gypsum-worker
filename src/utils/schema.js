@@ -1,8 +1,7 @@
 import * as misc from "../utils/misc.js";
 import * as http from "../utils/http.js";
 
-const expected_source_providers = new Set(["GEO", "ArrayExpress", "PubMed", "other"]);
-const expected_genomes = new Set(["GRCm38", "GRCh38"]);
+const allowed_genomes = new Set(["GRCm38", "GRCh38"]);
 
 function extractStringOrFail(obj, name, context) {
     if (!(name in obj)) {
@@ -35,7 +34,7 @@ export function validateMetadata(val) {
     }
 
     let taxonomy_id = extractStringOrFail(val, "taxonomy_id", null);
-    if (y.match(/^[0-9]+$/)) {
+    if (!taxonomy_id.match(/^[0-9]+$/)) {
         throw new http.HttpError("expected 'taxonomy_id' property to be a string of digits", 400);
     }
 
@@ -59,23 +58,34 @@ export function validateMetadata(val) {
     }
 
     let provider = extractStringOrFail(src, "provider", "source");
-    if (!allowed_providers.has(provider)) {
-        throw new http.HttpError("unsupported 'source.provider' value ('" + provider + "')", 400);
-    }
-
     let id = extractStringOrFail(src, "id", "source");
+
     if (provider == "other") {
         if (!id.startsWith("http") && !id.startsWith("ftp") && !id.startsWith("s3")) {
-            throw new http.HttpError("expected 'source.url' property to be a string containing a URL", 400);
+            throw new http.HttpError("expected 'source.id' property to be a string containing a URL", 400);
         }
+    } else if (provider == "GEO" ) {
+        if (!id.match(/^GSE[0-9]+$/)) {
+            throw new http.HttpError("expected 'source.id' property to follow the 'GSExxx' format", 400);
+        }
+    } else if (provider == "ArrayExpress") {
+        if (!id.match(/^E-MTAB-[0-9]+$/)) {
+            throw new http.HttpError("expected 'source.id' property to follow the 'E-MTAB-xxx' format", 400);
+        }
+    } else if (provider == "PubMed") {
+        if (!id.match(/^[0-9]+$/)) {
+            throw new http.HttpError("expected 'source.id' property to be a string containing digits", 400);
+        }
+    } else {
+        throw new http.HttpError("unknown value for the 'source.id' property ('" + provider + "')", 400);
     }
 
     // Maintainer information.
     if (!("maintainer" in val)) {
         throw new http.HttpError("missing a 'maintainer' property", 400);
     }
-    let src = val["maintainer"];
-    if (!misc.isJsonObject(src)) {
+    let mtr = val["maintainer"];
+    if (!misc.isJsonObject(mtr)) {
         throw new http.HttpError("expected 'maintainer' property to be an object", 400);
     }
 
@@ -90,8 +100,8 @@ export function validateMetadata(val) {
         }
     }
 
-    let efailed = extractStringOrFail(mtr, "email", "maintainer");
-    if (!y.match(/^[^@]+@[^@\.]+\.[^@\.]+/)) {
+    let email = extractStringOrFail(mtr, "email", "maintainer");
+    if (!email.match(/^[^@]+@[^@\.]+\.[^@\.]+/)) {
         throw new http.HttpError("expected 'maintainer.email' property to be an email", 400);
     }
 }

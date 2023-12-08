@@ -23,10 +23,3 @@ test("splitPath works correctly", () => {
     expect(split[0]).toBe("asd/whee");
     expect(split[1]).toBe("foobar");
 })
-
-test("stringOrNull works correctly", () => {
-    expect(misc.isStringOrNull("asdasd")).toBe(true);
-    expect(misc.isStringOrNull(null)).toBe(true);
-    expect(misc.isStringOrNull(1)).toBe(false);
-    expect(misc.isStringOrNull(false)).toBe(false);
-})
