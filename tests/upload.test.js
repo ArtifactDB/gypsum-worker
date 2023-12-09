@@ -158,7 +158,7 @@ test("initializeUploadHandler works correctly for simple uploads", async () => {
     // Check that a lock file was correctly created.
     let lckinfo = await BOUND_BUCKET.get("test-upload/..LOCK");
     let lckbody = await lckinfo.json();
-    expect(typeof lckbody.user_name).toEqual("string");
+    expect(typeof lckbody.session_hash).toEqual("string");
     expect(lckbody.version).toEqual("v0");
 
     // Check that the usage file was updated.
@@ -481,7 +481,7 @@ test("uploadPresignedFileHandler works as expected", async () => {
     let slug = url.slice(url.lastIndexOf("/") + 1);
     req2.params = { slug: slug };
     req2.headers.set("Authorization", "Bearer NOOOOOOO");
-    await setup.expectError(upload.uploadPresignedFileHandler(req2, nb), "different user");
+    await setup.expectError(upload.uploadPresignedFileHandler(req2, nb), "does not look like");
 
     req2.headers.set("Authorization", "Bearer " + init.session_token);
     let raw_pres = await upload.uploadPresignedFileHandler(req2, nb);
@@ -547,7 +547,10 @@ test("completeUploadHandler works correctly", async () => {
     let nb = [];
     await setup.expectError(upload.completeUploadHandler(req, nb), "no user identity");
 
-    req.headers.append("Authorization", "Bearer " + key);
+    req.headers.set("Authorization", "Bearer NOOO");
+    await setup.expectError(upload.completeUploadHandler(req, nb), "does not look like");
+
+    req.headers.set("Authorization", "Bearer " + key);
     await upload.completeUploadHandler(req, nb);
 
     // Checking that the lock on the folder has been removed.
@@ -761,7 +764,7 @@ test("abortUploadHandler works correctly", async () => {
 
     // Trying again after adding headers.
     req2.headers.set("Authorization", "Bearer NOOO");
-    await setup.expectError(upload.abortUploadHandler(req2, nb), "different user");
+    await setup.expectError(upload.abortUploadHandler(req2, nb), "does not look like");
 
     // Success!
     req2.headers.set("Authorization", "Bearer " + init.session_token);
