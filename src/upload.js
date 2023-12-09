@@ -170,7 +170,7 @@ function isBadName(name) {
     return name.indexOf("/") >= 0 || name.startsWith("..") || name.length == 0;
 }
 
-export async function initializeUploadHandler(request, nonblockers) {
+export async function initializeUploadHandler(request, env, nonblockers) {
     let project = decodeURIComponent(request.params.project);
     let asset = decodeURIComponent(request.params.asset);
     let version = decodeURIComponent(request.params.version);
@@ -198,30 +198,33 @@ export async function initializeUploadHandler(request, nonblockers) {
     }
 
     let token = auth.extractBearerToken(request);
-    let { can_manage, is_trusted, user } = await auth.checkProjectUploadPermissions(project, asset, version, token, nonblockers);
+    let { can_manage, is_trusted, user } = await auth.checkProjectUploadPermissions(project, asset, version, token, env, nonblockers);
     let uploading_user = user.login;
     if (!is_trusted) {
         probation = true;
     }
 
     let session_key = crypto.randomUUID();
-    await lock.lockProject(project, asset, version, session_key);
+    await lock.lockProject(project, asset, version, session_key, env);
 
-    let bound_bucket = s3.getR2Binding();
     let preparation = [];
     let output;
 
     try {
         let sumpath = pkeys.versionSummary(project, asset, version);
-        let ver_meta = await bound_bucket.head(sumpath);
+        let ver_meta = await env.BOUND_BUCKET.head(sumpath);
         if (ver_meta != null) {
             throw new http.HttpError("project-asset-version already exists", 400);
         }
-        preparation.push(s3.quickUploadJson(sumpath, { 
-            "upload_user_id": uploading_user, 
-            "upload_start": (new Date).toISOString(), 
-            "on_probation": probation
-        }));
+        preparation.push(s3.quickUploadJson(
+            sumpath, 
+            { 
+                "upload_user_id": uploading_user, 
+                "upload_start": (new Date).toISOString(), 
+                "on_probation": probation
+            },
+            env
+        ));
 
         // Now scanning through the files.
         if (!("files" in body) || !(body.files instanceof Array)) {
@@ -231,9 +234,9 @@ export async function initializeUploadHandler(request, nonblockers) {
 
         let manifest_cache = {};
         if (split.dedup.length) {
-            await attemptMd5Deduplication(split.simple, split.dedup, split.link, project, asset, bound_bucket, manifest_cache);
+            await attemptMd5Deduplication(split.simple, split.dedup, split.link, project, asset, env.BOUND_BUCKET, manifest_cache);
         }
-        let link_details = await checkLinks(split.link, project, asset, version, bound_bucket, manifest_cache);
+        let link_details = await checkLinks(split.link, project, asset, version, env.BOUND_BUCKET, manifest_cache);
 
         // Checking that the quota isn't exceeded. Note that 'pending_on_complete_only' 
         // should only EVER be used by completeUploadHandler, so even if it's non-zero here, 
@@ -244,13 +247,13 @@ export async function initializeUploadHandler(request, nonblockers) {
         }
 
         let upath = pkeys.usage(project);
-        let usage = await s3.quickFetchJson(upath);
-        if (usage.total + current_usage >= (await quot.computeQuota(project))) {
+        let usage = await s3.quickFetchJson(upath, env);
+        if (usage.total + current_usage >= (await quot.computeQuota(project, env))) {
             throw new http.HttpError("upload exceeds the storage quota for this project", 400);
         }
 
         usage.pending_on_complete_only = current_usage;
-        preparation.push(s3.quickUploadJson(upath, usage));
+        preparation.push(s3.quickUploadJson(upath, usage, env));
 
         // Build a manifest for inspection.
         let manifest = {};
@@ -260,7 +263,7 @@ export async function initializeUploadHandler(request, nonblockers) {
         for (const l of link_details) {
             manifest[l.path] = { size: l.size, md5sum: l.md5sum, link: l.link };
         }
-        preparation.push(s3.quickUploadJson(pkeys.versionManifest(project, asset, version), manifest));
+        preparation.push(s3.quickUploadJson(pkeys.versionManifest(project, asset, version), manifest, env));
 
         // Creating the upload URLs; this could, in theory, switch logic depending on size.
         let upload_urls = [];
@@ -286,8 +289,8 @@ export async function initializeUploadHandler(request, nonblockers) {
         await Promise.allSettled(preparation);
 
         // Unlocking the project if the upload init failed, then users can try again without penalty.
-        await s3.quickRecursiveDelete(project + "/" + asset + "/" + version + "/");
-        await lock.unlockProject(project);
+        await s3.quickRecursiveDelete(project + "/" + asset + "/" + version + "/", env);
+        await lock.unlockProject(project, env);
         throw e;
     }
 
@@ -299,28 +302,32 @@ export async function initializeUploadHandler(request, nonblockers) {
 
 /**************** Per-file upload ***************/
 
-export async function uploadPresignedFileHandler(request, nonblockers) {
+export async function uploadPresignedFileHandler(request, env, nonblockers) {
     try {
         var [ project, asset, version, path, md5sum ] = JSON.parse(atob(request.params.slug));
     } catch (e) {
         throw new http.HttpError("invalid slug ('" + request.params.slug + "') for the presigned URL endpoint; " + String(e), 400);
     }
-    await lock.checkLock(project, asset, version, auth.extractBearerToken(request));
+    await lock.checkLock(project, asset, version, auth.extractBearerToken(request), env);
 
     // Convert hex to base64 to keep S3 happy.
     let hits = md5sum.match(/\w{2}/g);
     let converted = hits.map(a => String.fromCharCode(parseInt(a, 16)));
     let md5_64 = btoa(converted.join(""));
 
-    let bucket_name = s3.getBucketName();
-    let params = { Bucket: bucket_name, Key: project + "/" + asset + "/" + version + "/" + path, Expires: 3600, ContentMD5: md5_64 };
+    let params = { 
+        Bucket: env.R2_BUCKET_NAME, 
+        Key: project + "/" + asset + "/" + version + "/" + path, 
+        Expires: 3600, 
+        ContentMD5: md5_64 
+    };
     if (path.endsWith(".json")) {
         params.ContentType = "application/json";
     } else if (path.endsWith(".html")) {
         params.ContentType = "text/html";
     }
 
-    let s3obj = s3.getS3Object();
+    const s3obj = s3.getS3Object(env);
     return http.jsonResponse({
         url: await s3obj.getSignedUrlPromise('putObject', params),
         md5sum_base64: md5_64
@@ -329,11 +336,11 @@ export async function uploadPresignedFileHandler(request, nonblockers) {
 
 /**************** Complete uploads ***************/
 
-export async function completeUploadHandler(request, nonblockers) {
+export async function completeUploadHandler(request, env, nonblockers) {
     let project = decodeURIComponent(request.params.project);
     let asset = decodeURIComponent(request.params.asset);
     let version = decodeURIComponent(request.params.version);
-    await lock.checkLock(project, asset, version, auth.extractBearerToken(request));
+    await lock.checkLock(project, asset, version, auth.extractBearerToken(request), env);
 
     let list_promise = new Promise(resolve => {
         let all_files = new Map;
@@ -341,15 +348,15 @@ export async function completeUploadHandler(request, nonblockers) {
         s3.listApply(
             prefix, 
             f => { all_files.set(f.key.slice(prefix.length), f.size); },
+            env,
             { namesOnly: false }
         ).then(x => resolve(all_files));
     });
 
-    let bound_bucket = s3.getR2Binding();
     let sumpath = pkeys.versionSummary(project, asset, version);
     let assets = await misc.namedResolve({
-        manifest: s3.quickFetchJson(pkeys.versionManifest(project, asset, version)),
-        summary: s3.quickFetchJson(sumpath),
+        manifest: s3.quickFetchJson(pkeys.versionManifest(project, asset, version), env),
+        summary: s3.quickFetchJson(sumpath, env),
         listing: list_promise,
     });
 
@@ -392,46 +399,46 @@ export async function completeUploadHandler(request, nonblockers) {
         // Create link structures within each subdirectory for bulk consumers.
         for (const [k, v] of Object.entries(linkable)) {
             // Either 'k' already has a trailing slash or is an empty string, so we can just add it to the file name.
-            preparation.push(s3.quickUploadJson(project + "/" + asset + "/" + version + "/" + k + "..links", v));
+            preparation.push(s3.quickUploadJson(project + "/" + asset + "/" + version + "/" + k + "..links", v, env));
         }
 
         if (!info.on_probation) {
-            preparation.push(s3.quickUploadJson(pkeys.latestVersion(project, asset), { "version": version }));
+            preparation.push(s3.quickUploadJson(pkeys.latestVersion(project, asset), { "version": version }, env));
             delete info.on_probation; 
         }
 
         info.upload_finish = (new Date).toISOString();
-        preparation.push(s3.quickUploadJson(sumpath, info));
+        preparation.push(s3.quickUploadJson(sumpath, info, env));
 
         // Updating the usage file.
         let upath = pkeys.usage(project);
-        let usage = await s3.quickFetchJson(upath);
+        let usage = await s3.quickFetchJson(upath, env);
         usage.total += usage.pending_on_complete_only;
         delete usage.pending_on_complete_only;
-        preparation.push(s3.quickUploadJson(upath, usage));
+        preparation.push(s3.quickUploadJson(upath, usage, env));
 
     } finally {
         await Promise.all(preparation);
     }
 
     // Release lock once we're clear.
-    await lock.unlockProject(project);
+    await lock.unlockProject(project, env);
     return new Response(null, { status: 200 });
 }
 
 /**************** Abort upload ***************/
 
-export async function abortUploadHandler(request, nonblockers) {
+export async function abortUploadHandler(request, env, nonblockers) {
     let project = decodeURIComponent(request.params.project);
     let asset = decodeURIComponent(request.params.asset);
     let version = decodeURIComponent(request.params.version);
-    await lock.checkLock(project, asset, version, auth.extractBearerToken(request));
+    await lock.checkLock(project, asset, version, auth.extractBearerToken(request), env);
 
     // Loop through all resources and delete them all. Make sure to add the trailing
     // slash to ensure that we don't delete a version that starts with 'version'.
-    await s3.quickRecursiveDelete(project + "/" + asset + "/" + version + "/");
+    await s3.quickRecursiveDelete(project + "/" + asset + "/" + version + "/", env);
 
     // Release lock once we're clear.
-    await lock.unlockProject(project);
+    await lock.unlockProject(project, env);
     return new Response(null, { status: 200 });
 }

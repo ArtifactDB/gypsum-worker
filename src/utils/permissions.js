@@ -15,18 +15,9 @@ export function extractBearerToken(request) {
     return auth.slice(7);
 }
 
-export async function findUser(token, nonblockers) {
-    // Some cursory hashing of the token to avoid problems if the cache leaks.
-    // Github's tokens should have high enough entropy that we don't need
-    // salting or iterations, see commentary at:
-    // https://security.stackexchange.com/questions/151257/what-kind-of-hashing-to-use-for-storing-rest-api-tokens-in-the-database
-    let hash;
-    {
-        const encoder = new TextEncoder();
-        const data = encoder.encode(token);
-        let digest = await crypto.subtle.digest("SHA-256", data);
-        hash = btoa(String.fromCharCode(...new Uint8Array(digest)));
-    }
+export async function findUser(token, env, nonblockers) {
+    // Use a URL key to trick the cache into accepting us.
+    let hash = await misc.hashToken(token);
     let key = "https://github.com/ArtifactDB/gypsum-actions/user/" + hash;
 
     const userCache = await caches.open("user:cache");
@@ -35,8 +26,8 @@ export async function findUser(token, nonblockers) {
         return await check.json();
     }
 
-    let user_prom = gh.identifyUser(token);
-    let org_prom = gh.identifyUserOrgs(token);
+    let user_prom = gh.identifyUser(token, env);
+    let org_prom = gh.identifyUserOrgs(token, env);
 
     // Sometimes the token doesn't provide the appropriate organization-level
     // permissions, so this ends up failing: but let's try to keep going. 
@@ -76,9 +67,9 @@ function permissions_cache_key(project) {
     return "https://github.com/ArtifactDB/gypsum-worker/permissions/" + project;
 }
 
-export async function getPermissions(project, nonblockers) {
+export async function getPermissions(project, env, nonblockers) {
     const permCache = await permissions_cache();
-    let bound_bucket = s3.getR2Binding();
+    let bound_bucket = env.BOUND_BUCKET;
 
     const key = permissions_cache_key(project);
     let check = await permCache.match(key);
@@ -129,14 +120,12 @@ export function isOneOf(user, allowed) {
     return false;
 }
 
-var admins = [];
+var admins = null;
 
-export function setAdmins(x) {
-    admins = x;
-    return;
-}
-
-export function getAdmins() {
+export function getAdmins(env) {
+    if (admins === null) {
+        admins = env.ADMIN_ACCOUNTS.split(",");
+    }
     return admins;
 }
 
@@ -208,28 +197,28 @@ export function validatePermissions(body) {
     }
 }
 
-export async function checkProjectManagementPermissions(project, token, nonblockers) {
+export async function checkProjectManagementPermissions(project, token, env, nonblockers) {
     let resolved = await misc.namedResolve({
-        user: findUser(token, nonblockers),
-        permissions: getPermissions(project, nonblockers),
+        user: findUser(token, env, nonblockers),
+        permissions: getPermissions(project, env, nonblockers),
     });
     let user = resolved.user;
     let perms = resolved.permissions;
-    if (!isOneOf(user, perms.owners) && !isOneOf(user, getAdmins())) {
+    if (!isOneOf(user, perms.owners) && !isOneOf(user, getAdmins(env))) {
         throw new http.HttpError("user is not an owner of project '" + project + "'", 403);
     }
     return user;
 }
 
-export async function checkProjectUploadPermissions(project, asset, version, token, nonblockers) {
+export async function checkProjectUploadPermissions(project, asset, version, token, env, nonblockers) {
     let resolved = await misc.namedResolve({
-        user: findUser(token, nonblockers),
-        permissions: getPermissions(project, nonblockers),
+        user: findUser(token, env, nonblockers),
+        permissions: getPermissions(project, env, nonblockers),
     });
 
     let user = resolved.user;
     let perms = resolved.permissions;
-    if (isOneOf(user, perms.owners) || isOneOf(user, getAdmins())) {
+    if (isOneOf(user, perms.owners) || isOneOf(user, getAdmins(env))) {
         return { can_manage: true, is_trusted: true, user: user };
     }
 

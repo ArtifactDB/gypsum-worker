@@ -1,11 +1,11 @@
-import * as f_ from "../src/index.js"; // need this to set the bucket bindings.
 import * as create from "../src/create.js";
 import * as s3 from "../src/utils/s3.js";
 import * as gh from "../src/utils/github.js";
 import * as setup from "./setup.js";
 
 beforeAll(async () => {
-    await setup.simpleMockProject();
+    const env = getMiniflareBindings();
+    await setup.simpleMockProject(env);
     let rigging = gh.enableTestRigging();
     setup.mockGitHubIdentities(rigging);
 })
@@ -15,6 +15,8 @@ afterAll(() => {
 })
 
 test("createHandler works correctly for permissions", async () => {
+    const env = getMiniflareBindings();
+
     {
         let req = new Request("http://localhost", {
             method: "POST",
@@ -26,24 +28,25 @@ test("createHandler works correctly for permissions", async () => {
 
         let nb = [];
         req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
-        let res = await create.createProjectHandler(req, nb);
+        let res = await create.createProjectHandler(req, env, nb);
         expect(res.status).toBe(200);
     }
 
     // Checking that some contents were posted.
     {
-        let bucket = s3.getR2Binding();
-        let info = await bucket.get("stuff/..permissions");
+        let info = await env.BOUND_BUCKET.get("stuff/..permissions");
         let body = await info.json();
         expect(body.owners).toEqual([ "foo", "bar" ]);
 
-        let qinfo = await bucket.get("stuff/..quota");
+        let qinfo = await env.BOUND_BUCKET.get("stuff/..quota");
         let qbody = await qinfo.json();
         expect("baseline" in qbody).toBe(true);
     }
 })
 
 test("createHandler works with quota specifications", async () => {
+    const env = getMiniflareBindings();
+
     {
         let req = new Request("http://localhost", {
             method: "POST",
@@ -55,18 +58,17 @@ test("createHandler works with quota specifications", async () => {
 
         let nb = [];
         req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
-        let res = await create.createProjectHandler(req, nb);
+        let res = await create.createProjectHandler(req, env, nb);
         expect(res.status).toBe(200);
     }
 
     // Checking that some contents were posted.
     {
-        let bucket = s3.getR2Binding();
-        let info = await bucket.get("stuff/..permissions");
+        let info = await env.BOUND_BUCKET.get("stuff/..permissions");
         let body = await info.json();
         expect(body.owners).toEqual([]);
 
-        let qinfo = await bucket.get("stuff/..quota");
+        let qinfo = await env.BOUND_BUCKET.get("stuff/..quota");
         let qbody = await qinfo.json();
         expect(qbody.baseline).toEqual(1e11);
         expect(qbody.growth_rate).toEqual(0);
@@ -74,6 +76,8 @@ test("createHandler works with quota specifications", async () => {
 })
 
 test("createHandler breaks correctly if project already exists", async () => {
+    const env = getMiniflareBindings();
+
     let req = new Request("http://localhost", {
         method: "POST",
         body: JSON.stringify({ permissions: { owners: ["foo"] } }),
@@ -83,10 +87,12 @@ test("createHandler breaks correctly if project already exists", async () => {
     req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
 
     let nb = [];
-    await setup.expectError(create.createProjectHandler(req, nb), "already exists");
+    await setup.expectError(create.createProjectHandler(req, env, nb), "already exists");
 })
 
 test("createHandler breaks correctly if the request is invalid", async () => {
+    const env = getMiniflareBindings();
+
     {
         let req = new Request("http://localhost", {
             method: "POST",
@@ -98,7 +104,7 @@ test("createHandler breaks correctly if the request is invalid", async () => {
         req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
 
         let nb = [];
-        await setup.expectError(create.createProjectHandler(req, nb), "cannot contain");
+        await setup.expectError(create.createProjectHandler(req, env, nb), "cannot contain");
     }
 
     {
@@ -112,7 +118,7 @@ test("createHandler breaks correctly if the request is invalid", async () => {
         req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
 
         let nb = [];
-        await setup.expectError(create.createProjectHandler(req, nb), "to be an array");
+        await setup.expectError(create.createProjectHandler(req, env, nb), "to be an array");
     }
 
     {
@@ -126,11 +132,13 @@ test("createHandler breaks correctly if the request is invalid", async () => {
         req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
 
         let nb = [];
-        await setup.expectError(create.createProjectHandler(req, nb), "to be a number");
+        await setup.expectError(create.createProjectHandler(req, env, nb), "to be a number");
     }
 });
 
 test("createProjectHandler fails correctly if user is not authorized", async () => {
+    const env = getMiniflareBindings();
+
     let req = new Request("http://localhost", {
         method: "POST",
         body: JSON.stringify({ permissions: { owners: ["your-mom"] } }),
@@ -140,9 +148,9 @@ test("createProjectHandler fails correctly if user is not authorized", async () 
     req.query = {};
 
     let nb = [];
-    await setup.expectError(create.createProjectHandler(req, nb), "user identity");
+    await setup.expectError(create.createProjectHandler(req, env, nb), "user identity");
 
     // Adding the wrong credentials.
     req.headers.set("Authorization", "Bearer " + setup.mockTokenUser);
-    await setup.expectError(create.createProjectHandler(req, nb), "not have the right to create projects");
+    await setup.expectError(create.createProjectHandler(req, env, nb), "not have the right to create projects");
 })

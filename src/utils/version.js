@@ -1,7 +1,7 @@
 import * as pkeys from "./internal.js";
 import * as s3 from "./s3.js";
 
-export async function updateLatestVersion(project, asset) {
+export async function updateLatestVersion(project, asset, env) {
     let prefix = project + "/" + asset + "/";
     let summaries = [];
     let versions = [];
@@ -9,10 +9,11 @@ export async function updateLatestVersion(project, asset) {
         prefix, 
         name => {
             if (!name.startsWith("..")) {
-                summaries.push(s3.quickFetchJson(pkeys.versionSummary(project, asset, name)));
+                summaries.push(s3.quickFetchJson(pkeys.versionSummary(project, asset, name), env));
                 versions.push(name);
             }
         }, 
+        env,
         { local: true }
     );
 
@@ -33,10 +34,9 @@ export async function updateLatestVersion(project, asset) {
     if (best_version == null) {
         // We just deleted the last (non-probational) version, so we'll
         // just clear out the latest specifier.
-        let bound_bucket = s3.getR2Binding();
-        await bound_bucket.delete(lpath);
+        await env.BOUND_BUCKET.delete(lpath);
     } else {
-        await s3.quickUploadJson(lpath, { version: best_version });
+        await s3.quickUploadJson(lpath, { version: best_version }, env);
     }
 
     return best_version;

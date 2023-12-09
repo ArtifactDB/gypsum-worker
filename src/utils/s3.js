@@ -3,77 +3,48 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import * as http from "./http.js";
 import * as misc from "./misc.js";
 
-var r2_bucket_name = "placeholder";
-var s3_object = null;
-var r2_binding = null;
-var s3_public_creds = null;
-
-export function setBucketName(name) {
-    r2_bucket_name = name;
-    return;
-}
-
-export function getBucketName() {
-    return r2_bucket_name;
-}
-
 function define_endpoint(account_id) {
     return "https://" + account_id + ".r2.cloudflarestorage.com";
 }
 
-export function setS3Object(account_id, access_key, secret_key) {
-    s3_object = { 
-        client: new S3Client({
-            endpoint: define_endpoint(account_id),
-            credentials: {
-                accessKeyId: access_key,
-                secretAccessKey: secret_key
-            },
-            region: "auto"
-        })
-    };
-
-    s3_object.getSignedUrlPromise = async (mode, params) => {
-        let command = new PutObjectCommand({ Bucket: params.Bucket, Key: params.Key, ContentMD5: params.ContentMD5 });
-        return await getSignedUrl(s3_object.client, command, { expiresIn: params.Expires });
-    }
-
-    return;
-}
+var s3_object = null;
 
 export function setS3ObjectDirectly(s3obj) { // for testing purposes only.
     s3_object = s3obj;
     return;
 }
 
-export function getS3Object() {
+export function getS3Object(env) {
+    if (s3_object === null) {
+        s3_object = { 
+            client: new S3Client({
+                endpoint: define_endpoint(env.CF_ACCOUNT_ID),
+                credentials: {
+                    accessKeyId: env.ACCESS_KEY_ID,
+                    secretAccessKey: env.SECRET_ACCESS_KEY
+                },
+                region: "auto"
+            })
+        };
+
+        s3_object.getSignedUrlPromise = async (mode, params) => {
+            let command = new PutObjectCommand({ Bucket: params.Bucket, Key: params.Key, ContentMD5: params.ContentMD5 });
+            return await getSignedUrl(s3_object.client, command, { expiresIn: params.Expires });
+        }
+    }
     return s3_object;
 }
 
-export function setR2Binding(bucket) {
-    r2_binding = bucket;
-    return;
-}
-
-export function getR2Binding(bucket) {
-    return r2_binding;
-}
-
-export function setPublicS3Credentials(account_id, bucket_name, public_key, public_secret) {
-    s3_public_creds = {
-        endpoint: define_endpoint(account_id),
-        bucket: bucket_name,
-        key: public_key,
-        secret: public_secret
+export function getPublicS3Credentials(env) {
+    return {
+        endpoint: define_endpoint(env.CF_ACCOUNT_ID),
+        bucket: env.R2_BUCKET_NAME,
+        key: env.PUBLIC_S3_KEY,
+        secret: env.PUBLIC_S3_SECRET
     };
-    return;
 }
 
-export function getPublicS3Credentials() {
-    return s3_public_creds;
-}
-
-export async function quickUploadJson(path, value, custom = null) {
+export async function quickUploadJson(path, value, env, { custom = null } = {}) {
     let meta = {
         httpMetadata: { contentType: "application/json" }
     };
@@ -82,13 +53,13 @@ export async function quickUploadJson(path, value, custom = null) {
         meta.customMetadata = custom;
     }
 
-    if ((await r2_binding.put(path, JSON.stringify(value), meta)) == null) {
+    if ((await env.BOUND_BUCKET.put(path, JSON.stringify(value), meta)) == null) {
         throw new http.HttpError("failed to upload '" + path + "'", 500);
     }
 }
 
-export async function quickFetchJson(path, mustWork = true) {
-    let payload = await r2_binding.get(path);
+export async function quickFetchJson(path, env, { mustWork = true } = {}) {
+    let payload = await env.BOUND_BUCKET.get(path);
     if (payload == null) {
         if (mustWork) {
             // 500 error because these are internal files that SHOULD exist.
@@ -105,7 +76,7 @@ export async function quickFetchJson(path, mustWork = true) {
     }
 }
 
-export async function listApply(prefix, op, { namesOnly = true, trimPrefix = true, local = false, list_limit = 1000 } = {}) {
+export async function listApply(prefix, op, env, { namesOnly = true, trimPrefix = true, local = false, list_limit = 1000 } = {}) {
     let list_options = { limit: list_limit };
     if (prefix != null) {
         list_options.prefix = prefix;
@@ -118,7 +89,7 @@ export async function listApply(prefix, op, { namesOnly = true, trimPrefix = tru
 
     let truncated = true;
     while (true) {
-        let listing = await r2_binding.list(list_options);
+        let listing = await env.BOUND_BUCKET.list(list_options);
 
         if (local) {
             if (trimPrefix) {
@@ -147,17 +118,18 @@ export async function listApply(prefix, op, { namesOnly = true, trimPrefix = tru
     }
 }
 
-export async function quickRecursiveDelete(prefix, { list_limit = 1000 } = {}) {
+export async function quickRecursiveDelete(prefix, env, { list_limit = 1000 } = {}) {
     let deletions = [];
     let freed = 0;
     await listApply(
         prefix, 
         f => {
-            deletions.push(r2_binding.delete(f.key));
+            deletions.push(env.BOUND_BUCKET.delete(f.key));
             if (!misc.isInternalPath(f.key)) {
                 freed += f.size;
             }
         },
+        env,
         { list_limit: list_limit, namesOnly: false }
     );
     await Promise.all(deletions);

@@ -1,19 +1,7 @@
 import * as uh from "./http.js";
 
 const api = "https://api.github.com";
-var user_agent = "placeholder";
 var test_rigging = null;
-var app_credentials = null;
-
-export function setRepository(repo) {
-    repository = repo;
-    return;
-}
-
-export function setUserAgent(agent) {
-    user_agent = agent;
-    return;
-}
 
 export function enableTestRigging(enable = true) {
     if (enable) {
@@ -39,7 +27,7 @@ async function propagate_github_error(res, base_txt, base_code) {
     throw new uh.HttpError(base_txt, base_code);
 }
 
-export async function identifyUser(token) {
+export async function identifyUser(token, env) {
     if (test_rigging != null) {
         // Fallback for testing purposes.
         return new Response(JSON.stringify(test_rigging.identifyUser[token]));
@@ -50,7 +38,7 @@ export async function identifyUser(token) {
     let res = await fetch(URL, { 
         headers: {
             "Authorization": "Bearer " + token,
-            "User-Agent": user_agent
+            "User-Agent": env.GITHUB_USER_AGENT
         }
     });
 
@@ -59,7 +47,7 @@ export async function identifyUser(token) {
     return res;
 }
 
-export async function identifyUserOrgs(token) {
+export async function identifyUserOrgs(token, env) {
     if (test_rigging != null) {
         // Fallback for testing purposes.
         return new Response(JSON.stringify(test_rigging.identifyUserOrgs[token]));
@@ -70,7 +58,7 @@ export async function identifyUserOrgs(token) {
     let res = await fetch(URL, { 
         headers: {
             "Authorization": "Bearer " + token,
-            "User-Agent": user_agent
+            "User-Agent": env.GITHUB_USER_AGENT
         }
     });
 
@@ -79,14 +67,9 @@ export async function identifyUserOrgs(token) {
     return res;
 }
 
-export function setGitHubAppCredentials(app_id, app_secret) {
-    app_credentials = {
-        id: app_id,
-        secret: app_secret
+export function getGitHubAppCredentials(env) {
+    return {
+        id: env.GITHUB_APP_ID,
+        secret: env.GITHUB_APP_SECRET
     };
-    return;
-}
-
-export function getGitHubAppCredentials() {
-    return app_credentials;
 }

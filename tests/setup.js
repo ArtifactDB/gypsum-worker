@@ -53,27 +53,27 @@ export const jsonmeta = {
     httpMetadata: { contentType: "application/json" }
 };
 
-export async function createMockProject(project, { permissions = null, quota = null, usage = null } = {}) {
+export async function createMockProject(project, env, { permissions = null, quota = null, usage = null } = {}) {
     let permpath = project + "/..permissions";
     if (permissions == null) {
         permissions = { owners: ["ProjectOwner"], uploaders: [] };
     }
-    await BOUND_BUCKET.put(permpath, JSON.stringify(permissions), jsonmeta);
+    await env.BOUND_BUCKET.put(permpath, JSON.stringify(permissions), jsonmeta);
 
     let qpath = project + "/..quota";
     if (quota == null) {
         quota = { baseline: 1000, growth_rate: 100, year: (new Date).getFullYear() };
     }
-    await BOUND_BUCKET.put(qpath, JSON.stringify(quota), jsonmeta);
+    await env.BOUND_BUCKET.put(qpath, JSON.stringify(quota), jsonmeta);
 
     let upath = project + "/..usage";
     if (usage == null) {
         usage = { total : 0 };
     }
-    await BOUND_BUCKET.put(upath, JSON.stringify(usage), jsonmeta);
+    await env.BOUND_BUCKET.put(upath, JSON.stringify(usage), jsonmeta);
 }
 
-export async function mockProjectVersion(project, asset, version) {
+export async function mockProjectVersion(project, asset, version, env) {
     let contents = "";
     for (var i = 1; i <= 100; i++) {
         contents += String(i) + "\n";
@@ -88,12 +88,12 @@ export async function mockProjectVersion(project, asset, version) {
     let manifest = {};
     let base = project + "/" + asset + "/" + version;
     for (const [rpath, contents] of Object.entries(files)) {
-        promises.push(BOUND_BUCKET.put(base + "/" + rpath, contents));
+        promises.push(env.BOUND_BUCKET.put(base + "/" + rpath, contents));
         manifest[rpath] = { size: contents.length, md5sum: computeHash(contents) };
     }
     await Promise.all(promises);
 
-    await BOUND_BUCKET.put(base + "/..summary",
+    await env.BOUND_BUCKET.put(base + "/..summary",
         JSON.stringify({
             upload_user_id: "chihaya-kisaragi",
             upload_started: (new Date).toISOString(),
@@ -102,29 +102,29 @@ export async function mockProjectVersion(project, asset, version) {
         jsonmeta
     );
 
-    await BOUND_BUCKET.put(base + "/..manifest", JSON.stringify(manifest), jsonmeta);
+    await env.BOUND_BUCKET.put(base + "/..manifest", JSON.stringify(manifest), jsonmeta);
 
     let upath = project + "/..usage";
-    let usage = await (await BOUND_BUCKET.get(upath)).json();
+    let usage = await (await env.BOUND_BUCKET.get(upath)).json();
     for (const x of Object.values(files)) {
         usage.total += x.length;
     }
-    await BOUND_BUCKET.put(upath, JSON.stringify(usage), jsonmeta);
+    await env.BOUND_BUCKET.put(upath, JSON.stringify(usage), jsonmeta);
 
     let latest = { version: version };
-    await BOUND_BUCKET.put(project + "/" + asset + "/..latest", JSON.stringify(latest), jsonmeta);
+    await env.BOUND_BUCKET.put(project + "/" + asset + "/..latest", JSON.stringify(latest), jsonmeta);
 
     return files;
 }
 
-export async function simpleMockProject() {
-    await createMockProject("test");
-    return mockProjectVersion("test", "blob", "v1");
+export async function simpleMockProject(env) {
+    await createMockProject("test", env);
+    return mockProjectVersion("test", "blob", "v1", env);
 }
 
-export async function probationalize(project, asset, version) {
+export async function probationalize(project, asset, version, env) {
     let sumpath = project + "/" + asset + "/" + version + "/..summary";
-    let existing = await (await BOUND_BUCKET.get(sumpath)).json();
+    let existing = await (await env.BOUND_BUCKET.get(sumpath)).json();
     existing.on_probation = true;
-    await BOUND_BUCKET.put(sumpath, JSON.stringify(existing), jsonmeta);
+    await env.BOUND_BUCKET.put(sumpath, JSON.stringify(existing), jsonmeta);
 }

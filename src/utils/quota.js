@@ -4,7 +4,7 @@ import * as http from "./http.js";
 import * as lock from "./lock.js";
 import * as pkeys from "./internal.js";
 
-export async function getProjectUsage(project) {
+export async function getProjectUsage(project, env) {
     let total = 0;
 
     await s3.listApply(
@@ -15,6 +15,7 @@ export async function getProjectUsage(project) {
                 total += f.size; 
             }
         },
+        env,
         { namesOnly: false }
     );
 
@@ -47,17 +48,17 @@ export function defaults() {
     };
 }
 
-export async function computeQuota(project) {
-    let quota = await s3.quickFetchJson(pkeys.quota(project));
+export async function computeQuota(project, env) {
+    let quota = await s3.quickFetchJson(pkeys.quota(project), env);
     return quota.baseline + ((new Date).getFullYear() - quota.year) * quota.growth_rate;
 }
 
-export async function updateQuotaOnDeletion(project, freed) {
+export async function updateQuotaOnDeletion(project, freed, env) {
     let usepath = pkeys.usage(project);
-    let usage = await s3.quickFetchJson(usepath);
+    let usage = await s3.quickFetchJson(usepath, env);
     usage.total -= freed;
     if (usage.total < 0) {
         usage.total = 0;
     }
-    await s3.quickUploadJson(usepath, usage);
+    await s3.quickUploadJson(usepath, usage, env);
 }

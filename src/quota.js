@@ -6,17 +6,17 @@ import * as s3 from "./utils/s3.js";
 import * as quot from "./utils/quota.js";
 import * as lock from "./utils/lock.js";
 
-export async function setQuotaHandler(request, nonblockers) {
+export async function setQuotaHandler(request, env, nonblockers) {
     let project = decodeURIComponent(request.params.project);
 
     let token = auth.extractBearerToken(request);
-    let user = await auth.findUser(token, nonblockers);
-    if (!auth.isOneOf(user, auth.getAdmins())) {
+    let user = await auth.findUser(token, env, nonblockers);
+    if (!auth.isOneOf(user, auth.getAdmins(env))) {
         throw new http.HttpError("user is not an administrator", 403);
     }
 
     let qpath = pkeys.quota(project);
-    let qdata = await s3.quickFetchJson(qpath, false);
+    let qdata = await s3.quickFetchJson(qpath, env, { mustWork: false });
     if (qdata == null) {
         throw new http.HttpError("project does not exist", 400);
     }
@@ -29,21 +29,21 @@ export async function setQuotaHandler(request, nonblockers) {
         }
     }
 
-    await s3.quickUploadJson(qpath, qdata);
+    await s3.quickUploadJson(qpath, qdata, env);
     return new Response(null, { status: 200 });
 }
 
-export async function refreshQuotaUsageHandler(request, nonblockers) {
+export async function refreshQuotaUsageHandler(request, env, nonblockers) {
     let project = decodeURIComponent(request.params.project);
 
     let token = auth.extractBearerToken(request);
-    let user = await auth.findUser(token, nonblockers);
-    if (!auth.isOneOf(user, auth.getAdmins())) {
+    let user = await auth.findUser(token, env, nonblockers);
+    if (!auth.isOneOf(user, auth.getAdmins(env))) {
         throw new http.HttpError("user is not an administrator", 403);
     }
 
     let upath = pkeys.usage(project);
-    let udata = await s3.quickFetchJson(upath, false);
+    let udata = await s3.quickFetchJson(upath, env, { mustWork: false });
     if (udata == null) {
         throw new http.HttpError("project does not exist", 400);
     }
@@ -51,13 +51,13 @@ export async function refreshQuotaUsageHandler(request, nonblockers) {
     // If we want to get the usage, we need to wait until the lock has been acquired.
     // Otherwise, the count will include the in-progress upload.
     let session_key = crypto.randomUUID();
-    await lock.lockProject(project, "placeholder", "placeholder", session_key);
+    await lock.lockProject(project, "placeholder", "placeholder", session_key, env);
 
     try {
-        udata.total = await quot.getProjectUsage(project);
-        await s3.quickUploadJson(upath, udata);
+        udata.total = await quot.getProjectUsage(project, env);
+        await s3.quickUploadJson(upath, udata, env);
     } finally {
-        await lock.unlockProject(project);
+        await lock.unlockProject(project, env);
     }
 
     return new http.jsonResponse(udata, 200);
