@@ -1,17 +1,7 @@
 import * as http from "./http.js";
 import * as pkeys from "./internal.js";
 import * as s3 from "./s3.js";
-
-async function hashToken(session_token) {
-    // We need to hash the token as the LOCK is publicly viewable.  Our tokens
-    // are UUIDs and these should have high enough entropy that we don't need
-    // salting or iterations, see commentary at:
-    // https://security.stackexchange.com/questions/151257/what-kind-of-hashing-to-use-for-storing-rest-api-tokens-in-the-database
-    const encoder = new TextEncoder();
-    const data = encoder.encode(session_token);
-    let digest = await crypto.subtle.digest("SHA-256", data);
-    return btoa(String.fromCharCode(...new Uint8Array(digest)));
-}
+import * as misc from "./misc.js";
 
 export async function lockProject(project, asset, version, session_token, env) {
     let bound_bucket = env.BOUND_BUCKET;
@@ -33,7 +23,7 @@ export async function lockProject(project, asset, version, session_token, env) {
      * process (which might get rate limited). It's no slower as the GitHub
      * token needs to be hashed for local caching anyway.
      */
-    let hash = await hashToken(session_token);
+    let hash = await misc.hashToken(session_token);
     await bound_bucket.put(lck, JSON.stringify({ session_hash: hash, asset: asset, version: version }));
     return;
 }
@@ -55,7 +45,7 @@ export async function checkLock(project, asset, version, session_token, env) {
     if (!session_token.match(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)) {
         throw new http.HttpError("session token does not look like a v4 UUID", 403);
     }
-    let hash = await hashToken(session_token);
+    let hash = await misc.hashToken(session_token);
 
     let body = await g.json();
     if (body.session_hash !== hash) {

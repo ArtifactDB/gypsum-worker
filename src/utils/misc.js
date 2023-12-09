@@ -18,3 +18,17 @@ export async function namedResolve(x) {
 
     return output;
 }
+
+export async function hashToken(token) {
+    // This creates a hash of a token for storage at rest. Upon seeing a new
+    // token, we hash it and compare it to the stored one to determine whether
+    // they match. We need to hash the token as the stored one could be public,
+    // either from a cache leak or because the R2 bucket is generally public.
+    // It is expected that tokens are machine-generated and have high enough
+    // entropy that we don't need salting or iterations, see commentary at:
+    // https://security.stackexchange.com/questions/151257/what-kind-of-hashing-to-use-for-storing-rest-api-tokens-in-the-database
+    const encoder = new TextEncoder();
+    const data = encoder.encode(token);
+    let digest = await crypto.subtle.digest("SHA-256", data);
+    return btoa(String.fromCharCode(...new Uint8Array(digest)));
+}

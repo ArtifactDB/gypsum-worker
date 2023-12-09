@@ -16,17 +16,8 @@ export function extractBearerToken(request) {
 }
 
 export async function findUser(token, env, nonblockers) {
-    // Some cursory hashing of the token to avoid problems if the cache leaks.
-    // Github's tokens should have high enough entropy that we don't need
-    // salting or iterations, see commentary at:
-    // https://security.stackexchange.com/questions/151257/what-kind-of-hashing-to-use-for-storing-rest-api-tokens-in-the-database
-    let hash;
-    {
-        const encoder = new TextEncoder();
-        const data = encoder.encode(token);
-        let digest = await crypto.subtle.digest("SHA-256", data);
-        hash = btoa(String.fromCharCode(...new Uint8Array(digest)));
-    }
+    // Use a URL key to trick the cache into accepting us.
+    let hash = await misc.hashToken(token);
     let key = "https://github.com/ArtifactDB/gypsum-actions/user/" + hash;
 
     const userCache = await caches.open("user:cache");
