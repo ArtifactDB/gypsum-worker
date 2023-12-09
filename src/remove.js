@@ -78,7 +78,7 @@ export async function removeProjectAssetVersionHandler(request, env, nonblockers
 
         // Need to go through and update the latest version of the asset, in case
         // we just deleted the latest version.
-        let linfo = await s3.quickFetchJson(pkeys.latestVersion(project, asset), env, false);
+        let linfo = await s3.quickFetchJson(pkeys.latestVersion(project, asset), env, { mustWork: false });
         if (linfo !== null && linfo.version == version) {
             await vers.updateLatestVersion(project, asset, env);
         }

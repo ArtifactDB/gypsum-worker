@@ -16,7 +16,7 @@ export async function setQuotaHandler(request, env, nonblockers) {
     }
 
     let qpath = pkeys.quota(project);
-    let qdata = await s3.quickFetchJson(qpath, env, false);
+    let qdata = await s3.quickFetchJson(qpath, env, { mustWork: false });
     if (qdata == null) {
         throw new http.HttpError("project does not exist", 400);
     }
@@ -43,7 +43,7 @@ export async function refreshQuotaUsageHandler(request, env, nonblockers) {
     }
 
     let upath = pkeys.usage(project);
-    let udata = await s3.quickFetchJson(upath, env, false);
+    let udata = await s3.quickFetchJson(upath, env, { mustWork: false });
     if (udata == null) {
         throw new http.HttpError("project does not exist", 400);
     }

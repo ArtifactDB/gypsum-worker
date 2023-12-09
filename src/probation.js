@@ -21,7 +21,7 @@ export async function approveProbationHandler(request, env, nonblockers) {
 
     try {
         let sumpath = pkeys.versionSummary(project, asset, version);
-        let info = await s3.quickFetchJson(sumpath, env, false);
+        let info = await s3.quickFetchJson(sumpath, env, { mustWork: false });
         if (info == null) {
             throw new http.HttpError("version does not exist", 400);
         }
@@ -32,7 +32,7 @@ export async function approveProbationHandler(request, env, nonblockers) {
         await s3.quickUploadJson(sumpath, info, env);
 
         let latpath = pkeys.latestVersion(project, asset);
-        let latest = await s3.quickFetchJson(latpath, env, false);
+        let latest = await s3.quickFetchJson(latpath, env, { mustWork: false });
         let is_latest = true;
         if (latest !== null) {
             let latest_info = await s3.quickFetchJson(pkeys.versionSummary(project, asset, latest.version), env);
@@ -67,7 +67,7 @@ export async function rejectProbationHandler(request, env, nonblockers) {
 
     try {
         let sumpath = pkeys.versionSummary(project, asset, version);
-        let info = await s3.quickFetchJson(sumpath, env, false);
+        let info = await s3.quickFetchJson(sumpath, env, { mustWork: false });
         if (info == null) {
             throw new http.HttpError("version does not exist", 400);
         }

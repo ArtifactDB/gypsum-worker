@@ -14,7 +14,7 @@ export async function setPermissionsHandler(request, env, nonblockers) {
     // Don't use the cache: get the file from storage again,
     // just in case it was updated at some point.
     let path = pkeys.permissions(project);
-    let perms = await s3.quickFetchJson(path, env, false);
+    let perms = await s3.quickFetchJson(path, env, { mustWork: false });
     if (perms == null) {
         throw new http.HttpError("project '" + project + "' does not exist", 404);
     }

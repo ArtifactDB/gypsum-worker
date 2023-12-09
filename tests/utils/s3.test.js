@@ -15,7 +15,7 @@ test("quick JSON uploading works as expected", async () => {
 
     // Adding custom metadata.
     {
-        await s3.quickUploadJson("urmom.txt", { "name": "Your", "value": "Mom" }, env, { "link": "FOO" });
+        await s3.quickUploadJson("urmom.txt", { "name": "Your", "value": "Mom" }, env, { custom: { "link": "FOO" } });
         let res = await env.BOUND_BUCKET.head("urmom.txt");
         expect(res.customMetadata.link).toBe("FOO");
         await env.BOUND_BUCKET.delete("urmom.txt");

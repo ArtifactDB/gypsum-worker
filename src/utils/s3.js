@@ -44,7 +44,7 @@ export function getPublicS3Credentials(env) {
     };
 }
 
-export async function quickUploadJson(path, value, env, custom = null) {
+export async function quickUploadJson(path, value, env, { custom = null } = {}) {
     let meta = {
         httpMetadata: { contentType: "application/json" }
     };
@@ -58,7 +58,7 @@ export async function quickUploadJson(path, value, env, custom = null) {
     }
 }
 
-export async function quickFetchJson(path, env, mustWork = true) {
+export async function quickFetchJson(path, env, { mustWork = true } = {}) {
     let payload = await env.BOUND_BUCKET.get(path);
     if (payload == null) {
         if (mustWork) {
