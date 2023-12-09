@@ -1,4 +1,3 @@
-import * as f_ from "../../src/index.js";
 import * as misc from "../../src/utils/misc.js";
 
 test("named resolve works as expected", async () => {

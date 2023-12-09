@@ -1,10 +1,10 @@
-import * as f_ from "../../src/index.js"; // need this to set the bucket bindings.
 import * as gh from "../../src/utils/github.js";
 import * as auth from "../../src/utils/permissions.js";
 import * as setup from "../setup.js";
 
 beforeAll(async () => {
-    await setup.simpleMockProject();
+    const env = getMiniflareBindings();
+    await setup.simpleMockProject(env);
     let rigging = gh.enableTestRigging();
     setup.mockGitHubIdentities(rigging);
 })
@@ -30,43 +30,47 @@ test("extractBearerToken works correctly", async () => {
 })
 
 test("findUser works correctly", async () => {
+    const env = getMiniflareBindings();
+
     let nb = [];
-    let res = await auth.findUser(setup.mockTokenOwner, nb);
+    let res = await auth.findUser(setup.mockTokenOwner, env, nb);
     expect(res.login).toEqual("ProjectOwner");
     expect(res.organizations).toEqual(["STUFF"]);
     expect(nb.length).toBeGreaterThan(0);
 
     // Just fetches it from cache, so no cache insertion is performed.
     let nb2 = [];
-    let res2 = await auth.findUser(setup.mockTokenOwner, nb2);
+    let res2 = await auth.findUser(setup.mockTokenOwner, env, nb2);
     expect(res2.login).toEqual("ProjectOwner");
     expect(nb2.length).toBe(0);
 
     // Works with no organizations:
-    res2 = await auth.findUser(setup.mockTokenAdmin, nb2);
+    res2 = await auth.findUser(setup.mockTokenAdmin, env, nb2);
     expect(res2.login).toEqual("LTLA");
     expect(res2.organizations).toEqual([]);
 
     // Checking that the organizations are returned properly...
     // also check that the caching doesn't just return the same result.
-    let res3 = await auth.findUser(setup.mockTokenUser, nb);
+    let res3 = await auth.findUser(setup.mockTokenUser, env, nb);
     expect(res3.login).toEqual("RandomDude");
     expect(res3.organizations).toEqual(["FOO", "BAR"]);
 })
 
 test("getPermissions works correctly", async () => {
+    const env = getMiniflareBindings();
+
     let nb = [];
-    let out = await auth.getPermissions("test", nb);
+    let out = await auth.getPermissions("test", env, nb);
     expect(out.owners).toEqual(["ProjectOwner"]);
     expect(nb.length).toBeGreaterThan(0);
     await Promise.all(nb);
 
     // Fails correctly.
-    await setup.expectError(auth.getPermissions("nonexistent", nb), "no existing permissions");
+    await setup.expectError(auth.getPermissions("nonexistent", env, nb), "no existing permissions");
 
     // Fetches from cache.
     let nb2 = [];
-    let out2 = await auth.getPermissions("test", nb2);
+    let out2 = await auth.getPermissions("test", env, nb2);
     expect(out2.owners).toEqual(["ProjectOwner"]);
     expect(nb2.length).toBe(0);
 
@@ -83,18 +87,14 @@ test("isOneOf works correctly", () => {
     expect(auth.isOneOf({login:"luna", organizations:["foo", "bar"]}, ["akari", "foo", "kaori"])).toBe(true)
 })
 
-test("setting admins works correctly", async () => {
-    let old = auth.getAdmins();
+test("extracting admins works correctly", async () => {
+    const env = getMiniflareBindings();
+    let admins = auth.getAdmins(env);
+    expect(admins.length).toBeGreaterThan(0);
 
     // Check that our admin token is actually in the set of admins.
-    expect(old.indexOf((await auth.findUser(setup.mockTokenAdmin, [])).login)).toBeGreaterThanOrEqual(0);
-
-    try {
-        auth.setAdmins(["a", "b", "c"]);
-        expect(auth.getAdmins()).toEqual(["a", "b", "c"]);
-    } finally {
-        auth.setAdmins(old);
-    }
+    let test_admin = (await auth.findUser(setup.mockTokenAdmin, env, [])).login;
+    expect(admins.indexOf(test_admin)).toBeGreaterThanOrEqual(0);
 })
 
 test("validatePermissions works correctly", () => {
@@ -128,66 +128,70 @@ test("validatePermissions works correctly", () => {
 })
 
 test("checkProjectManagementPermissions works correctly", async () => {
+    const env = getMiniflareBindings();
+
     let nb = [];
-    await auth.checkProjectManagementPermissions("test", setup.mockTokenOwner, nb);
-    await setup.expectError(auth.checkProjectManagementPermissions("test", setup.mockTokenUser, nb), "not an owner");
-    await auth.checkProjectManagementPermissions("test", setup.mockTokenAdmin, nb);
+    await auth.checkProjectManagementPermissions("test", setup.mockTokenOwner, env, nb);
+    await setup.expectError(auth.checkProjectManagementPermissions("test", setup.mockTokenUser, env, nb), "not an owner");
+    await auth.checkProjectManagementPermissions("test", setup.mockTokenAdmin, env, nb);
 })
 
 test("checkProjectUploadPermissions works correctly", async () => {
+    const env = getMiniflareBindings();
+
     let nb = [];
-    let out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenOwner, nb);
+    let out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenOwner, env, nb);
     expect(out.can_manage).toBe(true);
     expect(out.is_trusted).toBe(true);
 
-    await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb), "not authorized to upload");
+    await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, env, nb), "not authorized to upload");
 
-    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenAdmin, nb);
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenAdmin, env, nb);
     expect(out.can_manage).toBe(true);
     expect(out.is_trusted).toBe(true);
 
     // Alright time to get wild.
-    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude" } ] }');
+    await env.BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude" } ] }');
     await auth.flushCachedPermissions("test", nb);
-    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb);
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, env, nb);
     expect(out.can_manage).toBe(false);
     expect(out.is_trusted).toBe(false);
 
-    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "asset": "foo" } ] }');
+    await env.BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "asset": "foo" } ] }');
     await auth.flushCachedPermissions("test", nb);
-    await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb), "not authorized to upload");
-    out = await auth.checkProjectUploadPermissions("test", "foo", "v1", setup.mockTokenUser, nb);
+    await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, env, nb), "not authorized to upload");
+    out = await auth.checkProjectUploadPermissions("test", "foo", "v1", setup.mockTokenUser, env, nb);
     expect(out.can_manage).toBe(false);
     expect(out.is_trusted).toBe(false);
 
-    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "version": "foo" } ] }');
+    await env.BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "version": "foo" } ] }');
     await auth.flushCachedPermissions("test", nb);
-    await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb), "not authorized to upload");
-    out = await auth.checkProjectUploadPermissions("test", "blob", "foo", setup.mockTokenUser, nb);
+    await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, env, nb), "not authorized to upload");
+    out = await auth.checkProjectUploadPermissions("test", "blob", "foo", setup.mockTokenUser, env, nb);
     expect(out.can_manage).toBe(false);
     expect(out.is_trusted).toBe(false);
 
-    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "until": "1989-11-09" } ] }');
+    await env.BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "until": "1989-11-09" } ] }');
     await auth.flushCachedPermissions("test", nb);
-    await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb), "not authorized to upload");
+    await setup.expectError(auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, env, nb), "not authorized to upload");
     expect(out.can_manage).toBe(false);
     expect(out.is_trusted).toBe(false);
 
-    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "until": "' + (new Date(Date.now() + 10000)).toISOString() + '" } ] }');
+    await env.BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "until": "' + (new Date(Date.now() + 10000)).toISOString() + '" } ] }');
     await auth.flushCachedPermissions("test", nb);
-    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb);
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, env, nb);
     expect(out.can_manage).toBe(false);
     expect(out.is_trusted).toBe(false);
 
-    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "trusted": false } ] }');
+    await env.BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "trusted": false } ] }');
     await auth.flushCachedPermissions("test", nb);
-    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb);
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, env, nb);
     expect(out.can_manage).toBe(false);
     expect(out.is_trusted).toBe(false);
 
-    await BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "trusted": true } ] }');
+    await env.BOUND_BUCKET.put("test/..permissions", '{ "owners": [ "ProjectOwner" ], "uploaders": [ { "id": "RandomDude", "trusted": true } ] }');
     await auth.flushCachedPermissions("test", nb);
-    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, nb);
+    out = await auth.checkProjectUploadPermissions("test", "blob", "v1", setup.mockTokenUser, env, nb);
     expect(out.can_manage).toBe(false);
     expect(out.is_trusted).toBe(true);
 })

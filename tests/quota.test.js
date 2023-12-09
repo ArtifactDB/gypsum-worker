@@ -1,4 +1,3 @@
-import * as f_ from "../src/index.js"; // need this to set the bucket bindings.
 import * as quot from "../src/quota.js";
 import * as s3 from "../src/utils/s3.js";
 import * as pkeys from "../src/utils/internal.js";
@@ -6,12 +5,15 @@ import * as gh from "../src/utils/github.js";
 import * as setup from "./setup.js";
 
 beforeAll(async () => {
-    await setup.simpleMockProject();
+    const env = getMiniflareBindings();
+    await setup.simpleMockProject(env);
     let rigging = gh.enableTestRigging();
     setup.mockGitHubIdentities(rigging);
 })
 
 test("setQuotaHandler works correctly", async () => {
+    const env = getMiniflareBindings();
+
     {
         let req = new Request("http://localhost", {
             method: "PUT",
@@ -23,15 +25,14 @@ test("setQuotaHandler works correctly", async () => {
 
         let nb = [];
         req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
-        let res = await quot.setQuotaHandler(req, nb);
+        let res = await quot.setQuotaHandler(req, env, nb);
         expect(res.status).toBe(200);
         expect(nb.length).toBeGreaterThan(0);
     }
 
     // Checking that the update was propagated.
     {
-        let bucket = s3.getR2Binding();
-        let info = await bucket.get("test/..quota");
+        let info = await env.BOUND_BUCKET.get("test/..quota");
         let body = await info.json();
         expect(body.baseline).toEqual(1234);
         expect(body.growth_rate).toEqual(4567);
@@ -40,16 +41,20 @@ test("setQuotaHandler works correctly", async () => {
 })
 
 test("setQuotaHandler breaks correctly if project doesn't exist", async () => {
+    const env = getMiniflareBindings();
+
     let req = new Request("http://localhost");
     req.params = { project: "test-foo" };
     req.query = { "owners": [] };
     req.headers.append("Authorization", "Bearer " + setup.mockTokenAdmin);
 
     let nb = [];
-    await setup.expectError(quot.setQuotaHandler(req, nb), "project does not exist");
+    await setup.expectError(quot.setQuotaHandler(req, env, nb), "project does not exist");
 })
 
 test("setQuotaHandler breaks correctly if the request body is invalid", async () => {
+    const env = getMiniflareBindings();
+
     let req = new Request("http://localhost", {
         method: "PUT",
         body: JSON.stringify({ baseline: "foo" }),
@@ -60,10 +65,12 @@ test("setQuotaHandler breaks correctly if the request body is invalid", async ()
     req.headers.append("Authorization", "Bearer " + setup.mockTokenAdmin);
 
     let nb = [];
-    await setup.expectError(quot.setQuotaHandler(req, nb), "'baseline' to be a number");
+    await setup.expectError(quot.setQuotaHandler(req, env, nb), "'baseline' to be a number");
 });
 
 test("setQuotaHandler fails correctly if user is not authorized", async () => {
+    const env = getMiniflareBindings();
+
     let req = new Request("http://localhost", {
         method: "PUT",
         body: JSON.stringify({ baseline: 1000 }),
@@ -73,20 +80,21 @@ test("setQuotaHandler fails correctly if user is not authorized", async () => {
     req.query = {};
 
     let nb = [];
-    await setup.expectError(quot.setQuotaHandler(req, nb), "user identity");
+    await setup.expectError(quot.setQuotaHandler(req, env, nb), "user identity");
 
     // Adding the wrong credentials.
     req.headers.set("Authorization", "Bearer " + setup.mockTokenUser);
-    await setup.expectError(quot.setQuotaHandler(req, nb), "not an administrator");
+    await setup.expectError(quot.setQuotaHandler(req, env, nb), "not an administrator");
 
     // Fixing the credentials, so now it works...
     req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
-    let res = await quot.setQuotaHandler(req, nb); 
+    let res = await quot.setQuotaHandler(req, env, nb); 
     expect(res.status).toBe(200);
 })
 
 test("refreshQuotaUsageHandler works correctly", async () => {
-    await BOUND_BUCKET.put(pkeys.usage("test"), JSON.stringify({ total: 999999 }));
+    const env = getMiniflareBindings();
+    await env.BOUND_BUCKET.put(pkeys.usage("test"), JSON.stringify({ total: 999999 }));
 
     let req = new Request("http://localhost", {
         method: "PUT",
@@ -95,25 +103,26 @@ test("refreshQuotaUsageHandler works correctly", async () => {
     req.params = { project: "test" };
     req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
 
-    let res = await quot.refreshQuotaUsageHandler(req, []);
+    let res = await quot.refreshQuotaUsageHandler(req, env, []);
     expect((await res.json()).total).toBeLessThan(999999);
 
-    let bucket = s3.getR2Binding();
-    let info = await bucket.get("test/..usage");
+    let info = await env.BOUND_BUCKET.get("test/..usage");
     let body = await info.json();
     expect(body.total).toBeLessThan(999999);
 })
 
 test("refreshQuotaUsageHandler fails correctly", async () => {
+    const env = getMiniflareBindings();
+
     let req = new Request("http://localhost", {
         method: "POST",
         headers: { "Content-Type": "application/json" }
     });
     req.params = { project: "test" };
     req.headers.set("Authorization", "Bearer " + setup.mockTokenUser);
-    await setup.expectError(quot.refreshQuotaUsageHandler(req, []), "not an administrator");
+    await setup.expectError(quot.refreshQuotaUsageHandler(req, env, []), "not an administrator");
 
     req.params = { project: "test2" };
     req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
-    await setup.expectError(quot.refreshQuotaUsageHandler(req, []), "does not exist");
+    await setup.expectError(quot.refreshQuotaUsageHandler(req, env, []), "does not exist");
 })

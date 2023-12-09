@@ -5,12 +5,12 @@ import * as auth from "./utils/permissions.js";
 import * as quot from "./utils/quota.js";
 import * as pkeys from "./utils/internal.js";
 
-export async function createProjectHandler(request, nonblockers) {
+export async function createProjectHandler(request, env, nonblockers) {
     let project = decodeURIComponent(request.params.project);
 
     let token = auth.extractBearerToken(request);
-    let user = await auth.findUser(token, nonblockers);
-    if (!auth.isOneOf(user, auth.getAdmins())) {
+    let user = await auth.findUser(token, env, nonblockers);
+    if (!auth.isOneOf(user, auth.getAdmins(env))) {
         throw new http.HttpError("user does not have the right to create projects", 403);
     }
 
@@ -18,7 +18,7 @@ export async function createProjectHandler(request, nonblockers) {
         throw new http.HttpError("project name cannot contain '/'", 400);
     }
 
-    let bound_bucket = s3.getR2Binding();
+    let bound_bucket = env.BOUND_BUCKET;
     let permpath = pkeys.permissions(project);
     if ((await bound_bucket.head(permpath)) !== null) {
         throw new http.HttpError("project '" + project + "' already exists", 400);
@@ -39,7 +39,7 @@ export async function createProjectHandler(request, nonblockers) {
             }
         }
     }
-    await s3.quickUploadJson(permpath, new_perms);
+    await s3.quickUploadJson(permpath, new_perms, env);
 
     let new_quota = quot.defaults();
     if ('quota' in body) {
@@ -51,9 +51,9 @@ export async function createProjectHandler(request, nonblockers) {
             }
         }
     }
-    await s3.quickUploadJson(pkeys.quota(project), new_quota);
+    await s3.quickUploadJson(pkeys.quota(project), new_quota, env);
 
-    await s3.quickUploadJson(pkeys.usage(project), { total: 0 });
+    await s3.quickUploadJson(pkeys.usage(project), { total: 0 }, env);
 
     return new Response(null, { status: 200 });
 }

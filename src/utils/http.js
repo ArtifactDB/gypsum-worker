@@ -1,5 +1,3 @@
-import * as s3 from "./s3.js";
-
 export class HttpError extends Error {
     constructor(message, code) {
         super(message);

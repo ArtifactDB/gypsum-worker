@@ -1,4 +1,3 @@
-import * as f_ from "../../src/index.js";
 import * as http from "../../src/utils/http.js";
 
 test("JSON responses are correctly constructed", async () => {

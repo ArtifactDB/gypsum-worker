@@ -13,8 +13,8 @@ async function hashToken(session_token) {
     return btoa(String.fromCharCode(...new Uint8Array(digest)));
 }
 
-export async function lockProject(project, asset, version, session_token) {
-    let bound_bucket = s3.getR2Binding();
+export async function lockProject(project, asset, version, session_token, env) {
+    let bound_bucket = env.BOUND_BUCKET;
     let lck = pkeys.lock(project);
 
     let h = await bound_bucket.head(lck);
@@ -38,14 +38,13 @@ export async function lockProject(project, asset, version, session_token) {
     return;
 }
 
-export async function unlockProject(project) {
-    let bound_bucket = s3.getR2Binding();
+export async function unlockProject(project, env) {
     let lck = pkeys.lock(project);
-    await bound_bucket.delete(lck);
+    await env.BOUND_BUCKET.delete(lck);
 }
 
-export async function checkLock(project, asset, version, session_token) {
-    let bound_bucket = s3.getR2Binding();
+export async function checkLock(project, asset, version, session_token, env) {
+    let bound_bucket = env.BOUND_BUCKET;
     let lck = pkeys.lock(project);
 
     let g = await bound_bucket.get(lck);
@@ -72,8 +71,7 @@ export async function checkLock(project, asset, version, session_token) {
     return;
 }
 
-export async function isLocked(project) {
-    let bound_bucket = s3.getR2Binding();
-    let locked = await bound_bucket.head(pkeys.lock(project));
+export async function isLocked(project, env) {
+    let locked = await env.BOUND_BUCKET.head(pkeys.lock(project));
     return (locked !== null);
 }

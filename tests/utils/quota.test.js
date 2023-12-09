@@ -1,18 +1,18 @@
-import * as f_ from "../../src/index.js"; // need this to set the bucket bindings.
 import * as quot from "../../src/utils/quota.js";
 import * as setup from "../setup.js";
 
 test("getProjectUsage works correctly", async () => {
-    await setup.simpleMockProject();
+    const env = getMiniflareBindings();
+    await setup.simpleMockProject(env);
 
-    let raw_manifest = await BOUND_BUCKET.get("test/blob/v1/..manifest");
+    let raw_manifest = await env.BOUND_BUCKET.get("test/blob/v1/..manifest");
     let manifest = await raw_manifest.json();
     let expected = 0;
     for (const x of Object.values(manifest)) {
         expected += x.size;
     }
 
-    let total = await quot.getProjectUsage("test");
+    let total = await quot.getProjectUsage("test", env);
     expect(total).toBe(expected);
 })
 
@@ -30,20 +30,22 @@ test("validateQuota works correctly", () => {
 })
 
 test("computeQuota works correctly", async () => {
-    await setup.createMockProject("test");
-    let val = await quot.computeQuota("test");
+    const env = getMiniflareBindings();
+    await setup.createMockProject("test", env);
+    let val = await quot.computeQuota("test", env);
     expect(typeof val).toBe("number"); // can't do better than this as we don't know the year of the CI machine.
     expect(Number.isNaN(val)).toBe(false);
 })
 
 test("updateQuotaOnDeletion works correctly", async () => {
-    await setup.createMockProject("test", { usage: { total: 10 } });
+    const env = getMiniflareBindings();
+    await setup.createMockProject("test", env, { usage: { total: 10 } });
 
-    await quot.updateQuotaOnDeletion("test", 1);
-    let usage = await (await BOUND_BUCKET.get("test/..usage")).json();
+    await quot.updateQuotaOnDeletion("test", 1, env);
+    let usage = await (await env.BOUND_BUCKET.get("test/..usage")).json();
     expect(usage.total).toBe(9);
 
-    await quot.updateQuotaOnDeletion("test", 1000000);
-    usage = await (await BOUND_BUCKET.get("test/..usage")).json();
+    await quot.updateQuotaOnDeletion("test", 1000000, env);
+    usage = await (await env.BOUND_BUCKET.get("test/..usage")).json();
     expect(usage.total).toBe(0);
 })
