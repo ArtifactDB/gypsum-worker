@@ -3,7 +3,10 @@ import * as pkeys from "./internal.js";
 import * as s3 from "./s3.js";
 
 async function hashToken(session_token) {
-    // See reasoning in permissions.js about hashing the token.
+    // We need to hash the token as the LOCK is publicly viewable.  Our tokens
+    // are UUIDs and these should have high enough entropy that we don't need
+    // salting or iterations, see commentary at:
+    // https://security.stackexchange.com/questions/151257/what-kind-of-hashing-to-use-for-storing-rest-api-tokens-in-the-database
     const encoder = new TextEncoder();
     const data = encoder.encode(session_token);
     let digest = await crypto.subtle.digest("SHA-256", data);
@@ -19,6 +22,17 @@ export async function lockProject(project, asset, version, session_token) {
         throw new http.HttpError("project asset has already been locked", 403);
     }
 
+    /* 
+     * Previously, we used a UUID to distinguish between multiple user uploads
+     * to the same project, different assets and same version; if we just
+     * stored the user name, it was possible for two uploads for different
+     * assets to interfere with each other. This is no longer relevant as we
+     * only allow one upload per project, and the LOCK file stores the asset
+     * name. Now, we use a UUID as a session token so that the user doesn't
+     * need to re-authenticate via GitHub during the remainder of the upload
+     * process (which might get rate limited). It's no slower as the GitHub
+     * token needs to be hashed for local caching anyway.
+     */
     let hash = await hashToken(session_token);
     await bound_bucket.put(lck, JSON.stringify({ session_hash: hash, asset: asset, version: version }));
     return;
