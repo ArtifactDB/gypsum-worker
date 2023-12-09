@@ -51,40 +51,44 @@
             "uniqueItems": true
         },
 
-        "source": {
-            "type": "object",
-            "description": "Data source for this object.",
-            "properties": {
-                "provider": {
-                    "type": "string",
-                    "description": "Name of the data provider.",
-                    "enum": [ "GEO", "ArrayExpress", "PubMed", "other" ]
+        "sources": {
+            "type": "array",
+            "description": "Data sources for this object.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "provider": {
+                        "type": "string",
+                        "description": "Name of the data provider.",
+                        "enum": [ "GEO", "ArrayExpress", "PubMed", "other" ]
+                    },
+                    "id": {
+                        "type": "string",
+                        "description": "Provider-specific identifier for the data source."
+                    }
                 },
-                "id": {
-                    "type": "string",
-                    "description": "Provider-specific identifier for the data source."
-                }
+                "required": [ "provider", "id" ],
+                "additionalProperties": false,
+                "allOf": [
+                    {
+                        "if": { "properties": { "provider": { "const": "GEO" } } },
+                        "then": { "properties": { "id": { "type": "string", "pattern": "^GSE[0-9]+$" } } }
+                    },
+                    {
+                        "if": { "properties": { "provider": { "const": "ArrayExpress" } } },
+                        "then": { "properties": { "id": { "type": "string", "pattern": "^E-MTAB-[0-9]+$" } } }
+                    },
+                    {
+                        "if": { "properties": { "provider": { "const": "PubMed" } } },
+                        "then": { "properties": { "id": { "type": "string", "pattern": "^[1-9][0-9]+$" } } }
+                    },
+                    {
+                        "if": { "properties": { "provider": { "const": "other" } } },
+                        "then": { "properties": { "id": { "type": "string", "pattern": "^https?://[^\\s]+$" } } }
+                    }
+                ]
             },
-            "required": [ "provider", "id" ],
-            "additionalProperties": false,
-            "allOf": [
-                {
-                    "if": { "properties": { "provider": { "const": "GEO" } } },
-                    "else": { "properties": { "id": { "pattern": "^GSE[0-9]+$" } } }
-                },
-                {
-                    "if": { "properties": { "provider": { "const": "ArrayExpress" } } },
-                    "else": { "properties": { "id": { "pattern": "^E-MTAB-[0-9]+$" } } }
-                },
-                {
-                    "if": { "properties": { "provider": { "const": "PubMed" } } },
-                    "else": { "properties": { "id": { "pattern": "^[1-9][0-9]+$" } } }
-                },
-                {
-                    "if": { "properties": { "provider": { "const": "other" } } },
-                    "else": { "properties": { "id": { "pattern": "^https?://[^\\s]+$" } } }
-                }
-            ]
+            "minItems": 1
         },
 
         "maintainer": {
@@ -96,14 +100,14 @@
                     "description": "First, middle and last names of the maintainer.",
                     "items": {
                         "type": "string",
-                        "pattern": "^[\\s]+$"
+                        "pattern": "^[^\\s]+$"
                     },
                     "minItems": 2
                 },
                 "email": {
                     "type": "string",
                     "description": "Email address of the maintainer.",
-                    "pattern": "^[^@]+@[^@\\.]+\\.[^@\\.]+"
+                    "pattern": "^[^@\\s]+@[^@\\.\\s]+\\.[^@\\s]+"
                 }
             },
             "required": ["name", "email"],
@@ -111,6 +115,6 @@
         }
     },
 
-    "required": ["title", "description", "bioconductor_version", "taxonomy_id", "genome", "source", "maintainer" ],
+    "required": ["title", "description", "bioconductor_version", "taxonomy_id", "genome", "sources", "maintainer" ],
     "additionalProperties": false
 }
