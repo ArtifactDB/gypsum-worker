@@ -82,6 +82,12 @@ router.post("/refresh/latest/:project/:asset", version.refreshLatestVersionHandl
 
 router.post("/refresh/usage/:project", quota.refreshQuotaHandler);
 
+/*** Search ***/
+
+router.post("/search/reindex/:project/:asset", search.reindexProjectAssetHandler);
+
+router.post("/search/reindex/:project", search.reindexProjectHandler);
+
 /*** Setting up the listener ***/
 
 router.get("/", () => {

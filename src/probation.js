@@ -2,6 +2,7 @@ import * as http from "./utils/http.js";
 import * as auth from "./utils/permissions.js";
 import * as quot from "./utils/quota.js";
 import * as s3 from "./utils/s3.js";
+import * as search from "./utils/search.js";
 import * as pkeys from "./utils/internal.js";
 import * as lock from "./utils/lock.js";
 
@@ -42,6 +43,7 @@ export async function approveProbationHandler(request, env, nonblockers) {
         }
         if (is_latest) {
             await s3.quickUploadJson(latpath, { version: version }, env);
+            await search.indexLatest(project, asset, version, manifest, env);
         }
 
     } finally {

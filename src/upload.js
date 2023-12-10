@@ -4,6 +4,7 @@ import * as quot from "./utils/quota.js";
 import * as http from "./utils/http.js";
 import * as gh from "./utils/github.js";
 import * as lock from "./utils/lock.js";
+import * as search from "./utils/search.js";
 import * as pkeys from "./utils/internal.js";
 import * as s3 from "./utils/s3.js";
 
@@ -405,6 +406,9 @@ export async function completeUploadHandler(request, env, nonblockers) {
         if (!info.on_probation) {
             preparation.push(s3.quickUploadJson(pkeys.latestVersion(project, asset), { "version": version }, env));
             delete info.on_probation; 
+
+            // Also adding it to the database as the latest version.
+            preparation.push(search.indexLatest(project, asset, version, manifest, env));
         }
 
         info.upload_finish = (new Date).toISOString();
