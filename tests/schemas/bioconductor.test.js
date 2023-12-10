@@ -24,10 +24,8 @@ test("Bioconductor schema behaves as expected", () => {
             { provider: "PubMed", id: "12332423" },
             { provider: "other", id: "https://123213.com" }
         ],
-        maintainer: {
-            name: [ "Aaron", "Lun" ],
-            email: "aaron@aaron.com"
-        }
+        maintainer_name: "Aaron Lun",
+        maintainer_email: "aaron@aaron.com"
     };
     validate(obj);
 
