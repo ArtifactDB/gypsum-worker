@@ -5,3 +5,4 @@ node_modules/
 *.h5
 secrets.sh
 package-lock.json
+src/generated/

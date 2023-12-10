@@ -6,12 +6,14 @@
     "properties": {
         "title": {
             "type": "string",
-            "description": "Title of the object."
+            "description": "Title of the object.",
+            "_attributes": [ "free_text" ]
         },
 
         "description": {
             "type": "string",
-            "description": "Description of the object."
+            "description": "Description of the object.",
+            "_attributes": [ "free_text" ]
         },
 
         "bioconductor_version": {
@@ -91,30 +93,20 @@
             "minItems": 1
         },
 
-        "maintainer": {
-            "type": "object",
-            "description": "Identity and contact details of the maintainer.",
-            "properties": {
-                "name": {
-                    "type": "array",
-                    "description": "First, middle and last names of the maintainer.",
-                    "items": {
-                        "type": "string",
-                        "pattern": "^[^\\s]+$"
-                    },
-                    "minItems": 2
-                },
-                "email": {
-                    "type": "string",
-                    "description": "Email address of the maintainer.",
-                    "pattern": "^[^@\\s]+@[^@\\.\\s]+\\.[^@\\s]+"
-                }
-            },
-            "required": ["name", "email"],
-            "additionalProperties": false
+        "maintainer_name": {
+            "type": "string",
+            "description": "Name of the maintainer. This should contain at least the first and last names separated by a space.",
+            "pattern": "^[^\\s]+(?: [^\\s]+)$",
+            "_attributes": [ "free_text" ]
+        },
+
+        "maintainer_email": {
+            "type": "string",
+            "description": "Email address of the maintainer.",
+            "pattern": "^[^@\\s]+@[^@\\.\\s]+\\.[^@\\s]+"
         }
     },
 
-    "required": ["title", "description", "bioconductor_version", "taxonomy_id", "genome", "sources", "maintainer" ],
+    "required": ["title", "description", "bioconductor_version", "taxonomy_id", "genome", "sources", "maintainer_name", "maintainer_email" ],
     "additionalProperties": false
 }
