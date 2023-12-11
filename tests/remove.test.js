@@ -25,7 +25,7 @@ test("removeProjectHandler works correctly", async () => {
 
     // Not authorized.
     let nb = [];
-    await setup.expectError(remove.removeProjectHandler(req, env, nb), "does not have the right to delete");
+    await setup.expectError(remove.removeProjectHandler(req, env, nb), "not an administrator");
 
     // Now it works.
     req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
@@ -55,7 +55,7 @@ test("removeProjectAssetHandler works correctly", async () => {
 
     // Not authorized.
     let nb = [];
-    await setup.expectError(remove.removeProjectAssetHandler(req, env, nb), "does not have the right to delete");
+    await setup.expectError(remove.removeProjectAssetHandler(req, env, nb), "not an administrator");
 
     // Now it works.
     req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
@@ -106,7 +106,7 @@ test("removeProjectAssetVersionHandler works correctly in the simple case", asyn
 
     // Not authorized.
     let nb = [];
-    await setup.expectError(remove.removeProjectAssetVersionHandler(req, env, nb), "does not have the right to delete");
+    await setup.expectError(remove.removeProjectAssetVersionHandler(req, env, nb), "not an administrator");
 
     // Now it works.
     req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);

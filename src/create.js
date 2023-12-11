@@ -6,14 +6,10 @@ import * as quot from "./utils/quota.js";
 import * as pkeys from "./utils/internal.js";
 
 export async function createProjectHandler(request, env, nonblockers) {
-    let project = decodeURIComponent(request.params.project);
-
     let token = auth.extractBearerToken(request);
-    let user = await auth.findUser(token, env, nonblockers);
-    if (!auth.isOneOf(user, auth.getAdmins(env))) {
-        throw new http.HttpError("user does not have the right to create projects", 403);
-    }
+    await auth.checkAdminPermissions(token, env, nonblockers);
 
+    let project = decodeURIComponent(request.params.project);
     if (project.indexOf("/") >= 0) {
         throw new http.HttpError("project name cannot contain '/'", 400);
     }

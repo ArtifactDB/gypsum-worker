@@ -11,10 +11,7 @@ export async function removeProjectHandler(request, env, nonblockers) {
     let project = decodeURIComponent(request.params.project);
 
     let token = auth.extractBearerToken(request);
-    let user = await auth.findUser(token, env, nonblockers);
-    if (!auth.isOneOf(user, auth.getAdmins(env))) {
-        throw new http.HttpError("user does not have the right to delete", 403);
-    }
+    await auth.checkAdminPermissions(token, env, nonblockers);
 
     // Locking the project to avoid simultaneous uploads that compete with the delete.
     let session_key = crypto.randomUUID();
@@ -37,10 +34,7 @@ export async function removeProjectAssetHandler(request, env, nonblockers) {
     let asset = decodeURIComponent(request.params.asset);
 
     let token = auth.extractBearerToken(request);
-    let user = await auth.findUser(token, env, nonblockers);
-    if (!auth.isOneOf(user, auth.getAdmins(env))) {
-        throw new http.HttpError("user does not have the right to delete", 403);
-    }
+    await auth.checkAdminPermissions(token, env, nonblockers);
 
     // Locking the project to avoid simultaneous uploads that compete with the
     // delete. Also need to lock it to update '..usage'.
@@ -66,10 +60,7 @@ export async function removeProjectAssetVersionHandler(request, env, nonblockers
     let version = decodeURIComponent(request.params.version);
 
     let token = auth.extractBearerToken(request);
-    let user = await auth.findUser(token, env, nonblockers);
-    if (!auth.isOneOf(user, auth.getAdmins(env))) {
-        throw new http.HttpError("user does not have the right to delete", 403);
-    }
+    await auth.checkAdminPermissions(token, env, nonblockers);
 
     // Locking the project to avoid simultaneous uploads that compete with the
     // delete. Also need to lock it to update '..latest'.

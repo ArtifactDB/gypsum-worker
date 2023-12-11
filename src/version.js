@@ -6,15 +6,11 @@ import * as s3 from "./utils/s3.js";
 import * as lock from "./utils/lock.js";
 
 export async function refreshLatestVersionHandler(request, env, nonblockers) {
+    let token = auth.extractBearerToken(request);
+    await auth.checkAdminPermissions(token, env, nonblockers);
+
     let project = decodeURIComponent(request.params.project);
     let asset = decodeURIComponent(request.params.asset);
-
-    let token = auth.extractBearerToken(request);
-    let user = await auth.findUser(token, env, nonblockers);
-    if (!auth.isOneOf(user, auth.getAdmins(env))) {
-        throw new http.HttpError("user is not an administrator", 403);
-    }
-
     if ((await env.BOUND_BUCKET.head(pkeys.permissions(project))) == null) {
         throw new http.HttpError("project does not exist", 400);
     }

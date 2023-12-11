@@ -244,3 +244,10 @@ export async function checkProjectUploadPermissions(project, asset, version, tok
 
     throw new http.HttpError("user is not authorized to upload", 403);
 }
+
+export async function checkAdminPermissions(token, env, nonblockers) {
+    let user = await findUser(token, env, nonblockers);
+    if (!isOneOf(user, getAdmins(env))) {
+        throw new http.HttpError("user is not an administrator", 403);
+    }
+}

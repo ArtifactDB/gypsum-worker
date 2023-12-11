@@ -152,5 +152,5 @@ test("createProjectHandler fails correctly if user is not authorized", async () 
 
     // Adding the wrong credentials.
     req.headers.set("Authorization", "Bearer " + setup.mockTokenUser);
-    await setup.expectError(create.createProjectHandler(req, env, nb), "not have the right to create projects");
+    await setup.expectError(create.createProjectHandler(req, env, nb), "not an administrator");
 })

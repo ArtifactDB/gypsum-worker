@@ -7,14 +7,10 @@ import * as quot from "./utils/quota.js";
 import * as lock from "./utils/lock.js";
 
 export async function setQuotaHandler(request, env, nonblockers) {
-    let project = decodeURIComponent(request.params.project);
-
     let token = auth.extractBearerToken(request);
-    let user = await auth.findUser(token, env, nonblockers);
-    if (!auth.isOneOf(user, auth.getAdmins(env))) {
-        throw new http.HttpError("user is not an administrator", 403);
-    }
+    await auth.checkAdminPermissions(token, env, nonblockers);
 
+    let project = decodeURIComponent(request.params.project);
     let qpath = pkeys.quota(project);
     let qdata = await s3.quickFetchJson(qpath, env, { mustWork: false });
     if (qdata == null) {
@@ -34,14 +30,10 @@ export async function setQuotaHandler(request, env, nonblockers) {
 }
 
 export async function refreshQuotaUsageHandler(request, env, nonblockers) {
-    let project = decodeURIComponent(request.params.project);
-
     let token = auth.extractBearerToken(request);
-    let user = await auth.findUser(token, env, nonblockers);
-    if (!auth.isOneOf(user, auth.getAdmins(env))) {
-        throw new http.HttpError("user is not an administrator", 403);
-    }
+    await auth.checkAdminPermissions(token, env, nonblockers);
 
+    let project = decodeURIComponent(request.params.project);
     let upath = pkeys.usage(project);
     let udata = await s3.quickFetchJson(upath, env, { mustWork: false });
     if (udata == null) {

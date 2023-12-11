@@ -195,3 +195,11 @@ test("checkProjectUploadPermissions works correctly", async () => {
     expect(out.can_manage).toBe(false);
     expect(out.is_trusted).toBe(true);
 })
+
+test("checkAdminPermissions works correctly", async () => {
+    const env = getMiniflareBindings();
+    let nb = [];
+    await auth.checkAdminPermissions(setup.mockTokenAdmin, env, nb);
+    await setup.expectError(auth.checkAdminPermissions(setup.mockTokenOwner, env, nb), "not an administrator");
+    await setup.expectError(auth.checkAdminPermissions(setup.mockTokenUser, env, nb), "not an administrator");
+})
