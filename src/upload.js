@@ -394,35 +394,30 @@ export async function completeUploadHandler(request, env, nonblockers) {
         }
     }
 
-    let info = await assets.summary;
+    // Create link structures within each subdirectory for bulk consumers.
     let bucket_writes = [];
-    try {
-        // Create link structures within each subdirectory for bulk consumers.
-        for (const [k, v] of Object.entries(linkable)) {
-            // Either 'k' already has a trailing slash or is an empty string, so we can just add it to the file name.
-            bucket_writes.push(s3.quickUploadJson(project + "/" + asset + "/" + version + "/" + k + "..links", v, env));
-        }
-
-        var is_official = (!info.on_probation);
-        if (is_official) {
-            bucket_writes.push(s3.quickUploadJson(pkeys.latestVersion(project, asset), { "version": version }, env));
-            delete info.on_probation; 
-        }
-
-        info.upload_finish = (new Date).toISOString();
-        bucket_writes.push(s3.quickUploadJson(sumpath, info, env));
-
-        // Updating the usage file.
-        let upath = pkeys.usage(project);
-        let usage = await s3.quickFetchJson(upath, env);
-        usage.total += usage.pending_on_complete_only;
-        delete usage.pending_on_complete_only;
-        bucket_writes.push(s3.quickUploadJson(upath, usage, env));
-
-    } finally {
-        await Promise.all(bucket_writes);
+    for (const [k, v] of Object.entries(linkable)) {
+        // Either 'k' already has a trailing slash or is an empty string, so we can just add it to the file name.
+        bucket_writes.push(s3.quickUploadJson(project + "/" + asset + "/" + version + "/" + k + "..links", v, env));
     }
 
+    let info = await assets.summary;
+    let is_official = (!info.on_probation);
+    if (is_official) {
+        bucket_writes.push(s3.quickUploadJson(pkeys.latestVersion(project, asset), { "version": version }, env));
+        delete info.on_probation; 
+    }
+    info.upload_finish = (new Date).toISOString();
+    bucket_writes.push(s3.quickUploadJson(sumpath, info, env));
+
+    // Updating the usage file.
+    let upath = pkeys.usage(project);
+    let usage = await s3.quickFetchJson(upath, env);
+    usage.total += usage.pending_on_complete_only;
+    delete usage.pending_on_complete_only;
+    bucket_writes.push(s3.quickUploadJson(upath, usage, env));
+
+    await Promise.all(bucket_writes);
     await lock.unlockProject(project, env);
     if (is_official) {
         bucket_writes.push(change.addChangelog({ type: "add-version", project, asset, version, latest: true }, env));
