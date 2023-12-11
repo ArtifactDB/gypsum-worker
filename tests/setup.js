@@ -96,8 +96,8 @@ export async function mockProjectVersion(project, asset, version, env) {
     await env.BOUND_BUCKET.put(base + "/..summary",
         JSON.stringify({
             upload_user_id: "chihaya-kisaragi",
-            upload_started: (new Date).toISOString(),
-            upload_finished: (new Date).toISOString(),
+            upload_start: (new Date).toISOString(),
+            upload_finish: (new Date).toISOString(),
         }),
         jsonmeta
     );

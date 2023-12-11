@@ -39,8 +39,8 @@ export async function approveProbationHandler(request, env, nonblockers) {
         var is_latest = true;
         if (latest !== null) {
             let latest_info = await s3.quickFetchJson(pkeys.versionSummary(project, asset, latest.version), env);
-            let my_finish = Date.parse(info.upload_finished);
-            let latest_finish = Date.parse(latest_info.upload_finished);
+            let my_finish = Date.parse(info.upload_finish);
+            let latest_finish = Date.parse(latest_info.upload_finish);
             is_latest = (my_finish > latest_finish);
         }
         if (is_latest) {

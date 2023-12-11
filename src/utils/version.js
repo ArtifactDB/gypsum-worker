@@ -22,7 +22,7 @@ export async function updateLatestVersion(project, asset, env) {
     for (var i = 0; i < resolved.length; i++) {
         let contents = resolved[i];
         if (!("on_probation" in contents) || !contents.on_probation) {
-            let current = Date.parse(contents.upload_finished);
+            let current = Date.parse(contents.upload_finish);
             if (best_time == null || current > best_time) {
                 best_time = current;
                 best_version = versions[i];
