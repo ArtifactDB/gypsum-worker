@@ -128,3 +128,16 @@ export async function probationalize(project, asset, version, env) {
     existing.on_probation = true;
     await env.BOUND_BUCKET.put(sumpath, JSON.stringify(existing), jsonmeta);
 }
+
+export async function fetchLogs(env) {
+    let listing = await env.BOUND_BUCKET.list({ prefix: "..logs/" }); 
+    if (listing.truncated) {
+        throw new Error("tests should not create enough logs to truncate the listing!");
+    }
+    let found_logs = [];
+    for (const f of listing.objects) {
+        let payload = await (await env.BOUND_BUCKET.get(f.key)).json();
+        found_logs.push(payload);
+    }
+    return found_logs;
+}

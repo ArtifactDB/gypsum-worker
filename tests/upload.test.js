@@ -575,6 +575,11 @@ test("completeUploadHandler works correctly", async () => {
     let usbody = await usinfo.json();
     expect(usbody.total).toBeGreaterThan(original_size);
 
+    // Check that a log was added.
+    let found_logs = await setup.fetchLogs(env);
+    expect(found_logs.length).toBe(1);
+    expect(found_logs[0]).toEqual({ type: "add-version", project: "test-upload", asset: "blob", version: "v0", latest: true });
+
     // Check that an updated summary file was posted to the bucket.
     let sinfo = await env.BOUND_BUCKET.get("test-upload/blob/v0/..summary");
     let sbody = await sinfo.json();
@@ -751,6 +756,10 @@ test("completeUploadHandler respects the probation status", async () => {
     let sinfo = await env.BOUND_BUCKET.get("test-upload/blob/v0/..summary");
     let sbody = await sinfo.json();
     expect(sbody.on_probation).toBe(true);
+
+    // Check that a log was NOT added.
+    let found_logs = await setup.fetchLogs(env);
+    expect(found_logs.length).toBe(0);
 })
 
 /******* Abort upload checks *******/

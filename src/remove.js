@@ -5,6 +5,7 @@ import * as vers from "./utils/version.js";
 import * as lock from "./utils/lock.js";
 import * as pkeys from "./utils/internal.js";
 import * as s3 from "./utils/s3.js";
+import * as change from "./utils/changelog.js";
 
 export async function removeProjectHandler(request, env, nonblockers) {
     let project = decodeURIComponent(request.params.project);
@@ -22,6 +23,8 @@ export async function removeProjectHandler(request, env, nonblockers) {
     try {
         // Add trailing slash to avoid deleting a project that starts with 'project'.
         await s3.quickRecursiveDelete(project + "/", env);
+
+        await change.addChangelog({ type: "delete-project", project }, env);
     } finally {
         await lock.unlockProject(project, env);
     }
@@ -48,6 +51,8 @@ export async function removeProjectAssetHandler(request, env, nonblockers) {
         // Add trailing slash to avoid deleting an asset that starts with 'asset'.
         let freed = await s3.quickRecursiveDelete(project + "/" + asset + "/", env);
         await quot.updateQuotaOnDeletion(project, freed, env);
+
+        await change.addChangelog({ type: "delete-asset", project, asset }, env);
     } finally {
         await lock.unlockProject(project, env);
     }
@@ -79,9 +84,12 @@ export async function removeProjectAssetVersionHandler(request, env, nonblockers
         // Need to go through and update the latest version of the asset, in case
         // we just deleted the latest version.
         let linfo = await s3.quickFetchJson(pkeys.latestVersion(project, asset), env, { mustWork: false });
-        if (linfo !== null && linfo.version == version) {
+        let was_latest = (linfo !== null && linfo.version == version);
+        if (was_latest) {
             await vers.updateLatestVersion(project, asset, env);
         }
+
+        await change.addChangelog({ type: "delete-version", project, asset, version, latest: was_latest }, env);
 
     } finally {
         await lock.unlockProject(project, env);

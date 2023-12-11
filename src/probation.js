@@ -4,6 +4,7 @@ import * as quot from "./utils/quota.js";
 import * as s3 from "./utils/s3.js";
 import * as pkeys from "./utils/internal.js";
 import * as lock from "./utils/lock.js";
+import * as change from "./utils/changelog.js";
 
 export async function approveProbationHandler(request, env, nonblockers) {
     let project = decodeURIComponent(request.params.project);
@@ -43,6 +44,8 @@ export async function approveProbationHandler(request, env, nonblockers) {
         if (is_latest) {
             await s3.quickUploadJson(latpath, { version: version }, env);
         }
+
+        await change.addChangelog({ type: "add-version", project, asset, version, latest: is_latest }, env);
 
     } finally {
         await lock.unlockProject(project, env);

@@ -32,6 +32,11 @@ test("removeProjectHandler works correctly", async () => {
     await remove.removeProjectHandler(req, env, nb); 
     expect(await env.BOUND_BUCKET.head("test/..permissions")).toBeNull();
 
+    // Checking that it added to the logs.
+    let found_logs = await setup.fetchLogs(env);
+    expect(found_logs.length).toBe(1);
+    expect(found_logs[0]).toEqual({ type: "delete-project", project: "test" });
+
     // Avoids removing things with the same prefix.
     expect(await env.BOUND_BUCKET.head("testicle/..permissions")).not.toBeNull();
 })
@@ -56,6 +61,11 @@ test("removeProjectAssetHandler works correctly", async () => {
     req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
     await remove.removeProjectAssetHandler(req, env, nb); 
     expect(await env.BOUND_BUCKET.head("test/blob/v1/..summary")).toBeNull();
+
+    // Checking that it added to the logs.
+    let found_logs = await setup.fetchLogs(env);
+    expect(found_logs.length).toBe(1);
+    expect(found_logs[0]).toEqual({ type: "delete-asset", project: "test", asset: "blob" });
 
     // Avoids removing things with the same prefix.
     expect(await env.BOUND_BUCKET.head("test/blobby/v1/..summary")).not.toBeNull();
@@ -102,6 +112,11 @@ test("removeProjectAssetVersionHandler works correctly in the simple case", asyn
     req.headers.set("Authorization", "Bearer " + setup.mockTokenAdmin);
     await remove.removeProjectAssetVersionHandler(req, env, nb); 
     expect(await env.BOUND_BUCKET.head("test/blob/v1/..summary")).toBeNull();
+
+    // Checking that it added to the logs.
+    let found_logs = await setup.fetchLogs(env);
+    expect(found_logs.length).toBe(1);
+    expect(found_logs[0]).toEqual({ type: "delete-version", project: "test", asset: "blob", version: "v1", latest: false });
 
     // Avoids removing things with the same prefix.
     expect(await env.BOUND_BUCKET.head("test/blob/v2/..summary")).not.toBeNull();

@@ -6,6 +6,7 @@ import * as gh from "./utils/github.js";
 import * as lock from "./utils/lock.js";
 import * as pkeys from "./utils/internal.js";
 import * as s3 from "./utils/s3.js";
+import * as change from "./utils/changelog.js";
 
 /**************** Initialize uploads ***************/
 
@@ -405,6 +406,7 @@ export async function completeUploadHandler(request, env, nonblockers) {
         if (!info.on_probation) {
             preparation.push(s3.quickUploadJson(pkeys.latestVersion(project, asset), { "version": version }, env));
             delete info.on_probation; 
+            preparation.push(change.addChangelog({ type: "add-version", project, asset, version, latest: true }, env));
         }
 
         info.upload_finish = (new Date).toISOString();

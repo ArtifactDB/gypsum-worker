@@ -35,6 +35,11 @@ test("probation approval works as expected", async () => {
     let refreshed = await (await env.BOUND_BUCKET.get("test/blob/v1/..summary")).json();
     expect("on_probation" in refreshed).toBe(false);
 
+    // Check that a log was added.
+    let found_logs = await setup.fetchLogs(env);
+    expect(found_logs.length).toBe(1);
+    expect(found_logs[0]).toEqual({ type: "add-version", project: "test", asset: "blob", version: "v1", latest: true });
+
     // Repeated attempt fails.
     await setup.expectError(prob.approveProbationHandler(req, env, []), "non-probational");
 

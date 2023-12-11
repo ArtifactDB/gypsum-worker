@@ -110,6 +110,10 @@ fetch(request, env, context) {
     // Non-blockers are strictly used for local caching only.
     context.waitUntil(resp.then(x => Promise.all(nonblockers)));
     return resp;
-}
+},
+
+scheduled(event, env, context) {
+    context.waitUntil(change.flushOldChangelogsHandler(event, env));
+},
 
 }
