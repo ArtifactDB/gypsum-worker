@@ -55,7 +55,7 @@ To illustrate, consider a hypothetical link file at the following path:
 {project}/{asset}/{version}/x/y/z/..links
 ```
 
-This contains a JSON object where each key/value pair describes a linked-from path in the same subdirectory.
+This contains a JSON object where each key/value pair describes a linked-from path with the same `/`-delimited prefix.
 The key is a relative path, to be appended to `{project}/{asset}/{version}/x/y/z/` to obtain the full bucket path of the linked-from file.
 The value is another object that contains the strings `project`, `asset`, `version` and `path`, which collectively specify the link destination supplied by the user.
 If the user-supplied destination is itself another link, the object will contain a nested `ancestor` object that specifies the final link destination to the actual file.
@@ -141,8 +141,33 @@ aws s3 ls --endpoint-url=https://blahblahblah.r2.cloudflarestorage.com gypsum-te
 
 For uploads, clients are expected to authenticate using GitHub's Oauth workflow.
 This should generate a GitHub access token with read access on the `user` and `org` scopes.
-The token can then be passed to various API endpoints to authenticate the user for uploads.
+The token can then be passed to various API endpoints to authenticate the user. 
+Administrators are similarly authenticated via GitHub.
+
 Check out the [Swagger](https://artifactdb.github.io/gypsum-worker) documentation for more details.
+
+## Parsing logs
+
+For some actions, **gypsum** stores a log with a `..logs/` prefix.
+The file is named after the date/time of the action's completion, followed by an underscore, followed by a random 6-digit integer for disambiguation purposes.
+The file contains a JSON object that details the type of action in the `type` property:
+
+- `add-version` indicates that a new version was added, or a probational version was approved.
+  This has the `project`, `asset`, `version` string properties to describe the version.
+  It also has the `latest` boolean property to indicate whether the added version is the latest one for its asset.
+- `delete-version` indicates that a version was deleted.
+  This has the `project`, `asset`, `version` string properties to describe the version.
+  It also has the `latest` boolean property to indicate whether the deleted version was the latest one for its asset.
+- `delete-asset` indicates that an asset was deleted.
+  This has the `project` and `asset` string property.
+- `delete-project` indicates that a project was deleted.
+  This has the `project` string property.
+
+Downstream systems can inspect these files to determine what changes have occurred in the **gypsum** bucket.
+This is intended for systems that need to maintain a database index on top of the bucket's contents.
+By routinely scanning for changes, databases can incrementally perform updates rather than reindexing the entire bucket.
+
+Log files are held for 7 days before deletion.
 
 ## Deployment instructions
 
@@ -199,3 +224,11 @@ Add the following secrets via `wrangler secret put`:
 Run `wrangler publish` to deploy to Cloudflare Workers.
 This will create an API at `https://<WORKER_NAME>.<ACCOUNT_NAME>.workers.dev`.
 See [here](https://developers.cloudflare.com/workers/platform/environments) for instructions on publishing to a custom domain.
+
+## Comments on deletion
+
+Administrators have access to rather dangerous `DELETE` endpoints.
+These violate **gypsum**'s immutability contract and should be used sparingly.
+In particular, administrators must ensure that no other project links to the to-be-deleted files, otherwise those links will be invalidated.
+This check involves going through all the manifest files and is currently a manual process.
+Clients may also need to flush their caches if the `..summary` files corresponding to a deleted project cannot be found.
