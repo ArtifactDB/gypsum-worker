@@ -81,32 +81,28 @@ function splitByUploadType(files) {
     };
 }
 
-async function getVersionManifest(project, asset, version, bound_bucket, manifest_cache) {
+async function getVersionManifest(project, asset, version, env, manifest_cache) {
     let key = project + "/" + asset + "/" + version;
     if (key in manifest_cache) {
         return manifest_cache[key];
     }
 
-
-    let raw_manifest = await bound_bucket.get(pkeys.versionManifest(project, asset, version));
-    if (raw_manifest == null) {
+    let manifest = await s3.quickFetchJson(pkeys.versionManifest(project, asset, version), env, { mustWork: false });
+    if (manifest == null) {
         throw new http.HttpError("no manifest available for link target inside '" + key + "'", 400);
     }
-
-    let manifest = await raw_manifest.json();
     manifest_cache[key] = manifest;
     return manifest;
 }
 
-async function attemptMd5Deduplication(simple, dedup, linked, project, asset, bound_bucket, manifest_cache) {
-    let lres = await bound_bucket.get(pkeys.latestVersion(project, asset));
-    if (lres == null) {
+async function attemptMd5Deduplication(simple, dedup, linked, project, asset, env, manifest_cache) {
+    let last = await s3.quickFetchJson(pkeys.latestVersion(project, asset), env, { mustWork: false });
+    if (last == null) {
         for (const f of dedup) {
             simple.push(f);
         }
     } else {
-        let last = (await lres.json()).version;
-        let manifest = await getVersionManifest(project, asset, last, bound_bucket, manifest_cache);
+        let manifest = await getVersionManifest(project, asset, last.version, env, manifest_cache);
 
         let by_sum_and_size = {};
         for (const [k, v] of Object.entries(manifest)) {
@@ -123,7 +119,7 @@ async function attemptMd5Deduplication(simple, dedup, linked, project, asset, bo
                     link: { 
                         project: project, 
                         asset: asset, 
-                        version: last,
+                        version: last.version,
                         path: by_sum_and_size[key]
                     } 
                 });
@@ -134,7 +130,7 @@ async function attemptMd5Deduplication(simple, dedup, linked, project, asset, bo
     }
 }
 
-async function checkLinks(linked, project, asset, version, bound_bucket, manifest_cache) {
+async function checkLinks(linked, project, asset, version, env, manifest_cache) {
     let all_manifests = {};
     let all_targets = [];
 
@@ -145,9 +141,21 @@ async function checkLinks(linked, project, asset, version, bound_bucket, manifes
         }
 
         if (!(key in all_manifests)) {
-            all_manifests[key] = getVersionManifest(f.link.project, f.link.asset, f.link.version, bound_bucket, manifest_cache);
+            let summary = await s3.quickFetchJson(pkeys.versionSummary(f.link.project, f.link.asset, f.link.version), env, { mustWork: false });
+            if (summary == null) {
+                throw new http.HttpError("cannot find version summary for link from '" + f.path + "' to '" + key + "/" + f.link.path + "'", 400);
+            }
+            if ("on_probation" in summary && summary.on_probation) {
+                throw new http.HttpError("cannot refer to probational version for link from '" + f.path + "' to '" + key + "/" + f.link.path + "'", 400);
+            }
+            if (!("upload_finished" in summary)) {
+                throw new http.HttpError("cannot refer to incomplete upload for link from '" + f.path + "' to '" + key + "/" + f.link.path + "'", 400);
+            }
+
+            all_manifests[key] = getVersionManifest(f.link.project, f.link.asset, f.link.version, env, manifest_cache);
             all_targets[key] = [];
         }
+
         all_targets[key].push({ from: f.path, to: f.link });
     }
 
@@ -235,9 +243,9 @@ export async function initializeUploadHandler(request, env, nonblockers) {
 
         let manifest_cache = {};
         if (split.dedup.length) {
-            await attemptMd5Deduplication(split.simple, split.dedup, split.link, project, asset, env.BOUND_BUCKET, manifest_cache);
+            await attemptMd5Deduplication(split.simple, split.dedup, split.link, project, asset, env, manifest_cache);
         }
-        let link_details = await checkLinks(split.link, project, asset, version, env.BOUND_BUCKET, manifest_cache);
+        let link_details = await checkLinks(split.link, project, asset, version, env, manifest_cache);
 
         // Checking that the quota isn't exceeded. Note that 'pending_on_complete_only' 
         // should only EVER be used by completeUploadHandler, so even if it's non-zero here, 

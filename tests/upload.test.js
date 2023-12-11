@@ -421,25 +421,105 @@ test("initializeUploadHandler prohibits links to missing files or versions", asy
         req.headers.append("Authorization", "Bearer " + setup.mockTokenOwner);
 
         let nb = [];
-        await setup.expectError(upload.initializeUploadHandler(req, env, nb), "no manifest available");
+        await setup.expectError(upload.initializeUploadHandler(req, env, nb), "cannot find version summary");
     }
+})
 
-    // Links back to ourselves.
+test("initializeUploadHandler prohibits circular links ", async () => {
+    const env = getMiniflareBindings();
+    let payload = await setup.simpleMockProject(env);
+    await setup.createMockProject("test-upload", env);
+
+    let req = new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ 
+            files: [
+                { type: "link", path: "pet/rabbit.txt", link: { project: "test", asset: "blob", version: "v2", path: "foo/bar.txt" } }
+            ]
+        })
+    });
+    req.params = { project: "test", asset: "blob", version: "v2" };
+    req.headers.append("Authorization", "Bearer " + setup.mockTokenOwner);
+
+    let nb = [];
+    await setup.expectError(upload.initializeUploadHandler(req, env, nb), "circular link");
+})
+
+test("initializeUploadHandler prohibits links to probational versions", async () => {
+    const env = getMiniflareBindings();
+    let payload = await setup.simpleMockProject(env);
+    await setup.createMockProject("test-upload", env);
+
+    let nb = [];
+
+    // First, creating a probational version.
     {
-        let req = new Request("http://localhost", {
-            method: "POST",
+        let ireq = new Request("http://localhost", { 
+            method: "POST", 
             body: JSON.stringify({ 
                 files: [
-                    { type: "link", path: "pet/rabbit.txt", link: { project: "test", asset: "blob", version: "v2", path: "foo/bar.txt" } }
-                ]
-            })
+                    { type: "link", path: "pet/rabbit.txt", link: { project: "test", asset: "blob", version: "v1", path: "foo/bar.txt" } }
+                ],
+                on_probation: true 
+            }) 
         });
-        req.params = { project: "test", asset: "blob", version: "v2" };
-        req.headers.append("Authorization", "Bearer " + setup.mockTokenOwner);
+        ireq.params = { project: "test-upload", asset: "linker", version: "bach" };
+        ireq.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
+        let init = await upload.initializeUploadHandler(ireq, env, nb);
 
-        let nb = [];
-        await setup.expectError(upload.initializeUploadHandler(req, env, nb), "circular link");
+        let creq = new Request("http://localhost", { method: "POST" });
+        creq.params = { project: "test-upload", asset: "linker", version: "bach" };
+        creq.headers.set("Authorization", "Bearer " + (await init.json()).session_token);
+        await upload.completeUploadHandler(creq, env, nb);
     }
+
+    // Now trying to create a link to it.
+    let req = new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ 
+            files: [
+                { type: "link", path: "wherewoolf.txt", link: { project: "test-upload", asset: "linker", version: "bach", path: "pet/rabbit.txt" } }
+            ]
+        })
+    });
+    req.params = { project: "test-upload", asset: "linker", version: "amadeus" };
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
+    await setup.expectError(upload.initializeUploadHandler(req, env, nb), "cannot refer to probational version");
+})
+
+test("initializeUploadHandler prohibits links to incomplete uploads", async () => {
+    const env = getMiniflareBindings();
+    let payload = await setup.simpleMockProject(env);
+    await setup.createMockProject("test-upload", env);
+    await setup.createMockProject("test-upload-deux", env);
+
+    let nb = [];
+
+    // Starting an upload in one place....
+    let ireq = new Request("http://localhost", { 
+        method: "POST", 
+        body: JSON.stringify({ 
+            files: [
+                { type: "link", path: "pet/rabbit.txt", link: { project: "test", asset: "blob", version: "v1", path: "foo/bar.txt" } }
+            ]
+        }) 
+    });
+    ireq.params = { project: "test-upload", asset: "chihaya", version: "kisaragi" };
+    ireq.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
+    await upload.initializeUploadHandler(ireq, env, nb);
+
+    // Now trying to create a link to it.
+    let req = new Request("http://localhost", {
+        method: "POST",
+        body: JSON.stringify({ 
+            files: [
+                { type: "link", path: "wherewoolf.txt", link: { project: "test-upload", asset: "chihaya", version: "kisaragi", path: "pet/rabbit.txt" } }
+            ]
+        })
+    });
+    req.params = { project: "test-upload-deux", asset: "miki", version: "hoshii" };
+    req.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
+    await setup.expectError(upload.initializeUploadHandler(req, env, nb), "cannot refer to incomplete upload");
 })
 
 test("initializeUploadHandler prohibits duplicate files", async () => {
