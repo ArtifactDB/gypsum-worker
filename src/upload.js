@@ -148,7 +148,7 @@ async function checkLinks(linked, project, asset, version, env, manifest_cache) 
             if ("on_probation" in summary && summary.on_probation) {
                 throw new http.HttpError("cannot refer to probational version for link from '" + f.path + "' to '" + key + "/" + f.link.path + "'", 400);
             }
-            if (!("upload_finished" in summary)) {
+            if (!("upload_finish" in summary)) {
                 throw new http.HttpError("cannot refer to incomplete upload for link from '" + f.path + "' to '" + key + "/" + f.link.path + "'", 400);
             }
 
@@ -163,11 +163,21 @@ async function checkLinks(linked, project, asset, version, env, manifest_cache) 
     let linked_details = [];
     for (const [k, v] of Object.entries(all_targets)) {
         let target_manifest = resolved_manifests[k];
+
         for (const { from, to } of v) {
             if (!(to.path in target_manifest)) {
                 throw new http.HttpError("failed to link from '" + from + "' to '" + k + "/" + to.path + "'", 400);
             }
+
             let details = target_manifest[to.path];
+            if ("link" in details) { // store grand-parents for easier tracing.
+                if ("ancestor" in details.link) {
+                    to.ancestor = details.link.ancestor;
+                } else {
+                    to.ancestor = details.link;
+                }
+            }
+
             linked_details.push({ path: from, size: details.size, md5sum: details.md5sum, link: to });
         }
     }

@@ -293,6 +293,67 @@ test("initializeUploadHandler works correctly for link-based deduplication", asy
     expect(vbody["pet/dog.txt"]).toEqual({ md5sum: blah_md5, size: blah_size, link: { project: "test", asset: "blob", version: "v1", path: "blah.txt" } });
 })
 
+test("initializeUploadHandler handles ancestral links correctly", async () => {
+    const env = getMiniflareBindings();
+    await setup.simpleMockProject(env);
+
+    let nb = [];
+
+    // Performing a series of uploads.
+    for (var i = 2; i < 5; i++) {
+        let linkversion = "v" + String(i-1);
+        let ireq = new Request("http://localhost", {
+            method: "POST",
+            body: JSON.stringify({ 
+                files: [
+                    { type: "link", path: "foo/bar.txt", link: { project: "test", asset: "blob", version: linkversion, path: "foo/bar.txt" } },
+                    { type: "link", path: "whee.txt", link: { project: "test", asset: "blob", version: linkversion, path: "whee.txt" } },
+                    { type: "link", path: "blah.txt", link: { project: "test", asset: "blob", version: linkversion, path: "blah.txt" } }
+                ]
+            })
+        });
+
+        let myversion = "v" + String(i);
+        ireq.params = { project: "test", asset: "blob", version: myversion };
+        ireq.headers.set("Authorization", "Bearer " + setup.mockTokenOwner);
+        let init = await upload.initializeUploadHandler(ireq, env, nb);
+
+        let creq = new Request("http://localhost", { method: "POST" });
+        creq.params = { project: "test", asset: "blob", version: myversion };
+        creq.headers.set("Authorization", "Bearer " + (await init.json()).session_token);
+        await upload.completeUploadHandler(creq, env, nb);
+    }
+
+    // Checking that the manifests have ancestral information 
+    const paths = ["foo/bar.txt", "whee.txt", "blah.txt"];
+    {
+        let vinfo = await env.BOUND_BUCKET.get("test/blob/v2/..manifest");
+        let vbody = await vinfo.json();
+        for (const p of paths) {
+            expect(vbody[p].link).toEqual({ project: "test", asset: "blob", version: "v1", path: p });
+        }
+    }
+
+    for (var v = 3; v < 5; v++) {
+        let vinfo = await env.BOUND_BUCKET.get("test/blob/v" + String(v) + "/..manifest");
+        let vbody = await vinfo.json();
+        for (const p of paths) {
+            expect(vbody[p].link).toEqual({ 
+                project: "test", 
+                asset: "blob", 
+                version: "v" + String(v - 1), 
+                path: p, 
+                ancestor: { 
+                    project: "test", 
+                    asset: "blob", 
+                    version: "v1", 
+                    path: p
+                }
+            });
+        }
+    }
+})
+
 test("initializeUploadHandler fails if the quota is exceeded", async () => {
     const env = getMiniflareBindings();
     await setup.createMockProject("test-upload", env, { quota: { baseline: 1000, growth_rate: 0, year: 2023 } });

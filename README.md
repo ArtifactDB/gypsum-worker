@@ -24,7 +24,7 @@ The value is another object with the following properties:
 - `size`: an integer specifying the size of the file in bytes.
 - `md5sum`: a string containing the hex-encoded MD5 checksum of the file.
 - `link` (optional): an object specifying the link destination for a file (see [below](#link-deduplication) for details).
-  This contains the strings `project`, `asset`, `version` and `path`.
+  This contains the strings `project`, `asset`, `version` and `path`, and possibly an `ancestor` object.
 
 **gypsum** keeps track of the latest version of each asset in the `{project}/{asset}/..latest` file.
 This contains a JSON object with the following properties:
@@ -57,7 +57,8 @@ To illustrate, consider a hypothetical link file at the following path:
 
 This contains a JSON object where each key/value pair describes a linked-from path in the same subdirectory.
 The key is a relative path, to be appended to `{project}/{asset}/{version}/x/y/z/` to obtain the full bucket path of the linked-from file.
-The value is another object that contains the strings `project`, `asset`, `version` and `path`, which collectively specify the link destination.
+The value is another object that contains the strings `project`, `asset`, `version` and `path`, which collectively specify the link destination supplied by the user.
+If the user-supplied destination is itself another link, the object will contain a nested `ancestor` object that specifies the final link destination to the actual file.
 
 If no link file is present at a particular file prefix, it can be assumed that there are no linked-from files with that prefix.
 
