@@ -25,6 +25,9 @@ export async function createProjectHandler(request, env, nonblockers) {
         throw new http.HttpError("expected a JSON object in the request body", 400);
     }
 
+    let bucket_writes = [];
+    bucket_writes.push(s3.quickUploadJson(pkeys.usage(project), { total: 0 }, env));
+
     let new_perms = { owners: [], uploaders: [] };
     if ('permissions' in body) {
         let req_perms = body.permissions;
@@ -35,7 +38,7 @@ export async function createProjectHandler(request, env, nonblockers) {
             }
         }
     }
-    await s3.quickUploadJson(permpath, new_perms, env);
+    bucket_writes.push(s3.quickUploadJson(permpath, new_perms, env));
 
     let new_quota = quot.defaults();
     if ('quota' in body) {
@@ -47,9 +50,8 @@ export async function createProjectHandler(request, env, nonblockers) {
             }
         }
     }
-    await s3.quickUploadJson(pkeys.quota(project), new_quota, env);
+    bucket_writes.push(s3.quickUploadJson(pkeys.quota(project), new_quota, env));
 
-    await s3.quickUploadJson(pkeys.usage(project), { total: 0 }, env);
-
+    await Promise.all(bucket_writes);
     return new Response(null, { status: 200 });
 }

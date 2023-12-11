@@ -66,18 +66,21 @@ export async function removeProjectAssetVersionHandler(request, env, nonblockers
     await lock.lockProject(project, asset, version, session_key, env);
 
     try {
+        let bucket_writes = [];
+
         // Add trailing slash to avoid deleting a version that starts with 'version'.
         let freed = await s3.quickRecursiveDelete(project + "/" + asset + "/" + version + "/", env);
-        await quot.updateQuotaOnDeletion(project, freed, env);
+        bucket_writes.push(quot.updateQuotaOnDeletion(project, freed, env));
 
         // Need to go through and update the latest version of the asset, in case
         // we just deleted the latest version.
         let linfo = await s3.quickFetchJson(pkeys.latestVersion(project, asset), env, { mustWork: false });
         var was_latest = (linfo !== null && linfo.version == version);
         if (was_latest) {
-            await vers.updateLatestVersion(project, asset, env);
+            bucket_writes.push(vers.updateLatestVersion(project, asset, env));
         }
 
+        await Promise.all(bucket_writes);
     } finally {
         await lock.unlockProject(project, env);
     }

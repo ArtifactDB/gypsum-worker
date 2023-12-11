@@ -21,6 +21,8 @@ export async function approveProbationHandler(request, env, nonblockers) {
     await lock.lockProject(project, asset, version, session_key, env);
 
     try {
+        let bucket_writes = [];
+
         let sumpath = pkeys.versionSummary(project, asset, version);
         let info = await s3.quickFetchJson(sumpath, env, { mustWork: false });
         if (info == null) {
@@ -30,7 +32,7 @@ export async function approveProbationHandler(request, env, nonblockers) {
             throw new http.HttpError("cannot approve probation for non-probational version", 400);
         }
         delete info.on_probation;
-        await s3.quickUploadJson(sumpath, info, env);
+        bucket_writes.push(s3.quickUploadJson(sumpath, info, env));
 
         let latpath = pkeys.latestVersion(project, asset);
         let latest = await s3.quickFetchJson(latpath, env, { mustWork: false });
@@ -42,9 +44,10 @@ export async function approveProbationHandler(request, env, nonblockers) {
             is_latest = (my_finish > latest_finish);
         }
         if (is_latest) {
-            await s3.quickUploadJson(latpath, { version: version }, env);
+            bucket_writes.push(s3.quickUploadJson(latpath, { version: version }, env));
         }
 
+        await Promise.all(bucket_writes);
     } finally {
         await lock.unlockProject(project, env);
     }

@@ -208,7 +208,7 @@ export async function initializeUploadHandler(request, env, nonblockers) {
     let session_key = crypto.randomUUID();
     await lock.lockProject(project, asset, version, session_key, env);
 
-    let preparation = [];
+    let bucket_writes = [];
     let output;
 
     try {
@@ -217,7 +217,7 @@ export async function initializeUploadHandler(request, env, nonblockers) {
         if (ver_meta != null) {
             throw new http.HttpError("project-asset-version already exists", 400);
         }
-        preparation.push(s3.quickUploadJson(
+        bucket_writes.push(s3.quickUploadJson(
             sumpath, 
             { 
                 "upload_user_id": uploading_user, 
@@ -254,7 +254,7 @@ export async function initializeUploadHandler(request, env, nonblockers) {
         }
 
         usage.pending_on_complete_only = current_usage;
-        preparation.push(s3.quickUploadJson(upath, usage, env));
+        bucket_writes.push(s3.quickUploadJson(upath, usage, env));
 
         // Build a manifest for inspection.
         let manifest = {};
@@ -264,7 +264,7 @@ export async function initializeUploadHandler(request, env, nonblockers) {
         for (const l of link_details) {
             manifest[l.path] = { size: l.size, md5sum: l.md5sum, link: l.link };
         }
-        preparation.push(s3.quickUploadJson(pkeys.versionManifest(project, asset, version), manifest, env));
+        bucket_writes.push(s3.quickUploadJson(pkeys.versionManifest(project, asset, version), manifest, env));
 
         // Creating the upload URLs; this could, in theory, switch logic depending on size.
         let upload_urls = [];
@@ -287,7 +287,7 @@ export async function initializeUploadHandler(request, env, nonblockers) {
     } catch (e) {
         // Wait for everything to finish so that deletion catches everything.
         // We don't mind if it fails, just that it was settled.
-        await Promise.allSettled(preparation);
+        await Promise.allSettled(bucket_writes);
 
         // Unlocking the project if the upload init failed, then users can try again without penalty.
         await s3.quickRecursiveDelete(project + "/" + asset + "/" + version + "/", env);
@@ -296,7 +296,7 @@ export async function initializeUploadHandler(request, env, nonblockers) {
     }
 
     // Again, just wait for everything to finish.
-    await Promise.all(preparation);
+    await Promise.all(bucket_writes);
 
     return output;
 }
@@ -395,37 +395,37 @@ export async function completeUploadHandler(request, env, nonblockers) {
     }
 
     let info = await assets.summary;
-    let preparation = [];
+    let bucket_writes = [];
     try {
         // Create link structures within each subdirectory for bulk consumers.
         for (const [k, v] of Object.entries(linkable)) {
             // Either 'k' already has a trailing slash or is an empty string, so we can just add it to the file name.
-            preparation.push(s3.quickUploadJson(project + "/" + asset + "/" + version + "/" + k + "..links", v, env));
+            bucket_writes.push(s3.quickUploadJson(project + "/" + asset + "/" + version + "/" + k + "..links", v, env));
         }
 
         var is_official = (!info.on_probation);
         if (is_official) {
-            preparation.push(s3.quickUploadJson(pkeys.latestVersion(project, asset), { "version": version }, env));
+            bucket_writes.push(s3.quickUploadJson(pkeys.latestVersion(project, asset), { "version": version }, env));
             delete info.on_probation; 
         }
 
         info.upload_finish = (new Date).toISOString();
-        preparation.push(s3.quickUploadJson(sumpath, info, env));
+        bucket_writes.push(s3.quickUploadJson(sumpath, info, env));
 
         // Updating the usage file.
         let upath = pkeys.usage(project);
         let usage = await s3.quickFetchJson(upath, env);
         usage.total += usage.pending_on_complete_only;
         delete usage.pending_on_complete_only;
-        preparation.push(s3.quickUploadJson(upath, usage, env));
+        bucket_writes.push(s3.quickUploadJson(upath, usage, env));
 
     } finally {
-        await Promise.all(preparation);
+        await Promise.all(bucket_writes);
     }
 
     await lock.unlockProject(project, env);
     if (is_official) {
-        preparation.push(change.addChangelog({ type: "add-version", project, asset, version, latest: true }, env));
+        bucket_writes.push(change.addChangelog({ type: "add-version", project, asset, version, latest: true }, env));
     }
     return new Response(null, { status: 200 });
 }
