@@ -403,10 +403,10 @@ export async function completeUploadHandler(request, env, nonblockers) {
             preparation.push(s3.quickUploadJson(project + "/" + asset + "/" + version + "/" + k + "..links", v, env));
         }
 
-        if (!info.on_probation) {
+        var is_official = (!info.on_probation);
+        if (is_official) {
             preparation.push(s3.quickUploadJson(pkeys.latestVersion(project, asset), { "version": version }, env));
             delete info.on_probation; 
-            preparation.push(change.addChangelog({ type: "add-version", project, asset, version, latest: true }, env));
         }
 
         info.upload_finish = (new Date).toISOString();
@@ -423,8 +423,10 @@ export async function completeUploadHandler(request, env, nonblockers) {
         await Promise.all(preparation);
     }
 
-    // Release lock once we're clear.
     await lock.unlockProject(project, env);
+    if (is_official) {
+        preparation.push(change.addChangelog({ type: "add-version", project, asset, version, latest: true }, env));
+    }
     return new Response(null, { status: 200 });
 }
 

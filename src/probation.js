@@ -34,7 +34,7 @@ export async function approveProbationHandler(request, env, nonblockers) {
 
         let latpath = pkeys.latestVersion(project, asset);
         let latest = await s3.quickFetchJson(latpath, env, { mustWork: false });
-        let is_latest = true;
+        var is_latest = true;
         if (latest !== null) {
             let latest_info = await s3.quickFetchJson(pkeys.versionSummary(project, asset, latest.version), env);
             let my_finish = Date.parse(info.upload_finished);
@@ -45,12 +45,11 @@ export async function approveProbationHandler(request, env, nonblockers) {
             await s3.quickUploadJson(latpath, { version: version }, env);
         }
 
-        await change.addChangelog({ type: "add-version", project, asset, version, latest: is_latest }, env);
-
     } finally {
         await lock.unlockProject(project, env);
     }
 
+    await change.addChangelog({ type: "add-version", project, asset, version, latest: is_latest }, env);
     return new Response(null, { status: 200 });
 }
 
