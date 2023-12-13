@@ -27,15 +27,22 @@ export async function setPermissionsHandler(request, env, nonblockers) {
     auth.validatePermissions(new_perms);
 
     // Updating everything on top of the existing permissions.
+    let modified = false;
     for (const x of Object.keys(perms)) {
         if (x in new_perms) {
+            if (!modified) {
+                modified = (perms[x] != new_perms[x])
+            }
             perms[x] = new_perms[x];
         }
     }
-    await s3.quickUploadJson(path, perms, env);
 
-    // Clearing the cached permissions to trigger a reload on the next getPermissions() call.
-    auth.flushCachedPermissions(project, nonblockers);
+    if (modified) {
+        await s3.quickUploadJson(path, perms, env);
+
+        // Clearing the cached permissions to trigger a reload on the next getPermissions() call.
+        auth.flushCachedPermissions(project, nonblockers);
+    }
 
     return new Response(null, { status: 200 });
 }

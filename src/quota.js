@@ -19,13 +19,20 @@ export async function setQuotaHandler(request, env, nonblockers) {
 
     let new_quota = await http.bodyToJson(request);
     quot.validateQuota(new_quota);
+
+    let modified = false;
     for (const x of Object.keys(qdata)) {
         if (x in new_quota) {
+            if (!modified) {
+                modified = (qdata[x] != new_quota[x]);
+            }
             qdata[x] = new_quota[x];
         }
     }
 
-    await s3.quickUploadJson(qpath, qdata, env);
+    if (modified) {
+        await s3.quickUploadJson(qpath, qdata, env);
+    }
     return new Response(null, { status: 200 });
 }
 
