@@ -115,6 +115,17 @@ This allows administrators to control the resource consumption of each project, 
 The growth of the quota permits some accumulation of files, e.g., to retain older versions of assets for reproducibility purposes.
 Administrators can customize the quota and its growth rate for each project.
 
+Each project's quota specification is stored in `{project}/..quota`, which contains a JSON object with the following properties:
+- `baseline`: the baseline quota (i.e., at time zero, or project creation) in bytes.
+- `growth_rate`: the annual growth rate for the quota in bytes.
+- `year`: the calendar year of project creation.
+
+The total quota for each project is simply calculated by `(CURRENT_YEAR - year) * growth_rate + baseline`.
+
+Each project's current usage is tracked in `{project}/..usage`, which contains a JSON object with the following properties:
+- `total`: the total number of bytes allocated to user-supplied files (i.e., not including `..`-prefixed internal files).
+- `~pending_on_complete_only` (optional): internal use only, this should be ignored by readers.
+
 ## Interacting with the API
 
 **gypsum** stores its files in an R2 bucket that can be accessed by any S3-compatible client.
