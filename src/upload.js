@@ -189,6 +189,8 @@ function isBadName(name) {
     return name.indexOf("/") >= 0 || name.startsWith("..") || name.length == 0;
 }
 
+const pending_name = "~pending_on_complete_only";
+
 export async function initializeUploadHandler(request, env, nonblockers) {
     let project = decodeURIComponent(request.params.project);
     let asset = decodeURIComponent(request.params.asset);
@@ -257,9 +259,9 @@ export async function initializeUploadHandler(request, env, nonblockers) {
         }
         let link_details = await checkLinks(split.link, project, asset, version, env, manifest_cache);
 
-        // Checking that the quota isn't exceeded. Note that 'pending_on_complete_only' 
-        // should only EVER be used by completeUploadHandler, so even if it's non-zero here, 
-        // we just ignore it.
+        // Checking that the quota isn't exceeded. Note that 'pending_name'
+        // should only EVER be used by completeUploadHandler, so even if it's
+        // non-zero here, we just ignore it.
         let current_usage = 0;
         for (const s of split.simple) {
             current_usage += s.size;
@@ -271,7 +273,7 @@ export async function initializeUploadHandler(request, env, nonblockers) {
             throw new http.HttpError("upload exceeds the storage quota for this project", 400);
         }
 
-        usage.pending_on_complete_only = current_usage;
+        usage[pending_name] = current_usage;
         bucket_writes.push(s3.quickUploadJson(upath, usage, env));
 
         // Build a manifest for inspection.
@@ -431,8 +433,8 @@ export async function completeUploadHandler(request, env, nonblockers) {
     // Updating the usage file.
     let upath = pkeys.usage(project);
     let usage = await s3.quickFetchJson(upath, env);
-    usage.total += usage.pending_on_complete_only;
-    delete usage.pending_on_complete_only;
+    usage.total += usage[pending_name];
+    delete usage[pending_name]
     bucket_writes.push(s3.quickUploadJson(upath, usage, env));
 
     await Promise.all(bucket_writes);

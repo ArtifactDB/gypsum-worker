@@ -167,7 +167,7 @@ test("initializeUploadHandler works correctly for simple uploads", async () => {
     // Check that the usage file was updated.
     let usinfo = await env.BOUND_BUCKET.get("test-upload/..usage");
     let usbody = await usinfo.json();
-    expect(usbody.pending_on_complete_only).toEqual(123);
+    expect(usbody["~pending_on_complete_only"]).toEqual(123);
 
     // Check that a version summary file was posted to the bucket.
     let sinfo = await env.BOUND_BUCKET.get("test-upload/blob/v0/..summary");
