@@ -80,7 +80,7 @@ router.post("/probation/reject/:project/:asset/:version", probation.rejectProbat
 
 router.post("/refresh/latest/:project/:asset", version.refreshLatestVersionHandler);
 
-router.post("/refresh/usage/:project", quota.refreshQuotaHandler);
+router.post("/refresh/usage/:project", quota.refreshQuotaUsageHandler);
 
 /*** Setting up the listener ***/
 
