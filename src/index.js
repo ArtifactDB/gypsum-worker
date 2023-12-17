@@ -7,6 +7,7 @@ import * as permissions from "./permissions.js";
 import * as quota from "./quota.js";
 import * as probation from "./probation.js";
 import * as version from "./version.js";
+import * as change from "./changelog.js";
 import * as gh from "./utils/github.js";
 import * as auth from "./utils/permissions.js";
 import * as http from "./utils/http.js";
