@@ -11,8 +11,8 @@ A variety of permission schemes are implemented to allow project maintainers to 
 
 This document is intended for system administrators who want to spin up their own instance or developers of new clients to the **gypsum** backend.
 Users should never have to interact with the **gypsum** API directly, as this should be mediated by client packages in relevant frameworks like R/Bioconductor.
-For example, the [gypsum R client](https://github.com/ArtifactDB/gypsum-R) provides functions for downloading or uploading files,
-which are then called by more user-facing packages like the [scRNAseq](https://github.com/LTLA/scRNAseq) R package.
+For example, the [**gypsum** R client](https://github.com/ArtifactDB/gypsum-R) provides functions for downloading or uploading files,
+which are then called by more user-facing packages like the [**scRNAseq** R package](https://github.com/LTLA/scRNAseq).
 
 ## Concepts
 
@@ -185,7 +185,7 @@ The file contains a JSON object that details the type of action in the `type` pr
 Downstream systems can inspect these files to determine what changes have occurred in the **gypsum** bucket.
 This is intended for systems that need to maintain a database index on top of the bucket's contents.
 By routinely scanning for changes, databases can incrementally perform updates rather than reindexing the entire bucket.
-For an example, check out the [**gypsum-bioc-index** repository](https://github.com/ArtifactDB/gypsum-bioc-index) -
+For an example, check out the [**gypsum-to-sqlite** repository](https://github.com/ArtifactDB/gypsum-to-sqlite) -
 this uses the **gypsum** logs to create and update SQLite files, though the same idea can be used for any database technology.
 
 Log files are held for 7 days before deletion.
