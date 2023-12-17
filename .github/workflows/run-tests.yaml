@@ -2,7 +2,13 @@ on:
   push:
     branches:
       - master
+    paths-ignore:
+      - README.md
+      - swagger.json
   pull_request:
+    paths-ignore:
+      - README.md
+      - swagger.json
 
 name: Run tests
 
