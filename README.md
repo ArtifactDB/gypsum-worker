@@ -98,18 +98,18 @@ This is a JSON-formatted file that contains a JSON object with the following pro
     If not specified, the authorization does not expire by default.
   - `trusted` (optional): Boolean indicating whether the uploader is trusted.
     If `false`, all uploads are considered to be probational.
-    If not specified, the uploader is trusted by default.
+    If not specified, the uploader is untrusted by default.
 
 All users are authenticated by their GitHub personal access tokens.
-Permissions can also be extended to GitHub organizations, in which case each user's organization membership will be checked be inspected.
+GitHub organizations can also be listed as uploaders, owners or administrators, in which case the relevant authorization extends to all members of that organization.
 
 ### Upload probation
 
 Uploads can be specified as "probational" if they come from untrusted sources.
 The uploaded files are present in the bucket and accessible to readers;
 however, they are not immutable and are not used to set the latest version of an asset.
-This is useful when considering third-party contributions to a project, where project owners can review the upload and approve/reject it.
-Approved probational uploads have the same status as a trusted upload from the project owner themselves, while rejected probational uploads are deleted entirely from the bucket.
+This is useful when considering third-party contributions to a project, where project owners can review the upload before approving/rejecting it.
+Approved probational uploads are immutable and have the same status as a trusted upload from the project owner themselves, while rejected probational uploads are deleted entirely from the bucket.
 Probational uploads can also be rejected by the uploading user themselves, e.g., to fix known problems before a project owner's review.
 
 Uploads from untrusted uploaders are always probational.
