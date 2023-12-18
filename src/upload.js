@@ -437,11 +437,12 @@ export async function completeUploadHandler(request, env, nonblockers) {
     delete usage[pending_name]
     bucket_writes.push(s3.quickUploadJson(upath, usage, env));
 
-    await Promise.all(bucket_writes);
-    await lock.unlockProject(project, env);
     if (is_official) {
         bucket_writes.push(change.addChangelog({ type: "add-version", project, asset, version, latest: true }, env));
     }
+    await Promise.all(bucket_writes);
+    await lock.unlockProject(project, env);
+
     return new Response(null, { status: 200 });
 }
 
