@@ -8,7 +8,7 @@
 
     "servers": [
         {
-            "url": "https://gypsum-test.aaron-lun.workers.dev",
+            "url": "https://gypsum.artifactdb.com",
             "description": "Production instance of the API"
         }
     ],

@@ -1,13 +1,14 @@
 # ArtifactDB on the Cloudflare stack
 
 ![RunTests](https://github.com/ArtifactDB/gypsum-worker/actions/workflows/run-tests.yaml/badge.svg)
-[![Swagger](https://github.com/ArtifactDB/gypsum-worker/actions/workflows/deploy-swagger.yaml/badge.svg)](https://artifactdb.github.io/gypsum-worker)
+[![Swagger](https://github.com/ArtifactDB/gypsum-worker/actions/workflows/deploy-swagger.yaml/badge.svg)](https://gypsum.artifactdb.com)
 
 ## Overview
 
 **gypsum** uses Cloudflare Workers and R2 storage to provide a simple REST API for storing ArtifactDB-managed files grouped by project, asset and version.
-Unlike the original ArtifactDB API, all files are intended to be publicly accessible for download, allowing us to simplify **gypsum**'s design.
-A variety of permission schemes are implemented to allow project maintainers to control and approve uploads.
+Unlike the original ArtifactDB API, all files are intended to be publicly accessible for download, allowing us to simplify **gypsum**'s design for read-only operations.
+For writes, flexible permission schemes and project-specific storage quotas enable fine-grained control of uploads by both project owners and administrators. 
+See [here](https://gypsum.artifactdb.com) for a deployed instance of the **gypsum** API.
 
 This document is intended for system administrators who want to spin up their own instance or developers of new clients to the **gypsum** backend.
 Users should never have to interact with the **gypsum** API directly, as this should be mediated by client packages in relevant frameworks like R/Bioconductor.
@@ -141,7 +142,7 @@ This does require a little bit more work, unfortunately, as Cloudflare's public 
 Instead, we need to request some credentials from the API first:
 
 ```shell
-curl https://gypsum-test.aaron-lun.workers.dev/credentials/s3-api
+curl https://gypsum.artifactdb.com/credentials/s3-api
 ## {
 ##     "endpoint":"https://blahblahblah.r2.cloudflarestorage.com",
 ##     "bucket":"gypsum-test",
@@ -163,7 +164,7 @@ This should generate a GitHub access token with read access on the `user` and `o
 The token can then be passed to various API endpoints to authenticate the user. 
 Administrators are similarly authenticated via GitHub.
 
-Check out the [Swagger](https://artifactdb.github.io/gypsum-worker) documentation for more details.
+Check out the [Swagger](https://gypsum.artifactdb.dom) documentation for more details.
 
 ## Parsing logs
 
