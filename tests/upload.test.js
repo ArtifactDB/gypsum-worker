@@ -60,11 +60,23 @@ test("initializeUploadHandler throws the right errors related to formatting", as
     req = create_req({ files: [ { "path": 2 } ] });
     await setup.expectError(upload.initializeUploadHandler(req, env, nb), "'files.path' should be a string");
 
+    req = create_req({ files: [ { "path": "" } ] });
+    await setup.expectError(upload.initializeUploadHandler(req, env, nb), "cannot be empty");
+
     req = create_req({ files: [ { "path": "..asdasd" } ] });
     await setup.expectError(upload.initializeUploadHandler(req, env, nb), "cannot start with");
 
     req = create_req({ files: [ { "path": "yay/..asdasd" } ] });
     await setup.expectError(upload.initializeUploadHandler(req, env, nb), "cannot start with");
+
+    req = create_req({ files: [ { "path": "/asd" } ] });
+    await setup.expectError(upload.initializeUploadHandler(req, env, nb), "cannot start or end with '/'");
+
+    req = create_req({ files: [ { "path": "asdad//asdasd" } ] });
+    await setup.expectError(upload.initializeUploadHandler(req, env, nb), "cannot contain repeated '/'");
+
+    req = create_req({ files: [ { "path": "asdad\\asdasd" } ] });
+    await setup.expectError(upload.initializeUploadHandler(req, env, nb), "cannot contain '\\'");
 
     req = create_req({ files: [ { "path": "asdasd" } ] });
     await setup.expectError(upload.initializeUploadHandler(req, env, nb), "'files.type' should be a string");
@@ -128,6 +140,27 @@ test("initializeUploadHandler throws the right errors for permission-related err
         let nb = [];
         await setup.expectError(upload.initializeUploadHandler(req, env, nb), "not authorized to upload");
     }
+})
+
+test("initializeUploadHandler throws the right errors for invalid project names", async () => {
+    const env = getMiniflareBindings();
+    await setup.createMockProject("test-upload", env);
+    let options = { method: "POST", body: JSON.stringify({ files: [] }) };
+
+    let req = new Request("http://localhost", options);
+    req.params = { project: "test/upload", asset: "palms", version: "test" };
+    let nb = [];
+    req.headers.append("Authorization", "Bearer " + setup.mockTokenOwner);
+    await setup.expectError(upload.initializeUploadHandler(req, env, nb), "project name cannot contain");
+
+    req.params = { project: "test-upload", asset: "foo\\bar", version: "test" };
+    await setup.expectError(upload.initializeUploadHandler(req, env, nb), "asset name cannot contain");
+
+    req.params = { project: "test-upload", asset: "foo-bar", version: "..test" };
+    await setup.expectError(upload.initializeUploadHandler(req, env, nb), "version name cannot start with");
+
+    req.params = { project: "test-upload", asset: "foo-bar", version: "" };
+    await setup.expectError(upload.initializeUploadHandler(req, env, nb), "version name cannot be empty");
 })
 
 test("initializeUploadHandler works correctly for simple uploads", async () => {

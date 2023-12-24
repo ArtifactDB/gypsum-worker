@@ -24,10 +24,24 @@ function splitByUploadType(files) {
         if (!("path" in f) || typeof f.path != "string") {
             throw new http.HttpError("'files.path' should be a string", 400);
         }
+
         let fname = f.path;
+        if (fname.length == 0) {
+            throw new http.HttpError("'files.path' cannot be empty", 400);
+        }
         if (misc.isInternalPath(fname)) {
             throw new http.HttpError("components of 'files.path' cannot start with '..'", 400);
         }
+        if (fname.endsWith("/") || fname.startsWith("/")) {
+            throw new http.HttpError("'files.path' cannot start or end with '/'");
+        }
+        if (fname.indexOf("//") >= 0) {
+            throw new http.HttpError("'files.path' cannot contain repeated '/'");
+        }
+        if (fname.indexOf("\\") >= 0) {
+            throw new http.HttpError("'files.path' cannot contain '\\'");
+        }
+
         if (all_paths.has(fname)) {
             throw new http.HttpError("duplicated value '" + fname + "' in 'files.path'", 400);
         }
@@ -185,8 +199,16 @@ async function checkLinks(linked, project, asset, version, env, manifest_cache) 
     return linked_details;
 }
 
-function isBadName(name) {
-    return name.indexOf("/") >= 0 || name.startsWith("..") || name.length == 0;
+function checkBadName(name, type) {
+    if (name.length == 0) {
+        throw new http.HttpError(type + " name cannot be empty", 400);
+    }
+    if (name.indexOf("/") >= 0 || name.indexOf('\\') >= 0) {
+        throw new http.HttpError(type + " name cannot contain '/' or '\\'", 400);
+    }
+    if (name.startsWith("..")) {
+        throw new http.HttpError(type + " name cannot start with '..'", 400);
+    }
 }
 
 const pending_name = "~pending_on_complete_only";
@@ -196,15 +218,9 @@ export async function initializeUploadHandler(request, env, nonblockers) {
     let asset = decodeURIComponent(request.params.asset);
     let version = decodeURIComponent(request.params.version);
 
-    if (isBadName(project)) {
-        throw new http.HttpError("project name cannot contain '/', start with '..', or be empty", 400);
-    }
-    if (isBadName(asset)) {
-        throw new http.HttpError("asset name cannot contain '/', start with '..', or be empty", 400);
-    }
-    if (isBadName(version)) {
-        throw new http.HttpError("version name cannot contain '/', start with '..', or be empty", 400);
-    }
+    checkBadName(project, "project");
+    checkBadName(asset, "asset");
+    checkBadName(version, "version");
 
     let body = await http.bodyToJson(request);
     if (!misc.isJsonObject(body)) {
