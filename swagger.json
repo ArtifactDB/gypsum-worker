@@ -334,7 +334,7 @@
                         }
                     }
                 },
-                "security": [ { "owner": [] } ],
+                "security": [ { "owner": [], "admin": [] } ],
                 "responses": {
                     "200": { "description": "Successful change to the project permissions." },
                     "400": { 
@@ -391,7 +391,7 @@
                     { "$ref": "#/components/parameters/asset" },
                     { "$ref": "#/components/parameters/version" }
                 ],
-                "security": [ { "owner": [] } ],
+                "security": [ { "owner": [], "admin": [] } ],
                 "responses": {
                     "200": { "description": "Successful approval.." },
                     "401": { "$ref": "#/components/responses/401" },
@@ -409,7 +409,7 @@
                     { "$ref": "#/components/parameters/asset" },
                     { "$ref": "#/components/parameters/version" }
                 ],
-                "security": [ { "owner": [] } ],
+                "security": [ { "owner": [], "admin": [] } ],
                 "responses": {
                     "200": { "description": "Successful approval.." },
                     "401": { "$ref": "#/components/responses/401" },
