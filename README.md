@@ -38,12 +38,14 @@ The value is another object with the following properties:
 **gypsum** keeps track of the latest version of each asset in the `{project}/{asset}/..latest` file.
 This contains a JSON object with the following properties:
 - `latest`: String containing the name of the latest version of this asset.
+  This is defined as the version with the most recent `upload_finish` time in the `..summary`.
 
 For any given project-asset-version combination, the `{project}/{asset}/{version}/..summary` file records some more details about the upload process.
 This contains a JSON object with the following properties:
 - `upload_user_id`, a string containing the identity of the uploading user.
 - `upload_start`, an Internet date/time-formatted string containing the upload start time.
 - `upload_finish`, an Internet date/time-formatted string containing the upload finish time.
+  This property is absent if the upload for this version is currently in progress, but will be added on upload completion. 
 - `on_probation` (optional), a boolean indicating whether this upload is on probation, see [below](#upload-probation).
   If not present, this can be assumed to be `false`.
 
@@ -108,7 +110,7 @@ GitHub organizations can also be listed as uploaders, owners or administrators, 
 
 Uploads can be specified as "probational" if they come from untrusted sources.
 The uploaded files are present in the bucket and accessible to readers;
-however, they are not immutable and are not used to set the latest version of an asset.
+however, they are not immutable and are not used to set the latest version of an asset in `..latest`.
 This is useful when considering third-party contributions to a project, where project owners can review the upload before approving/rejecting it.
 Approved probational uploads are immutable and have the same status as a trusted upload from the project owner themselves, while rejected probational uploads are deleted entirely from the bucket.
 Probational uploads can also be rejected by the uploading user themselves, e.g., to fix known problems before a project owner's review.
