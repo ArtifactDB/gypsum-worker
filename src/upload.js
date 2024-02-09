@@ -211,8 +211,6 @@ function checkBadName(name, type) {
     }
 }
 
-const pending_name = "~pending_on_complete_only";
-
 export async function initializeUploadHandler(request, env, nonblockers) {
     let project = decodeURIComponent(request.params.project);
     let asset = decodeURIComponent(request.params.asset);
@@ -275,9 +273,7 @@ export async function initializeUploadHandler(request, env, nonblockers) {
         }
         let link_details = await checkLinks(split.link, project, asset, version, env, manifest_cache);
 
-        // Checking that the quota isn't exceeded. Note that 'pending_name'
-        // should only EVER be used by completeUploadHandler, so even if it's
-        // non-zero here, we just ignore it.
+        // Checking that the quota isn't exceeded.
         let current_usage = 0;
         for (const s of split.simple) {
             current_usage += s.size;
@@ -288,9 +284,6 @@ export async function initializeUploadHandler(request, env, nonblockers) {
         if (usage.total + current_usage >= (await quot.computeQuota(project, env))) {
             throw new http.HttpError("upload exceeds the storage quota for this project", 400);
         }
-
-        usage[pending_name] = current_usage;
-        bucket_writes.push(s3.quickUploadJson(upath, usage, env));
 
         // Build a manifest for inspection.
         let manifest = {};
@@ -400,7 +393,9 @@ export async function completeUploadHandler(request, env, nonblockers) {
     // We scan the manifest to check that all files were uploaded. We also
     // collect links for some more work later.
     let manifest = await assets.manifest;
+    let added_usage = 0;
     let linkable = {};
+
     for (const [k, v] of Object.entries(manifest)) {
         let s = assets.listing.get(k);
         let found = (typeof s != "undefined");
@@ -427,6 +422,7 @@ export async function completeUploadHandler(request, env, nonblockers) {
             } else if (s != v.size) {
                 throw new http.HttpError("actual size of '" + k + "' does not match its reported size in the manifest", 400);
             }
+            added_usage += s;
         }
     }
 
@@ -449,8 +445,7 @@ export async function completeUploadHandler(request, env, nonblockers) {
     // Updating the usage file.
     let upath = pkeys.usage(project);
     let usage = await s3.quickFetchJson(upath, env);
-    usage.total += usage[pending_name];
-    delete usage[pending_name]
+    usage.total += added_usage;
     bucket_writes.push(s3.quickUploadJson(upath, usage, env));
 
     if (is_official) {

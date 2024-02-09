@@ -197,11 +197,6 @@ test("initializeUploadHandler works correctly for simple uploads", async () => {
     expect(typeof lckbody.session_hash).toEqual("string");
     expect(lckbody.version).toEqual("v0");
 
-    // Check that the usage file was updated.
-    let usinfo = await env.BOUND_BUCKET.get("test-upload/..usage");
-    let usbody = await usinfo.json();
-    expect(usbody["~pending_on_complete_only"]).toEqual(123);
-
     // Check that a version summary file was posted to the bucket.
     let sinfo = await env.BOUND_BUCKET.get("test-upload/blob/v0/..summary");
     let sbody = await sinfo.json();
@@ -747,7 +742,11 @@ test("completeUploadHandler works correctly", async () => {
     // Checking that the usage has been updated.
     let usinfo = await env.BOUND_BUCKET.get("test-upload/..usage");
     let usbody = await usinfo.json();
-    expect(usbody.total).toBeGreaterThan(original_size);
+    let new_size = original_size;
+    for (const x of [ "makoto", "akane", "chito" ]) { //i.e., everything set as 'simple'.
+        new_size += payload[x].length;
+    }
+    expect(usbody.total).toEqual(new_size);
 
     // Check that a log was added.
     let found_logs = await setup.fetchLogs(env);

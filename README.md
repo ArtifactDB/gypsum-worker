@@ -135,7 +135,6 @@ The total quota for each project is simply calculated by `(CURRENT_YEAR - year) 
 
 Each project's current usage is tracked in `{project}/..usage`, which contains a JSON object with the following properties:
 - `total`: the total number of bytes allocated to user-supplied files (i.e., not including `..`-prefixed internal files).
-- `~pending_on_complete_only` (optional): internal use only, this should be ignored by readers.
 
 ## Interacting with the API
 
