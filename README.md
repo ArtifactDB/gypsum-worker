@@ -19,7 +19,8 @@ which are then called by more user-facing packages like the [**scRNAseq** R pack
 
 ### File organization
 
-Each project may have multiple assets, and each asset may have multiple versions.
+**gypsum** organizes its files in a hierarchy of projects, assets (nested in each project), and versions (nested in each asset).
+That is, each project may have multiple assets, and each asset may have multiple versions.
 All user-supplied files are associated with a particular project-asset-version combination.
 This hierarchy is motivated by usage scenarios in Bioconductor packages;
 each project corresponds to a single package, but different parts of the package may require different data assets, each of which may update at different frequencies.
@@ -37,7 +38,7 @@ The value is another object with the following properties:
 
 **gypsum** keeps track of the latest version of each asset in the `{project}/{asset}/..latest` file.
 This contains a JSON object with the following properties:
-- `latest`: String containing the name of the latest version of this asset.
+- `version`: String containing the name of the latest version of this asset.
   This is defined as the version with the most recent `upload_finish` time in the `..summary`.
 
 For any given project-asset-version combination, the `{project}/{asset}/{version}/..summary` file records some more details about the upload process.
@@ -51,16 +52,16 @@ This contains a JSON object with the following properties:
 
 ### Link deduplication
 
-When creating a new version of a project's assets, **gypsum** can be instructed to attempt deduplication based on file size and MD5 checksum.
+When creating a new version of a project's assets, **gypsum** can be instructed to attempt deduplication based on the file size and MD5 checksum.
 The API will inspect the immediate previous version of the asset to see if any other files have a matching size/checksum.
-If so, it will create a link to the file in the previous version rather than uploading a redundant copy.
-This improves efficiency by reducing storage and data transfer.
+If so, it will create a link to the file in the previous version rather than wasting disk space and upload bandwith on a redundant copy.
 Uploaders can also directly instruct **gypsum** to create links if the original identity of the copied file is known in advance.
 
 Any "linked-from" files (i.e., those identified as copies of other existing files) will not actually be present in the bucket. 
 The existence of linked-from files is either determined from the `..manifest` file for each project-asset-version;
-or from `..links` files, which avoid the need to download the entire manifest if only a subset of files are of interest.
-To illustrate, consider a hypothetical link file at the following path:
+or from `..links` files, which describe the links present in each `/`-delimited path. 
+The latter allows clients to avoid downloading the entire manifest if only a subset of files are of interest.
+To illustrate, consider a hypothetical `..links` file at the following path:
 
 ```
 {project}/{asset}/{version}/x/y/z/..links
@@ -71,7 +72,7 @@ The key is a relative path, to be appended to `{project}/{asset}/{version}/x/y/z
 The value is another object that contains the strings `project`, `asset`, `version` and `path`, which collectively specify the link destination supplied by the user.
 If the user-supplied destination is itself another link, the object will contain a nested `ancestor` object that specifies the final link destination to the actual file.
 
-If no link file is present at a particular file prefix, it can be assumed that there are no linked-from files with that prefix.
+If no `..links` file is present at a particular file prefix, it can be assumed that there are no linked-from files with that prefix.
 
 ### Permissions
 
@@ -248,10 +249,14 @@ Run `wrangler publish` to deploy to Cloudflare Workers.
 This will create an API at `https://<WORKER_NAME>.<ACCOUNT_NAME>.workers.dev`.
 See [here](https://developers.cloudflare.com/workers/platform/environments) for instructions on publishing to a custom domain.
 
-## Comments on deletion
+## Comments for administrators
 
 Administrators have access to rather dangerous `DELETE` endpoints.
 These violate **gypsum**'s immutability contract and should be used sparingly.
 In particular, administrators must ensure that no other project links to the to-be-deleted files, otherwise those links will be invalidated.
 This check involves going through all the manifest files and is currently a manual process.
 Clients may also need to flush their caches if the `..summary` files corresponding to a deleted project cannot be found.
+
+On rare occasions involving frequent updates, some of the inter-version statistics may not be correct.
+For example, the latest version in `..latest` may not keep in sync when many probational versions are approved at once.
+This can be fixed manually by hitting the `/refresh` endpoints to recompute the relevant statistics.
