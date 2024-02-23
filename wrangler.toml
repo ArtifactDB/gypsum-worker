@@ -1,4 +1,4 @@
-name = "gypsum-test" # ~> Name of the worker, to be used in the endpoint URL.
+name = "gypsum-prod" # ~> Name of the worker, to be used in the endpoint URL.
 main = "src/index.js"
 
 account_id = "bfb2e522e0b245720424784fcf7c04c0" # ~> Cloudflare account ID, as listed on the R2 page of the Cloudflare dashboard.
@@ -7,13 +7,13 @@ compatibility_date = "2022-03-04"
 
 [[r2_buckets]]
 binding = 'BOUND_BUCKET' 
-bucket_name = 'gypsum-test' # ~> Name of the R2 bucket to bind to the worker.
-preview_bucket_name = 'gypsum-test' # ~> Name of the bucket for wrangler dev. Best if left the same as 'bucket_name', despite the warnings.
+bucket_name = 'gypsum-prod' # ~> Name of the R2 bucket to bind to the worker.
+preview_bucket_name = 'gypsum-prod' # ~> Name of the bucket for wrangler dev. Best if left the same as 'bucket_name', despite the warnings.
 
 [vars]
 CF_ACCOUNT_ID = "bfb2e522e0b245720424784fcf7c04c0" # ~> Account ID. Should be the same as 'account_id'.
-R2_BUCKET_NAME = 'gypsum-test' # ~> Name of the bucket. Should be the same as 'r2_buckets.bucket_name'.
-GITHUB_USER_AGENT = 'gypsum-test-worker' # ~> User agent for GitHub API requests.
+R2_BUCKET_NAME = 'gypsum-prod' # ~> Name of the bucket. Should be the same as 'r2_buckets.bucket_name'.
+GITHUB_USER_AGENT = 'gypsum-prod-worker' # ~> User agent for GitHub API requests.
 ADMIN_ACCOUNTS = 'LTLA' # ~> Comma-separated list of GitHub users or organizations that can act as administrators.
 
 [triggers]
