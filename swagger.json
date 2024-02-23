@@ -10,6 +10,10 @@
         {
             "url": "https://gypsum.artifactdb.com",
             "description": "Production instance of the API"
+        },
+        {
+            "url": "https://gypsum-test.artifactdb.com",
+            "description": "Test instance of the API"
         }
     ],
 
