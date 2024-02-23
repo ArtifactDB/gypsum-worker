@@ -218,30 +218,35 @@ Note that some of the variables need to be listed multiple times - this is unfor
 
 Add the following secrets via `wrangler secret put`:
 
-- `ACCESS_KEY_ID`, for the access key ID.
+- `ACCESS_KEY_ID`, to allow the worker to write into the bucket.
   To generate:
   1. Click "Manage R2 API tokens" at the top-right corner of the R2 tab on the Cloudflare dashboard.
   2. Click "Create API Token".
-  3. Select "Admin Read & Write".
-  4. Specify the token's scope to the bucket you just set up.
+  3. Select "Object Read & Write".
+  4. Specify the token's scope to the name of the bucket you just set up.
      The TTL can be changed at your discretion.
-- `SECRET_ACCESS_KEY`, for the secret associated with the access key ID.
+  5. Copy the newly generated S3 client ID into the `wrangler` prompt.
+- `SECRET_ACCESS_KEY`, for the secret associated with the `ACCESS_KEY_ID`.
 - `PUBLIC_S3_KEY`, for public S3 access.
   To generate:
   1. Click "Manage R2 API tokens" at the top-right corner of the R2 tab on the Cloudflare dashboard.
   2. Click "Create API Token".
   3. Select "Object Read only".
-  4. Specify the token's scope to the bucket you just set up.
+  4. Specify the token's scope to the name bucket you just set up.
      The TTL can be changed at your discretion.
-- `PUBLIC_S3_SECRET`, for the secret associated with the public S3 access key ID.
+  5. Copy the newly generated S3 client ID into the `wrangler` prompt.
+- `PUBLIC_S3_SECRET`, for the secret associated with the `PUBLIC_S3_KEY`.
 - `GITHUB_APP_ID`, for the GitHub Oauth2 flow.
   To generate:
   1. Go to developer settings for a user/organization.
+     Any account can be used here.
   2. Click on "Oauth apps".
   3. Click on "New Oauth App".
   4. Set the callback URL to `https://localhost:1410`. 
      The other fields can be filled in freely.
+  5. Copy the newly generated client ID into the `wrangler` prompt.
 - `GITHUB_APP_SECRET`, for the secret associated with the Github App ID.
+  To generate, click on "Generate a new client secret" and copy the string into the `wrangler` prompt.
 
 ### Step 4: deployment
 
