@@ -124,7 +124,7 @@ export async function quickRecursiveDelete(prefix, env, { list_limit = 1000 } = 
     await listApply(
         prefix, 
         f => {
-            deletions.push(env.BOUND_BUCKET.delete(f.key));
+            deletions.push(f.key);
             if (!misc.isInternalPath(f.key)) {
                 freed += f.size;
             }
@@ -132,6 +132,6 @@ export async function quickRecursiveDelete(prefix, env, { list_limit = 1000 } = 
         env,
         { list_limit: list_limit, namesOnly: false }
     );
-    await Promise.all(deletions);
+    await env.BOUND_BUCKET.delete(deletions);
     return freed;
 }
