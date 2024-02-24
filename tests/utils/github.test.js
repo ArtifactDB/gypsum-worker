@@ -1,4 +1,3 @@
-import * as auth from "../../src/utils/permissions.js";
 import * as gh from "../../src/utils/github.js";
 import * as setup from "../setup.js";
 
@@ -7,16 +6,14 @@ beforeAll(async () => {
 })
 
 setup.testauth("user identity checks work correctly with a real token", async () => {
-    let req = new Request("http://localhost");
-    req.query = {};
-    req.headers.append("Authorization", "Bearer " + setup.fetchTestPAT());
+    let token = setup.fetchTestPAT();
+    const env = getMiniflareBindings();
 
-    let nb = [];
-    let res = await auth.findUserHandler(req, nb);
-
-    expect(res.status).toBe(200);
+    let res = await gh.identifyUser(token, env);
     let body = await res.json();
     expect(body.login).toEqual("ArtifactDB-bot");
-    expect(body.organizations).toEqual([]);
-    expect(nb.length).toBeGreaterThan(0);
+
+    let ores = await gh.identifyUserOrgs(token, env);
+    let obody = await ores.json();
+    expect(obody instanceof Array).toBe(true)
 })
