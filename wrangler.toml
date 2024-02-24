@@ -3,7 +3,7 @@ main = "src/index.js"
 
 account_id = "bfb2e522e0b245720424784fcf7c04c0" # ~> Cloudflare account ID, as listed on the R2 page of the Cloudflare dashboard.
 workers_dev = true
-compatibility_date = "2022-03-04"
+compatibility_date = "2024-02-23"
 
 [[r2_buckets]]
 binding = 'BOUND_BUCKET' 
