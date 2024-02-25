@@ -29,7 +29,7 @@ Each version of an asset is immutable to ensure that downstream analyses are rep
 Within the R2 bucket, files associated with a project-asset-version combination will have a `{project}/{asset}/{version}/` prefix and can be retrieved accordingly.
 For each project-asset-version combination, the set of all user-supplied files is recorded in the `{project}/{asset}/{version}/..manifest` file.
 This contains a JSON object where each key/value pair describes a user-supplied file.
-The key is a relative path that should be appended to the `{project}/{asset}/{version}/` prefix to obtain the full bucket path to the file.
+The key is a suffix that should be appended to the `{project}/{asset}/{version}/` prefix to obtain the full object key of the file.
 The value is another object with the following properties:
 - `size`: an integer specifying the size of the file in bytes.
 - `md5sum`: a string containing the hex-encoded MD5 checksum of the file.
@@ -59,20 +59,24 @@ Uploaders can also directly instruct **gypsum** to create links if the original 
 
 Any "linked-from" files (i.e., those identified as copies of other existing files) will not actually be present in the bucket. 
 The existence of linked-from files is either determined from the `..manifest` file for each project-asset-version;
-or from `..links` files, which describe the links present in each `/`-delimited path. 
+or from `..links` files, which describe the links present at each `/`-delimited prefix.
 The latter allows clients to avoid downloading the entire manifest if only a subset of files are of interest.
-To illustrate, consider a hypothetical `..links` file at the following path:
+To illustrate, consider a hypothetical `..links` file with the following object key:
 
 ```
 {project}/{asset}/{version}/x/y/z/..links
 ```
 
-This contains a JSON object where each key/value pair describes a linked-from path with the same `/`-delimited prefix.
-The key is a relative path, to be appended to `{project}/{asset}/{version}/x/y/z/` to obtain the full bucket path of the linked-from file.
-The value is another object that contains the strings `project`, `asset`, `version` and `path`, which collectively specify the link destination supplied by the user.
-If the user-supplied destination is itself another link, the object will contain a nested `ancestor` object that specifies the final link destination to the actual file.
+This contains a JSON object where each key/value pair describes a linked-from file with the same `/`-delimited prefix.
+The key is a suffix that should be appended to `{project}/{asset}/{version}/x/y/z/` to obtain the full object key of the linked-from file.
+The value is another object that contains the strings `project`, `asset`, `version` and `path`.
+These strings collectively specify the link destination supplied by the user - namely, the full object key of `{project}/{asset}/{version}/{path}`.
+(`path` is so named because it is the relative path to the file inside the project-asset-version, if one were to treat `/`-delimited prefixes as filesystem subdirectories.)
+If the user-supplied destination is itself another link, the object will contain a nested `ancestor` object that specifies the final link destination to an actual file.
 
-If no `..links` file is present at a particular file prefix, it can be assumed that there are no linked-from files with that prefix.
+If no `..links` file is present for a particular `/`-delimited prefix, it can be assumed that there are no linked-from files with the same prefix.
+That is, if `{project}/{asset}/{version}/x/..links` does not exist, no file with a `{project}/{asset}/{version}/x/` prefix can be a link.
+This guarantee does not extend to prefixes with more `/`, e.g., linked-from files may still be present with the prefix `{project}/{asset}/{version}/x/y/`.
 
 ### Permissions
 
