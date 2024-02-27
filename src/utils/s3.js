@@ -132,6 +132,26 @@ export async function quickRecursiveDelete(prefix, env, { list_limit = 1000 } = 
         env,
         { list_limit: list_limit, namesOnly: false }
     );
-    await env.BOUND_BUCKET.delete(deletions);
+
+    if (deletions.length) {
+        // The R2 binding can only accept a max of 1000 keys per delete()
+        // request. So we split it up into evenly spaced chunks that are no
+        // greater than 1000 each, and we submit these as subrequests. We have
+        // a maximum of 50 subrequests per worker, which means that we can
+        // delete 50k objects for every call of this function; not bad.
+        let num_requests = Math.ceil(deletions.length / 1000);
+        let per_request = Math.ceil(deletions.length / num_requests);
+
+        let reqs = [];
+        let start = 0;
+        for (var i = 0; i < num_requests; ++i) {
+            const end = Math.min(start + per_request, deletions.length);
+            reqs.push(env.BOUND_BUCKET.delete(deletions.slice(start, end)));
+            start = end;
+        }
+
+        await Promise.all(reqs);
+    }
+
     return freed;
 }
