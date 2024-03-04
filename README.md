@@ -144,8 +144,8 @@ Each project's current usage is tracked in `{project}/..usage`, which contains a
 ## Interacting with the API
 
 **gypsum** stores its files in an R2 bucket that can be accessed by any S3-compatible client.
-This does require a little bit more work, unfortunately, as Cloudflare's public buckets do not expose the S3 API.
-Instead, we need to request some credentials from the API first:
+As Cloudflare's public buckets do not expose the S3 API directly,
+we need to request some read-only S3 credentials from the **gypsum** API:
 
 ```shell
 curl https://gypsum.artifactdb.com/credentials/s3-api
@@ -190,9 +190,10 @@ The file contains a JSON object that details the type of action in the `type` pr
   This has the `project` string property.
 
 Downstream systems can inspect these files to determine what changes have occurred in the **gypsum** bucket.
-This is intended for systems that need to maintain a database index on top of the bucket's contents.
-By routinely scanning for changes, databases can incrementally perform updates rather than reindexing the entire bucket.
-For an example, check out the [**gypsum-to-sqlite** repository](https://github.com/ArtifactDB/gypsum-to-sqlite) -
+This is intended for applications maintaining a database index on top of the bucket's contents.
+By routinely scanning the logs for changes, databases can incrementally update rather than reindexing the entire bucket.
+In effect, the logs serve as a poor man's message queue.
+Check out the [gypsum-metadata-index](https://github.com/ArtifactDB/gypsum-metadata-index) repository for an example -
 this uses the **gypsum** logs to create and update SQLite files, though the same idea can be used for any database technology.
 
 Log files are held for 7 days before deletion.
