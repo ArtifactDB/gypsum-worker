@@ -89,6 +89,15 @@ router.get("/", () => {
     return new Response(null, { headers: { "Location": "https://artifactdb.github.io/gypsum-worker" }, status: 301 })
 })
 
+router.all('*', request => { 
+    const u = request.url;
+    const pattern = /([^:])(\/\/+)/g;
+    if (u.match(pattern)) {
+        return new Response(null, { headers: { "Location": u.replace(pattern, "$1/") }, status: 301 })
+    }
+    return http.errorResponse("no such endpoint", 404);
+})
+
 export default {
 
 fetch(request, env, context) {
