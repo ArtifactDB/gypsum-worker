@@ -1,4 +1,4 @@
-import { Router } from 'itty-router'
+import { IttyRouter } from 'itty-router'
 
 import * as upload from "./upload.js";
 import * as create from "./create.js";
@@ -14,7 +14,7 @@ import * as http from "./utils/http.js";
 import * as s3 from "./utils/s3.js";
 import * as read from "./read.js";
 
-const router = Router();
+const router = IttyRouter();
 
 /*** CORS-related shenanigans ***/
 
@@ -117,7 +117,7 @@ fetch(request, env, context) {
 
     let nonblockers = [];
     let resp = router
-        .handle(request, env, nonblockers)
+        .fetch(request, env, nonblockers)
         .catch(error => {
             if (error instanceof http.HttpError) {
                 return http.errorResponse(error.message, error.statusCode);
