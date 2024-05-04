@@ -193,7 +193,7 @@ Downstream systems can inspect these files to determine what changes have occurr
 This is intended for applications maintaining a database index on top of the bucket's contents.
 By routinely scanning the logs for changes, databases can incrementally update rather than reindexing the entire bucket.
 In effect, the logs serve as a poor man's message queue.
-Check out the [gypsum-metadata-index](https://github.com/ArtifactDB/gypsum-metadata-index) repository for an example -
+Check out the [gypsum-metadata-index](https://github.com/ArtifactDB/bioconductor-metadata-index) repository for an example -
 this uses the **gypsum** logs to create and update SQLite files, though the same idea can be used for any database technology.
 
 Log files are held for 7 days before deletion.
@@ -270,3 +270,11 @@ Clients may also need to flush their caches if the `..summary` files correspondi
 On rare occasions involving frequent updates, some of the inter-version statistics may not be correct.
 For example, the latest version in `..latest` may not keep in sync when many probational versions are approved at once.
 This can be fixed manually by hitting the `/refresh` endpoints to recompute the relevant statistics.
+
+## Further links
+
+Check out the [R](https://github.com/ArtifactDB/gypsum-R) and [Python](https://github.com/ArtifactDB/gypsum-py) clients for interacting with the **gypsum** REST API.
+
+The [gypsum-metadata-index](https://github.com/ArtifactDB/bioconductor-metadata-index) scans the logs to update a SQLite database of the metadata in the bucket.
+
+The [gypsum-backup](https://github.com/ArtifactDB/gypsum-backup) repository contains some scripts to create local back-ups of the bucket contents.
