@@ -562,6 +562,78 @@
                 },
                 "tags": [ "Refresh" ]
             }
+        },
+
+        "/download/{key}": {
+            "get": {
+                "summary": "Download the file with the specified key in the bucket. This is a REST-based replacement for `get-object` from the AWS S3 API.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "key",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Key of the file to download.",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": { "description": "Contents of the requested file." },
+                    "404": { 
+                        "description": "File does not exist.",
+                        "content": {
+                            "application/json": {
+                                "schema":  { "$ref": "#/components/schemas/error" }
+                            }
+                        }
+                    }
+                },
+                "tags": [ "Read-only" ]
+            }
+        },
+
+        "/list": {
+            "get": {
+                "summary": "List the contents of the bucket, possibly with a prefix. This is a REST-based replacement for `list-objects-v2` from the AWS S3 API.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "prefix",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Prefix of the keys to be listed. This should terminate with a forward slash to represent a \"directory\".",
+                        "required": false 
+                    },
+                    {
+                        "in": "query",
+                        "name": "recursive",
+                        "schema": {
+                            "type": "boolean",
+                            "default": false
+                        },
+                        "description": "Whether to list keys \"recursively\", treating slash-separated components of the key as subdirectories. If true, all keys (or all keys starting with `prefix`, if supplied) are listed. If false, keys are only listed if there are no more slashes after `prefix`; otherwise, the slash-delimited common prefix is shown (i.e., the \"subdirectory\" path).", 
+                        "required": false 
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "All keys (or common prefixes) in the bucket that start with `prefix`.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "tags": [ "Read-only" ]
+            }
         }
 
     },

@@ -12,6 +12,7 @@ import * as gh from "./utils/github.js";
 import * as auth from "./utils/permissions.js";
 import * as http from "./utils/http.js";
 import * as s3 from "./utils/s3.js";
+import * as read from "./read.js";
 
 const router = Router();
 
@@ -82,6 +83,12 @@ router.post("/probation/reject/:project/:asset/:version", probation.rejectProbat
 router.post("/refresh/latest/:project/:asset", version.refreshLatestVersionHandler);
 
 router.post("/refresh/usage/:project", quota.refreshQuotaUsageHandler);
+
+/*** Download ***/
+
+router.get("/read/:key", read.downloadHandler);
+
+router.get("/list", read.listHandler);
 
 /*** Setting up the listener ***/
 
