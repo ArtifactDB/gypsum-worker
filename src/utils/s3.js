@@ -76,7 +76,7 @@ export async function quickFetchJson(path, env, { mustWork = true } = {}) {
     }
 }
 
-export async function listApply(prefix, op, env, { namesOnly = true, trimPrefix = true, local = false, list_limit = 1000 } = {}) {
+export async function listApply(prefix, op, env, { namesOnly = true, trimPrefix = true, stripTrailingSlash = true, local = false, list_limit = 1000 } = {}) {
     let list_options = { limit: list_limit };
     if (prefix != null) {
         list_options.prefix = prefix;
@@ -93,9 +93,9 @@ export async function listApply(prefix, op, env, { namesOnly = true, trimPrefix 
 
         if (local) {
             if (trimPrefix) {
-                listing.delimitedPrefixes.forEach(p => op(p.slice(prefix.length, p.length - 1))); // remove the prefix and the slash.
+                listing.delimitedPrefixes.forEach(p => op(p.slice(prefix.length, stripTrailingSlash ? p.length - 1 : p.length)));
             } else {
-                listing.delimitedPrefixes.forEach(p => op(p.slice(0, p.length - 1))); // remove the trailing slash.
+                listing.delimitedPrefixes.forEach(p => op(p.slice(0, stripTrailingSlash ? p.length - 1 : p.length)));
             }
         } 
 

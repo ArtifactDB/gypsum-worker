@@ -86,9 +86,11 @@ router.post("/refresh/usage/:project", quota.refreshQuotaUsageHandler);
 
 /*** Download ***/
 
-router.get("/read/:key", read.downloadHandler);
+router.head("/file/:key", read.headFileHandler);
 
-router.get("/list", read.listHandler);
+router.get("/file/:key", read.downloadFileHandler);
+
+router.get("/list", read.listFilesHandler);
 
 /*** Setting up the listener ***/
 

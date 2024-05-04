@@ -564,30 +564,27 @@
             }
         },
 
-        "/download/{key}": {
+        "/file/{key}": {
             "get": {
                 "summary": "Download the file with the specified key in the bucket. This is a REST-based replacement for `get-object` from the AWS S3 API.",
                 "parameters": [
-                    {
-                        "in": "path",
-                        "name": "key",
-                        "schema": {
-                            "type": "string"
-                        },
-                        "description": "Key of the file to download.",
-                        "required": true
-                    }
+                    { "$ref": "#/components/parameters/key" }
                 ],
                 "responses": {
                     "200": { "description": "Contents of the requested file." },
-                    "404": { 
-                        "description": "File does not exist.",
-                        "content": {
-                            "application/json": {
-                                "schema":  { "$ref": "#/components/schemas/error" }
-                            }
-                        }
-                    }
+                    "404": { "$ref": "#/components/responses/404" }
+                },
+                "tags": [ "Read-only" ]
+            },
+
+            "head": {
+                "summary": "Obtain metadata about the specified key in the bucket.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/key" }
+                ],
+                "responses": {
+                    "200": { "description": "Metadata for the requested file." },
+                    "404": { "$ref": "#/components/responses/404" }
                 },
                 "tags": [ "Read-only" ]
             }
@@ -666,6 +663,16 @@
                 },
                 "description": "Name of the version of the asset inside a project. This should not contain '/' or start with '..'.",
                 "required": true
+            },
+
+            "key": {
+                "in": "path",
+                "name": "key",
+                "schema": {
+                    "type": "string"
+                },
+                "description": "Key of the file to download.",
+                "required": true
             }
         },
 
@@ -681,6 +688,14 @@
             "403": {
                 "description": "User is not authorized to perform this operation.",
                 "content": { 
+                    "application/json": {
+                        "schema":  { "$ref": "#/components/schemas/error" }
+                    }
+                }
+            },
+            "404": { 
+                "description": "Entity does not exist.",
+                "content": {
                     "application/json": {
                         "schema":  { "$ref": "#/components/schemas/error" }
                     }
