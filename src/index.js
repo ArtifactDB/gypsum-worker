@@ -1,4 +1,4 @@
-import { Router } from 'itty-router'
+import { IttyRouter } from 'itty-router'
 
 import * as upload from "./upload.js";
 import * as create from "./create.js";
@@ -12,8 +12,9 @@ import * as gh from "./utils/github.js";
 import * as auth from "./utils/permissions.js";
 import * as http from "./utils/http.js";
 import * as s3 from "./utils/s3.js";
+import * as read from "./read.js";
 
-const router = Router();
+const router = IttyRouter();
 
 /*** CORS-related shenanigans ***/
 
@@ -83,6 +84,14 @@ router.post("/refresh/latest/:project/:asset", version.refreshLatestVersionHandl
 
 router.post("/refresh/usage/:project", quota.refreshQuotaUsageHandler);
 
+/*** Download ***/
+
+router.head("/file/:key", read.headFileHandler);
+
+router.get("/file/:key", read.downloadFileHandler);
+
+router.get("/list", read.listFilesHandler);
+
 /*** Setting up the listener ***/
 
 router.get("/", () => {
@@ -108,7 +117,7 @@ fetch(request, env, context) {
 
     let nonblockers = [];
     let resp = router
-        .handle(request, env, nonblockers)
+        .fetch(request, env, nonblockers)
         .catch(error => {
             if (error instanceof http.HttpError) {
                 return http.errorResponse(error.message, error.statusCode);
