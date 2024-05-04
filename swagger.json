@@ -562,6 +562,75 @@
                 },
                 "tags": [ "Refresh" ]
             }
+        },
+
+        "/file/{key}": {
+            "get": {
+                "summary": "Download the file with the specified key in the bucket. This is a REST-based replacement for `get-object` from the AWS S3 API.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/key" }
+                ],
+                "responses": {
+                    "200": { "description": "Contents of the requested file." },
+                    "404": { "$ref": "#/components/responses/404" }
+                },
+                "tags": [ "Read-only" ]
+            },
+
+            "head": {
+                "summary": "Obtain metadata about the specified key in the bucket.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/key" }
+                ],
+                "responses": {
+                    "200": { "description": "Metadata for the requested file." },
+                    "404": { "$ref": "#/components/responses/404" }
+                },
+                "tags": [ "Read-only" ]
+            }
+        },
+
+        "/list": {
+            "get": {
+                "summary": "List the contents of the bucket, possibly with a prefix. This is a REST-based replacement for `list-objects-v2` from the AWS S3 API.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "prefix",
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "URL-encoded prefix of the keys to be listed. To represent a \"directory\", the decoded prefix should end with a forward slash.",
+                        "required": false 
+                    },
+                    {
+                        "in": "query",
+                        "name": "recursive",
+                        "schema": {
+                            "type": "boolean",
+                            "default": false
+                        },
+                        "description": "Whether to list keys \"recursively\", treating slash-separated components of the key as subdirectories. If true, all keys (or all keys starting with `prefix`, if supplied) are listed. If false, keys are only listed if there are no more slashes after `prefix`; otherwise, the slash-delimited common prefix is shown (i.e., the \"subdirectory\" path).", 
+                        "required": false 
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "All keys (or common prefixes) in the bucket that start with `prefix`.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "tags": [ "Read-only" ]
+            }
         }
 
     },
@@ -594,6 +663,16 @@
                 },
                 "description": "Name of the version of the asset inside a project. This should not contain '/' or start with '..'.",
                 "required": true
+            },
+
+            "key": {
+                "in": "path",
+                "name": "key",
+                "schema": {
+                    "type": "string"
+                },
+                "description": "URL-encoded key of the file.",
+                "required": true
             }
         },
 
@@ -609,6 +688,14 @@
             "403": {
                 "description": "User is not authorized to perform this operation.",
                 "content": { 
+                    "application/json": {
+                        "schema":  { "$ref": "#/components/schemas/error" }
+                    }
+                }
+            },
+            "404": { 
+                "description": "Entity does not exist.",
+                "content": {
                     "application/json": {
                         "schema":  { "$ref": "#/components/schemas/error" }
                     }

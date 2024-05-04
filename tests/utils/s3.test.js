@@ -86,6 +86,14 @@ test("listApply works as expected", async () => {
         survivors.sort();
         expect(survivors).toEqual(["alpha/alex.txt", "alpha/bravo", "alpha/bravo2"]);
     }
+
+    // Don't trim the trailing slash.
+    {
+        let survivors = [];
+        await s3.listApply("alpha/", p => survivors.push(p), env, { local: true, stripTrailingSlash: false });
+        survivors.sort();
+        expect(survivors).toEqual(["alex.txt", "bravo/", "bravo2/"]);
+    }
 })
 
 test("quick recursive delete works as expected", async () => {
