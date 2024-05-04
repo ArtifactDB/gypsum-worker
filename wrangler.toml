@@ -14,7 +14,7 @@ preview_bucket_name = 'gypsum-test' # ~> Name of the bucket for wrangler dev. Be
 CF_ACCOUNT_ID = "bfb2e522e0b245720424784fcf7c04c0" # ~> Account ID. Should be the same as 'account_id'.
 R2_BUCKET_NAME = 'gypsum-test' # ~> Name of the bucket. Should be the same as 'r2_buckets.bucket_name'.
 GITHUB_USER_AGENT = 'gypsum-test-worker' # ~> User agent for GitHub API requests.
-ADMIN_ACCOUNTS = 'LTLA' # ~> Comma-separated list of GitHub users or organizations that can act as administrators.
+ADMIN_ACCOUNTS = 'LTLA,jkanche' # ~> Comma-separated list of GitHub users or organizations that can act as administrators.
 
 [triggers]
 crons = [ "0 0 * * *" ]
