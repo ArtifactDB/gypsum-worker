@@ -26,6 +26,7 @@ test("headFileHandler works correctly", async () => {
         expect(res.body).toBeNull();
         const hh = res.headers;
         expect(hh.get("content-type")).toBe("application/json");
+        expect(Number(hh.get("Content-Length"))).toBeGreaterThan(0);
     }
 })
 
