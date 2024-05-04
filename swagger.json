@@ -600,7 +600,7 @@
                         "schema": {
                             "type": "string"
                         },
-                        "description": "Prefix of the keys to be listed. This should terminate with a forward slash to represent a \"directory\".",
+                        "description": "URL-encoded prefix of the keys to be listed. To represent a \"directory\", the decoded prefix should end with a forward slash.",
                         "required": false 
                     },
                     {
@@ -671,7 +671,7 @@
                 "schema": {
                     "type": "string"
                 },
-                "description": "Key of the file to download.",
+                "description": "URL-encoded key of the file.",
                 "required": true
             }
         },

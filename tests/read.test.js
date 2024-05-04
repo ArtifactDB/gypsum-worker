@@ -11,7 +11,7 @@ test("headFileHandler works correctly", async () => {
     const req = new Request("http://localhost", { method: "HEAD" });
 
     {
-        req.params = { key: "test/blob/v1/whee.txt" };
+        req.params = { key: encodeURIComponent("test/blob/v1/whee.txt") };
         const res = await read.headFileHandler(req, env, []);
         expect(res.body).toBeNull();
         const hh = res.headers;
@@ -21,7 +21,7 @@ test("headFileHandler works correctly", async () => {
     }
 
     {
-        req.params = { key: "test/blob/v1/..summary" };
+        req.params = { key: encodeURIComponent("test/blob/v1/..summary") };
         const res = await read.headFileHandler(req, env, []);
         expect(res.body).toBeNull();
         const hh = res.headers;
@@ -34,7 +34,7 @@ test("downloadFileHandler works correctly", async () => {
     const req = new Request("http://localhost", { method: "GET" });
 
     {
-        req.params = { key: "test/blob/v1/whee.txt" };
+        req.params = { key: encodeURIComponent("test/blob/v1/whee.txt") };
         const res = await read.downloadFileHandler(req, env, []);
         const body = await res.text();
         expect(body.startsWith("Aaron")).toBe(true);
@@ -46,7 +46,7 @@ test("downloadFileHandler works correctly", async () => {
     }
 
     {
-        req.params = { key: "test/blob/v1/..summary" };
+        req.params = { key: encodeURIComponent("test/blob/v1/..summary") };
         const res = await read.downloadFileHandler(req, env, []);
         const body = await res.json();
         expect("upload_user_id" in body).toBe(true);
@@ -56,14 +56,14 @@ test("downloadFileHandler works correctly", async () => {
     }
 
     {
-        req.params = { key: "test/blob/v1/foo/bar.txt" };
+        req.params = { key: encodeURIComponent("test/blob/v1/foo/bar.txt") };
         const res = await read.downloadFileHandler(req, env, []);
         const body = await res.text();
         expect(body.startsWith("1\n")).toBe(true);
     }
 
     {
-        req.params = { key: "test/blob/v1/absent.txt" };
+        req.params = { key: encodeURIComponent("test/blob/v1/absent.txt") };
         await expect(read.downloadFileHandler(req, env, [])).rejects.toThrow("not found");
     }
 })
@@ -80,14 +80,14 @@ test("listFilesHandler works correctly", async () => {
     }
 
     {
-        req.query = { prefix: "test/blob" };
+        req.query = { prefix: encodeURIComponent("test/blob") };
         const res = await read.listFilesHandler(req, env, []);
         const body = await res.json();
         expect(body.indexOf("test/blob/") >= 0).toBe(true);
     }
 
     {
-        req.query = { prefix: "test/blob/" };
+        req.query = { prefix: encodeURIComponent("test/blob/") };
         const res = await read.listFilesHandler(req, env, []);
         const body = await res.json();
         expect(body.indexOf("test/blob/..latest") >= 0).toBe(true);
@@ -95,7 +95,7 @@ test("listFilesHandler works correctly", async () => {
     }
 
     {
-        req.query = { prefix: "test/blob", recursive: "true" };
+        req.query = { prefix: encodeURIComponent("test/blob"), recursive: "true" };
         const res = await read.listFilesHandler(req, env, []);
         const body = await res.json();
         expect(body.indexOf("test/blob/v1/..summary") >= 0).toBe(true);

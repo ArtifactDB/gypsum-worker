@@ -11,7 +11,7 @@ function createHeaders(payload) {
 }
 
 export async function headFileHandler(request, env, nonblockers) {
-    const payload = await env.BOUND_BUCKET.head(request.params.key);
+    const payload = await env.BOUND_BUCKET.head(decodeURIComponent(request.params.key));
     if (payload === null) {
         throw new http.HttpError("object not found", 404);
     }
@@ -20,7 +20,7 @@ export async function headFileHandler(request, env, nonblockers) {
 }
 
 export async function downloadFileHandler(request, env, nonblockers) {
-    const payload = await env.BOUND_BUCKET.get(request.params.key);
+    const payload = await env.BOUND_BUCKET.get(decodeURIComponent(request.params.key));
     if (payload === null) {
         throw new http.HttpError("object not found", 404);
     }
@@ -32,7 +32,7 @@ export async function listFilesHandler(request, env, nonblockers) {
     const params = request.query;
     let prefix = null;
     if ("prefix" in params) {
-        prefix = params.prefix;
+        prefix = decodeURIComponent(params.prefix);
     }
     let recursive = false;
     if ("recursive" in params) {
