@@ -7,6 +7,7 @@ function createHeaders(payload) {
     headers.set('etag', payload.httpEtag);
     headers.set('Last-Modified', payload.uploaded.toUTCString());
     headers.set("Content-Length", payload.size);
+    headers.set("Access-Control-Allow-Origin", "*");
     return headers;
 }
 
@@ -40,5 +41,5 @@ export async function listFilesHandler(request, env, nonblockers) {
     }
     let collected = [];
     await s3.listApply(prefix, x => collected.push(x), env, { trimPrefix: false, stripTrailingSlash: false, local: !recursive });
-    return new http.jsonResponse(collected, 200);
+    return new http.jsonResponse(collected, 200, { "Access-Control-Allow-Origin": "*" });
 }
