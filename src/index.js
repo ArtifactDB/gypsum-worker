@@ -95,16 +95,28 @@ router.get("/list", read.listFilesHandler);
 /*** Setting up the listener ***/
 
 router.get("/", () => {
-    return new Response(null, { headers: { "Location": "https://artifactdb.github.io/gypsum-worker" }, status: 301 })
+    return new Response(null, { 
+        headers: { 
+            "Location": "https://artifactdb.github.io/gypsum-worker",
+            "Access-Control-Allow-Origin": '*' 
+        }, 
+        status: 301 
+    })
 })
 
 router.all('*', request => { 
     const u = request.url;
     const pattern = /([^:])(\/\/+)/g;
     if (u.match(pattern)) {
-        return new Response(null, { headers: { "Location": u.replace(pattern, "$1/") }, status: 301 })
+        return new Response(null, {
+            headers: { 
+                "Location": u.replace(pattern, "$1/"), 
+                'Access-Control-Allow-Origin': '*'
+            }, 
+            status: 301 
+        })
     }
-    return http.errorResponse("no such endpoint", 404);
+    return http.errorResponse("no such endpoint", 404, { 'Access-Control-Allow-Origin': '*' });
 })
 
 export default {
@@ -120,9 +132,9 @@ fetch(request, env, context) {
         .fetch(request, env, nonblockers)
         .catch(error => {
             if (error instanceof http.HttpError) {
-                return http.errorResponse(error.message, error.statusCode);
+                return http.errorResponse(error.message, error.statusCode, { 'Access-Control-Allow-Origin': '*' });
             } else {
-                return http.errorResponse(error.message, 500);
+                return http.errorResponse(error.message, 500, { 'Access-Control-Allow-Origin': '*' });
             }
         });
 
