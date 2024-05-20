@@ -564,6 +564,22 @@
             }
         },
 
+        "/unlock/{project}": {
+            "delete": {
+                "summary": "Unlock a project. This is occasionally necessary, e.g., due to an incomplete upload that was not properly aborted.",
+                "parameters": [
+                    { "$ref": "#/components/parameters/project" }
+                ],
+                "security": [ { "admin": [] } ],
+                "responses": {
+                    "200": { "description": "Successful removal of the lock. This is reported even if `project` does not exist or has no lock." },
+                    "401": { "$ref": "#/components/responses/401" },
+                    "403": { "$ref": "#/components/responses/403" }
+                },
+                "tags": [ "Refresh" ]
+            }
+        },
+
         "/file/{key}": {
             "get": {
                 "summary": "Download the file with the specified key in the bucket. This is a REST-based replacement for `get-object` from the AWS S3 API.",

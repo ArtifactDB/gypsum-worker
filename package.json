@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "gypsum",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "description": "A small ArtifactDB API on Cloudflare Workers",
   "main": "src/index.js",
