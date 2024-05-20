@@ -13,6 +13,7 @@ import * as auth from "./utils/permissions.js";
 import * as http from "./utils/http.js";
 import * as s3 from "./utils/s3.js";
 import * as read from "./read.js";
+import * as lock from "./lock.js";
 
 const router = IttyRouter();
 
@@ -83,6 +84,8 @@ router.post("/probation/reject/:project/:asset/:version", probation.rejectProbat
 router.post("/refresh/latest/:project/:asset", version.refreshLatestVersionHandler);
 
 router.post("/refresh/usage/:project", quota.refreshQuotaUsageHandler);
+
+router.delete("/unlock/:project", lock.unlockProjectHandler);
 
 /*** Download ***/
 
