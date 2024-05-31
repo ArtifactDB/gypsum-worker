@@ -143,23 +143,28 @@ Each project's current usage is tracked in `{project}/..usage`, which contains a
 
 ## Interacting with the API
 
-**gypsum** stores its files in an R2 bucket that can be accessed by any S3-compatible client.
-As Cloudflare's public buckets do not expose the S3 API directly,
-we need to request some read-only S3 credentials from the **gypsum** API:
+The **gypsum** API provides the `/file` endpoint to download individual files and the `/list` endpoint to list the bucket contents.
+This works with standard HTTP requests and supports cross-origin requests for use in web applications.
+Clients are advised to cache any immutable files to reduce data transfer, which includes:
+
+- The `..manifest` file for each project-asset-version.
+- The `..summary` file, if it does not have `on_probation: true`.
+- Any user-supplied file, i.e., the base name does not start with `..`.
+
+Alternatively, we can make use of the fact that Cloudflare R2 is S3-compatible and can be used with the usual tools like the AWS CLI.
+This requires some additional effort as the S3 API is not directly accessible, even for public R2 buckets.
+Rather, we need to request some read-only credentials from the **gypsum** API before plugging them into our tool of choice.
+(The caching advice above is still applicable here.)
 
 ```shell
 curl https://gypsum.artifactdb.com/credentials/s3-api
 ## {
 ##     "endpoint":"https://blahblahblah.r2.cloudflarestorage.com",
-##     "bucket":"gypsum-test",
+##     "bucket":"gypsum-prd",
 ##     "key":"asdasdasdasdasd",
 ##     "secret":"asdasdasdasdasdasdasdasd"
 ## }
-```
 
-We can then use these credentials in typical S3 workflows:
-
-```shell
 AWS_ACCESS_KEY_ID=asdasdasdasdasd \
 AWS_SECRET_ACCESS_KEY=asdasdasdasdasdasdasdasd \
 aws s3 ls --endpoint-url=https://blahblahblah.r2.cloudflarestorage.com gypsum-test
@@ -270,6 +275,12 @@ Clients may also need to flush their caches if the `..summary` files correspondi
 On rare occasions involving frequent updates, some of the inter-version statistics may not be correct.
 For example, the latest version in `..latest` may not keep in sync when many probational versions are approved at once.
 This can be fixed manually by hitting the `/refresh` endpoints to recompute the relevant statistics.
+
+If an upload fails but is not aborted by the client, the project will be locked.
+This prevents any further modifications to the project including new uploads, changes to permissions, etc.
+In such cases, an administrator should inspect the lock file for the project (at `/file/{project}%2F..LOCK`).
+This reveals the asset and version that was partially uploaded, which can be flushed with the relevant `/remove` endpoint.
+Finally, the lock itself can be removed using the `/unlock` endpoint.
 
 ## Further links
 
