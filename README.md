@@ -68,7 +68,7 @@ To illustrate, consider a hypothetical `..links` file with the following object 
 ```
 
 This contains a JSON object where each key/value pair describes a linked-from file with the same `/`-delimited prefix.
-The key is a suffix that should be appended to `{project}/{asset}/{version}/x/y/z/` to obtain the full object key of the linked-from file.
+The key is a file name that should be appended to `{project}/{asset}/{version}/x/y/z/` to obtain the full object key of the linked-from file.
 The value is another object that contains the strings `project`, `asset`, `version` and `path`.
 These strings collectively specify the link destination supplied by the user - namely, the full object key of `{project}/{asset}/{version}/{path}`.
 (`path` is so named because it is the relative path to the file inside the project-asset-version, if one were to treat `/`-delimited prefixes as filesystem subdirectories.)
